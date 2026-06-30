@@ -1,0 +1,29 @@
+# Runtime dependencies for the Autonomous AI Career Agent.
+# Pinned conservatively with lower bounds; pyproject.toml is the source of truth
+# for packaging. Phase 1 keeps this intentionally minimal — additional pins land
+# with the phase that first needs them (see ROADMAP.md).
+
+# --- LLM (Anthropic Claude; Haiku -> Sonnet -> Opus cost cascade) ---
+anthropic>=0.40
+
+# --- Orchestration ---
+langgraph>=0.2
+
+# --- Data models & validation ---
+pydantic>=2.6
+pydantic-settings>=2.2
+
+# --- Storage / exports ---
+# sqlite3 ships with the Python standard library.
+openpyxl>=3.1
+
+# --- Discovery: HTTP + parsing ---
+httpx>=0.27
+beautifulsoup4>=4.12
+
+# --- Browser automation (Apply, supervised) ---
+playwright>=1.44
+browser-use>=0.1
+
+# --- Config / environment ---
+python-dotenv>=1.0

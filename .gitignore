@@ -1,0 +1,64 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+downloads/
+*.egg-info/
+.eggs/
+*.egg
+.installed.cfg
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Testing / coverage ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ---- Tooling ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ---- Secrets & local config (single-user, self-hosted) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+token.json
+gmail_token*.json
+
+# ---- Application data (the user's own data stays local) ----
+*.db
+*.sqlite
+*.sqlite3
+data/
+exports/
+*.xlsx
+master_profile.json
+!examples/**/master_profile.json
+
+# ---- Browser / Playwright session state ----
+.auth/
+playwright/.cache/
+browser_state*.json
+
+# ---- Logs ----
+*.log
+logs/
