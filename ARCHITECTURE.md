@@ -12,7 +12,9 @@ decisions and their rationale are recorded as ADRs in [`docs/adr/`](docs/adr/).
 
 ## 1. Design philosophy
 
-The system is **agent-oriented, not a fixed pipeline** (see
+The project's mission, goals, non-goals, and golden rules are fixed in
+[ADR-0000](docs/adr/0000-project-philosophy.md) — the root every other decision
+serves. The system is **agent-oriented, not a fixed pipeline** (see
 [ADR-0001](docs/adr/0001-agent-oriented-architecture.md)). Rather than hard-coding
 a linear `discover → decide → apply → learn` flow, a central **Planner Agent**
 reasons about state and decides what to do next, dispatching work to specialized
@@ -70,7 +72,8 @@ budget. Implemented on **LangGraph** so its decision loop is inspectable and
 resumable.
 
 ### Discovery Agent
-Finds real openings. Strategy order (open-ended, see ADR forthcoming in Phase 4):
+Finds real openings. Strategy order (open-ended; web-search layer is specified in
+[ADR-0002](docs/adr/0002-search-provider-abstraction.md)):
 1. Public ATS JSON APIs — **Greenhouse, Lever, Ashby**.
 2. **YC `hiring.json`** and **Hacker News "Who's Hiring."**
 3. Company **career pages** found via a *Career Page Finder* + *ATS Detector*.
@@ -152,3 +155,26 @@ src/career_agent/
 tests/             # mirrors src/
 docs/adr/          # architecture decision records
 ```
+
+## 9. Decision records
+
+The architecture above is the consequence of a set of explicit, recorded
+decisions. Read the ADRs for the *why*; they are the contract every feature and
+pull request is checked against.
+
+| ADR | Decision |
+|-----|----------|
+| [0000](docs/adr/0000-project-philosophy.md) | Project philosophy — mission, goals, non-goals, golden rules (the root) |
+| [0001](docs/adr/0001-agent-oriented-architecture.md) | Agent-oriented architecture; agent design principles + lifecycle |
+| [0002](docs/adr/0002-search-provider-abstraction.md) | Search provider abstraction; capability discovery + health-based ranking |
+| [0003](docs/adr/0003-truthfulness-gate.md) | Truthfulness gate; per-statement evidence, confidence, explainability |
+| [0004](docs/adr/0004-plugin-architecture.md) | Plugin architecture; everything external is replaceable |
+| [0005](docs/adr/0005-event-bus.md) | Event bus; loose coupling, no direct agent-to-agent calls |
+| [0006](docs/adr/0006-json-resume-master-profile.md) | JSON Resume master profile; single source of truth |
+| [0007](docs/adr/0007-planner-agent.md) | Planner Agent; coordinator only, Decide as a swappable step |
+| [0008](docs/adr/0008-human-in-the-loop.md) | Human-in-the-loop applying; pause, never bypass |
+| [0009](docs/adr/0009-learning-engine.md) | Learning engine; improve from real outcomes |
+| [0010](docs/adr/0010-hybrid-application-strategy.md) | Hybrid tiered applicator; ATS API → browser → email |
+
+Every ADR ends with **Future revisit criteria**, so the architecture stays open
+to change instead of frozen forever.
