@@ -13,7 +13,9 @@ from career_agent.domain.models import (
     BasicsSection,
     EvidenceRef,
     MasterProfile,
+    Opportunity,
     Outcome,
+    Provenance,
     RejectionReason,
     SkillEntry,
     Statement,
@@ -129,6 +131,29 @@ def test_rejected_draft_still_produces_an_auditable_tailored_resume() -> None:
     )
     assert resume.truthfulness.approved is False
     assert resume.truthfulness.rejections[0].category == "skill_not_found"
+
+
+def test_opportunity_requires_provenance() -> None:
+    """ADR-0012: provenance is required with no default, so no source can emit
+    an Opportunity without recording how (and how confidently) it was derived --
+    this is what makes provenance universal by construction, not HN-only."""
+    with pytest.raises(ValidationError):
+        Opportunity(
+            id="opp-1",
+            company_id="acme",
+            title="Engineer",
+            source="ats_api",
+            source_url="https://example.invalid/1",
+            description_raw="",
+            discovered_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+
+def test_provenance_confidence_bounds_enforced() -> None:
+    with pytest.raises(ValidationError):
+        Provenance(
+            method="text_extraction", reference="ref", extraction_confidence=1.5
+        )
 
 
 def test_tailored_work_entry_traces_back_to_source_entry() -> None:

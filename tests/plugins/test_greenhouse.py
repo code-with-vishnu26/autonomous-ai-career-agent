@@ -37,6 +37,11 @@ async def test_fetch_normalizes_all_jobs() -> None:
     assert engineer.remote is True
     assert "Python" in engineer.description_raw
     assert engineer.posted_at == datetime(2026, 6, 20, 18, 30, tzinfo=UTC)
+    # provenance is populated by structured sources too (ADR-0012): confidence
+    # is exactly 1.0 and the reference points at the raw API item.
+    assert engineer.provenance.method == "structured_api"
+    assert engineer.provenance.extraction_confidence == 1.0
+    assert engineer.provenance.reference.endswith("/boards/acme/jobs/4012345")
 
     designer = next(o for o in opportunities if o.title == "Product Designer")
     assert designer.remote is False  # "New York, NY"
