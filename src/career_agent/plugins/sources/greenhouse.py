@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from career_agent.core.interfaces import HttpClient
 from career_agent.domain.identity import opportunity_id
 from career_agent.domain.models import Opportunity
+from career_agent.plugins.sources._dates import as_utc
 
 _ATS_KIND = "greenhouse"
 _DEFAULT_BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
@@ -58,7 +59,7 @@ class GreenhouseSource:
         are fetched and filtered client-side by ``updated_at`` -- a quirk kept
         private to this source.
         """
-        cutoff = _as_utc(since)
+        cutoff = as_utc(since)
         opportunities: list[Opportunity] = []
         for board in self._boards:
             payload = await self._client.get_json(
@@ -126,13 +127,6 @@ def _parse_dt(value: object) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     try:
-        return _as_utc(datetime.fromisoformat(value))
+        return as_utc(datetime.fromisoformat(value))
     except ValueError:
         return None
-
-
-def _as_utc(value: datetime) -> datetime:
-    """Return ``value`` as an aware UTC datetime (assume UTC if naive)."""
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)

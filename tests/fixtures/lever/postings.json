@@ -1,0 +1,20 @@
+[
+  {
+    "id": "a1b2c3d4-0000-4000-8000-000000000001",
+    "text": "Staff Software Engineer",
+    "createdAt": 1781965800000,
+    "categories": { "location": "Remote - Worldwide", "team": "Engineering", "commitment": "Full-time" },
+    "hostedUrl": "https://jobs.lever.co/acme/a1b2c3d4-0000-4000-8000-000000000001",
+    "workplaceType": "remote",
+    "descriptionPlain": "Own core platform services in Python and Go."
+  },
+  {
+    "id": "a1b2c3d4-0000-4000-8000-000000000002",
+    "text": "Account Executive",
+    "createdAt": 1777626000000,
+    "categories": { "location": "London, UK", "team": "Sales", "commitment": "Full-time" },
+    "hostedUrl": "https://jobs.lever.co/acme/a1b2c3d4-0000-4000-8000-000000000002",
+    "workplaceType": "on-site",
+    "descriptionPlain": "Drive new business across EMEA."
+  }
+]
