@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from career_agent.core.interfaces import OpportunityRepository
-from career_agent.domain.models import Opportunity
+from career_agent.domain.models import Opportunity, Provenance
 from career_agent.storage.memory import InMemoryOpportunityRepository
 
 
@@ -16,6 +16,11 @@ def _opp(opportunity_id: str = "id-1") -> Opportunity:
         title="Engineer",
         source="ats_api",
         source_url="https://example.invalid/1",
+        provenance=Provenance(
+            method="structured_api",
+            reference="https://example.invalid/api/1",
+            extraction_confidence=1.0,
+        ),
         description_raw="",
         discovered_at=datetime(2026, 1, 1, tzinfo=UTC),
     )

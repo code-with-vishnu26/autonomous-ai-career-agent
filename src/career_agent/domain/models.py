@@ -175,6 +175,35 @@ class Company(BaseModel):
     ) = None
 
 
+class Provenance(BaseModel):
+    """How an opportunity was derived, and how confidently (ADR-0012).
+
+    Populated by *every* source, not just freeform ones. Structured sources
+    (ATS APIs, the YC feed) set ``method="structured_api"``/``"structured_feed"``
+    and ``extraction_confidence=1.0`` -- the source *is* the ground truth.
+    Freeform sources that parse prose (Hacker News "Who's Hiring", later) set
+    ``method="text_extraction"`` and a real confidence ``< 1.0``, giving the
+    firehose an honest way to say "I'm not sure this is a real posting" instead
+    of emitting a confident guess into the truthfulness-gated apply path.
+
+    ``extraction_confidence`` lives here, not on :class:`Opportunity`, on
+    purpose: confidence is a property of *how the opportunity was derived*, not
+    of the opportunity itself, so keeping it beside ``method`` stops a reader
+    from thresholding on the number without the extraction method right next to
+    it (a 0.4 heuristic guess and a 1.0 API fact are not comparable numbers).
+    """
+
+    method: Literal["structured_api", "structured_feed", "text_extraction"]
+    #: Stable pointer to the *raw* source item that was parsed -- distinct from
+    #: ``Opportunity.source_url`` (the human apply/view page). For an ATS this is
+    #: the API item; for a Hacker News post it is the comment permalink, which is
+    #: not the apply link buried in the post's prose. It is the audit trail back
+    #: to exactly what was read, which is what makes a low-confidence extraction
+    #: reviewable later.
+    reference: str
+    extraction_confidence: float = Field(ge=0.0, le=1.0)
+
+
 class Opportunity(BaseModel):
     """A discovered job posting, normalized across every discovery source."""
 
@@ -183,6 +212,7 @@ class Opportunity(BaseModel):
     title: str
     source: Literal["ats_api", "yc", "hn", "career_page", "web_search"]
     source_url: str
+    provenance: Provenance  # required (ADR-0012): every source must populate it
     ats_ref: str | None = None
     posted_at: datetime | None = None
     location: str | None = None

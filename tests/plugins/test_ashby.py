@@ -39,6 +39,8 @@ async def test_fetch_normalizes_jobs_and_uses_explicit_is_remote() -> None:
     assert engineer.remote is True  # explicit isRemote bool, not inferred
     assert "infrastructure" in engineer.description_raw
     assert engineer.posted_at == datetime(2026, 6, 15, 12, 0, tzinfo=UTC)
+    assert engineer.provenance.method == "structured_api"
+    assert engineer.provenance.extraction_confidence == 1.0
 
     writer = next(o for o in opportunities if o.title == "Technical Writer")
     assert writer.remote is False  # explicit isRemote == false, despite Berlin

@@ -177,6 +177,7 @@ pull request is checked against.
 | [0009](docs/adr/0009-learning-engine.md) | Learning engine; improve from real outcomes |
 | [0010](docs/adr/0010-hybrid-application-strategy.md) | Hybrid tiered applicator; ATS API → browser → email |
 | [0011](docs/adr/0011-structured-tailored-content.md) | Structured tailored resume content; not free text |
+| [0012](docs/adr/0012-opportunity-provenance-and-confidence.md) | Opportunity provenance + extraction confidence; honest uncertainty for freeform sources |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.

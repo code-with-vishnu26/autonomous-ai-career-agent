@@ -42,6 +42,8 @@ async def test_fetch_normalizes_bare_array_payload() -> None:
     assert "Python" in engineer.description_raw
     # createdAt (epoch ms) parsed to an aware UTC datetime
     assert engineer.posted_at == datetime(2026, 6, 20, 14, 30, tzinfo=UTC)
+    assert engineer.provenance.method == "structured_api"
+    assert engineer.provenance.extraction_confidence == 1.0
 
     ae = next(o for o in opportunities if o.title == "Account Executive")
     assert ae.remote is False  # workplaceType == "on-site"

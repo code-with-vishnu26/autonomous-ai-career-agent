@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 
 from career_agent.core.interfaces import HttpClient
 from career_agent.domain.identity import opportunity_id
-from career_agent.domain.models import Opportunity
+from career_agent.domain.models import Opportunity, Provenance
 from career_agent.plugins.sources._dates import as_utc
 
 _ATS_KIND = "ashby"
@@ -74,6 +74,13 @@ class AshbySource:
             title=title,
             source="ats_api",
             source_url=str(raw.get("jobUrl", "")),
+            provenance=Provenance(
+                method="structured_api",
+                # Ashby's board API returns all jobs at once (no per-item
+                # endpoint), so anchor the feed URL to this item's id.
+                reference=f"{self._base_url}/{board}#{ats_ref}",
+                extraction_confidence=1.0,
+            ),
             ats_ref=ats_ref,
             posted_at=posted_at,
             location=location,

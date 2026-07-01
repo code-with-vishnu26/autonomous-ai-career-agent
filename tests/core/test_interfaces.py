@@ -31,6 +31,7 @@ from career_agent.domain.models import (
     Company,
     MasterProfile,
     Opportunity,
+    Provenance,
     TailoredContent,
     TailoredResumeDraft,
     TruthfulnessResult,
@@ -166,6 +167,11 @@ async def test_generator_then_gate_orchestration_never_self_approves() -> None:
         title="Engineer",
         source="ats_api",
         source_url="https://example.com/job",
+        provenance=Provenance(
+            method="structured_api",
+            reference="https://example.com/api/job",
+            extraction_confidence=1.0,
+        ),
         description_raw="...",
         discovered_at=datetime.now(),
     )

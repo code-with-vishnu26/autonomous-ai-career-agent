@@ -1,0 +1,24 @@
+{
+  "jobs": [
+    {
+      "id": "yc-9001",
+      "role": "Founding Engineer",
+      "company": { "name": "Nimbus Labs", "slug": "nimbus-labs" },
+      "location": "Remote (US)",
+      "remote": true,
+      "url": "https://www.ycombinator.com/companies/nimbus-labs/jobs/yc-9001",
+      "posted_at": "2026-06-18T00:00:00+00:00",
+      "description": "Build the core product from zero with a small team."
+    },
+    {
+      "id": "yc-9002",
+      "role": "Growth Marketer",
+      "company": { "name": "Nimbus Labs", "slug": "nimbus-labs" },
+      "location": "San Francisco, CA",
+      "remote": false,
+      "url": "https://www.ycombinator.com/companies/nimbus-labs/jobs/yc-9002",
+      "posted_at": "2026-04-22T00:00:00+00:00",
+      "description": "Own top-of-funnel growth experiments."
+    }
+  ]
+}
