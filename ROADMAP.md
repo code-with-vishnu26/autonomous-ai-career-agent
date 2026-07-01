@@ -46,6 +46,25 @@ the provider-abstracted search layer (Exa + Google CSE failover).
 **Done when:** real openings can be discovered and normalized into `Opportunity`
 records, ToS-respecting, with tests.
 
+Sub-slices: **4a** Discovery Agent + wiring + one real source (Greenhouse) —
+merged. **4b** remaining ATS/feed sources, split: **4b-ATS** Lever + Ashby (same
+shape as Greenhouse — proves the `OpportunitySource` contract survives a
+differently-shaped API of the same kind), then **4b-feeds** YC `hiring.json` + HN
+"Who's Hiring" (the harder test — a firehose to filter, no structured job
+object). **4c** the provider-abstracted search layer + dynamic ranking (ADR-0002).
+
+> **Phase 4c decision checkpoint (do not let drift).** Opportunity identity today
+> uses the ATS-native id for exact idempotency (`opportunity_id`) with
+> `canonical_fingerprint(company, title, location)` as the source-independent
+> cross-source key. 4c is the phase where web search finds a job the ATS API
+> already returned, so 4c **must make an explicit, ADR-recorded choice** on
+> cross-source dedup: fingerprint-primary vs. a two-key match — decided with the
+> real multi-source case in front of it, not settled by convenience. A related
+> sub-decision surfaces in 4b: the fingerprint's *company* component is currently
+> the ATS **board token**, which differs across ATSes for the same employer, so
+> 4c's dedup decision must also settle **company-identity normalization**
+> (canonical company/domain). Both are deferred consciously, not overlooked.
+
 ## ⬜ Phase 5 — JSON Resume master profile
 The structured master profile (JSON Resume schema), its loader/validator, and the
 **fabrication-detection gate** scaffolding that later grounds all generated
