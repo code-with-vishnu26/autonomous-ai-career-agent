@@ -60,3 +60,4 @@ The conditions under which we should reopen this decision.
 | [0008](0008-human-in-the-loop.md) | Human-in-the-loop application (pause, never bypass) | Accepted |
 | [0009](0009-learning-engine.md) | Learning engine (improve from real outcomes) | Accepted |
 | [0010](0010-hybrid-application-strategy.md) | Hybrid (tiered) application strategy (API → browser → email) | Accepted |
+| [0011](0011-structured-tailored-content.md) | Structured tailored resume content (not free text) | Accepted |
