@@ -16,6 +16,7 @@ def test_package_has_version() -> None:
 def test_subpackages_import() -> None:
     """Every scaffolded subpackage imports cleanly."""
     for name in (
+        "career_agent.domain",
         "career_agent.core",
         "career_agent.agents",
         "career_agent.agents.planner",

@@ -145,7 +145,8 @@ See [`ROADMAP.md`](ROADMAP.md) for the phase that introduces each part.
 
 ```
 src/career_agent/
-├── core/          # event bus, plugin registry, config, shared models
+├── domain/        # pure data models + business rules, zero I/O (ADR-0006, ADR-0011)
+├── core/          # event bus, plugin registry, interfaces, config
 ├── agents/        # planner + discovery/resume/apply/learning
 ├── plugins/       # ats adapters, opportunity sources, search providers
 ├── llm/           # Claude client + Haiku→Sonnet→Opus cascade
@@ -175,6 +176,7 @@ pull request is checked against.
 | [0008](docs/adr/0008-human-in-the-loop.md) | Human-in-the-loop applying; pause, never bypass |
 | [0009](docs/adr/0009-learning-engine.md) | Learning engine; improve from real outcomes |
 | [0010](docs/adr/0010-hybrid-application-strategy.md) | Hybrid tiered applicator; ATS API → browser → email |
+| [0011](docs/adr/0011-structured-tailored-content.md) | Structured tailored resume content; not free text |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.
