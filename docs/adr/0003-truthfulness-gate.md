@@ -94,7 +94,11 @@ claim cannot be made.
 - The master profile becomes load-bearing: richer profile ⇒ more that can be
   truthfully said. This reinforces [ADR-0006](0006-json-resume-master-profile.md).
 - The gate sits on the Apply path as a mandatory step before any submission tier
-  ([ADR-0010](0010-hybrid-application-strategy.md)).
+  ([ADR-0010](0010-hybrid-application-strategy.md)). It is enforced
+  **synchronously and inline** (generator → gate → hard stop when not approved).
+  The `TruthfulnessRejected` event merely *notifies* of a block already
+  enforced; the block must never depend on event delivery, which is best-effort
+  ([ADR-0005](0005-event-bus.md) amendment: "events notify, they do not gate").
 - The Learning engine can track which claims get blocked most to suggest profile
   enrichment.
 

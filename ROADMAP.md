@@ -18,18 +18,24 @@ the agent-oriented architecture decision), `.gitignore`, `requirements.txt`,
 **Done when:** the structure exists, documents are coherent, and the layout has
 been reviewed.
 
-## ⬜ Phase 2 — Architecture + interfaces
+## ✅ Phase 2 — Architecture + interfaces
 Define the core abstractions and Pydantic models: agent base interface, event
 types, the `Opportunity` / `Resume` / `Application` domain models, the plugin
 extension-point protocols, and the Planner's decision contract. Interfaces only —
-no heavy implementation.
+no heavy implementation. Delivered a dependency-free `domain/` layer split from
+the orchestration-facing `core/` layer, with ADR-0011 recording the structured
+tailored-content decision.
 **Done when:** typed interfaces compile, are documented, and an ADR captures the
 interface design.
 
-## ⬜ Phase 3 — Plugin system + event bus
+## ✅ Phase 3 — Plugin system + event bus
 Implement the plugin registry and the publish/subscribe event bus that everything
 else builds on. Include discovery/registration of plugins and event dispatch with
-tests.
+tests. Registry keys by `(extension-point protocol, name)`; the bus is in-process,
+best-effort, with error-isolated delivery — and, critically, **events notify but
+do not gate** (safety-critical blocks are enforced inline, never via delivery;
+ADR-0005 amendment). Dependency direction is now enforced by import-linter in the
+test suite.
 **Done when:** a sample plugin can register and agents can communicate purely via
 events, covered by tests.
 

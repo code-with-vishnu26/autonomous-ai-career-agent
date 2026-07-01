@@ -17,8 +17,6 @@ from career_agent.core.interfaces import (
     ATSAdapter,
     NotificationSink,
     OpportunitySource,
-    PluginBase,
-    PluginRegistry,
     ProviderCapabilities,
     ResumeGenerator,
     SearchProvider,
@@ -44,17 +42,6 @@ class _FakeAgent:
 
     async def handle(self, task: Task) -> None:
         return None
-
-
-class _FakeRegistry:
-    pass
-
-
-class _FakePlugin:
-    plugin_name = "fake-plugin"
-
-    def register(self, registry: PluginRegistry) -> None:
-        pass
 
 
 class _FakeSearchProvider:
@@ -128,10 +115,6 @@ class _FakeNotificationSink:
 
 def test_agent_base_is_structurally_satisfiable() -> None:
     assert isinstance(_FakeAgent(), AgentBase)
-
-
-def test_plugin_base_is_structurally_satisfiable() -> None:
-    assert isinstance(_FakePlugin(), PluginBase)
 
 
 def test_search_provider_is_structurally_satisfiable() -> None:

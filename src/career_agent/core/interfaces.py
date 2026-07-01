@@ -48,26 +48,11 @@ class AgentBase(Protocol):
         ...
 
 
-@runtime_checkable
-class PluginRegistry(Protocol):
-    """Opaque handle plugins register against.
-
-    The full registry mechanism (lookup by extension point, health tracking,
-    conflict detection) is built in Phase 3 (ADR-0004); this is only the
-    shape :class:`PluginBase` depends on today, kept intentionally empty so
-    Phase 2 does not pre-decide Phase 3's design.
-    """
-
-
-@runtime_checkable
-class PluginBase(Protocol):
-    """The shape every plugin must expose to self-register (ADR-0004)."""
-
-    plugin_name: str
-
-    def register(self, registry: PluginRegistry) -> None:
-        """Register this plugin's capability against ``registry``."""
-        ...
+# The plugin registry itself is a concrete class, not a Protocol -- see
+# :mod:`career_agent.core.registry` (Phase 3, ADR-0004). Plugins do not
+# implement a common ``PluginBase`` interface; they implement their
+# extension-point protocol below (``SearchProvider``, ``ATSAdapter``, ...) and
+# are registered via the ``@register`` decorator + ``discover()``.
 
 
 # ---------------------------------------------------------------------------
