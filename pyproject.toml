@@ -44,6 +44,7 @@ dev = [
     "black>=24.0",
     "isort>=5.13",
     "mypy>=1.10",
+    "import-linter>=2.0",
     "pre-commit>=3.7",
 ]
 
@@ -94,3 +95,34 @@ minversion = "8.0"
 addopts = "-ra -q"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+# ---------------------------------------------------------------------------
+# Dependency-direction enforcement (import-linter). Dependencies must point
+# downward only; domain must depend on nothing else in the project. Enforced
+# in the test suite by tests/test_architecture.py, so it fails the build if
+# an import goes the wrong way.
+# ---------------------------------------------------------------------------
+[tool.importlinter]
+root_package = "career_agent"
+
+[[tool.importlinter.contracts]]
+name = "Dependencies point downward only"
+type = "layers"
+layers = [
+    "career_agent.agents | career_agent.plugins",
+    "career_agent.core",
+    "career_agent.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain depends on nothing else in the project"
+type = "forbidden"
+source_modules = ["career_agent.domain"]
+forbidden_modules = [
+    "career_agent.core",
+    "career_agent.agents",
+    "career_agent.plugins",
+    "career_agent.llm",
+    "career_agent.storage",
+    "career_agent.integrations",
+]

@@ -66,6 +66,17 @@ inter-agent communication channel.
   and versioned like an interface.
 - Tests assert behavior by publishing events and observing emitted events.
 
+## Amendment (2026-07-01): events notify, they do not gate
+
+Because delivery is best-effort and handler errors are isolated/swallowed
+(a flaky subscriber must not wedge the bus), **the event bus must never be the
+mechanism that enforces a safety-critical decision.** Safety-critical blocks —
+above all the truthfulness gate ([ADR-0003](0003-truthfulness-gate.md)) — are
+enforced *synchronously and inline* on the path that acts on them (generator →
+gate → hard stop when not approved). The corresponding event (e.g.
+`TruthfulnessRejected`) is only a *notification of a decision already
+enforced*, never the thing that enforces it. Events notify; they do not gate.
+
 ## Future revisit criteria
 
 Revisit if:
