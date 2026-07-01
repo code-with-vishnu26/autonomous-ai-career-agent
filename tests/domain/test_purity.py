@@ -23,6 +23,8 @@ ALLOWED_TOP_LEVEL_IMPORTS = {
     "enum",
     "uuid",
     "dataclasses",
+    "hashlib",
+    "re",
     # the one third-party dependency domain is allowed: Pydantic
     "pydantic",
     # domain may import from itself

@@ -1,0 +1,21 @@
+{
+  "jobs": [
+    {
+      "id": 4012345,
+      "title": "Senior Backend Engineer",
+      "updated_at": "2026-06-20T14:30:00-04:00",
+      "location": { "name": "Remote - US" },
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4012345",
+      "content": "&lt;p&gt;Build resilient services in Python.&lt;/p&gt;"
+    },
+    {
+      "id": 4012346,
+      "title": "Product Designer",
+      "updated_at": "2026-05-01T09:00:00-04:00",
+      "location": { "name": "New York, NY" },
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4012346",
+      "content": "&lt;p&gt;Design delightful product experiences.&lt;/p&gt;"
+    }
+  ],
+  "meta": { "total": 2 }
+}
