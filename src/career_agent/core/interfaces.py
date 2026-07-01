@@ -125,10 +125,60 @@ class SearchProvider(Protocol):
 
 @runtime_checkable
 class OpportunitySource(Protocol):
-    """A pluggable opportunity feed (YC, Hacker News, career pages, ...)."""
+    """A pluggable opportunity feed (YC, Hacker News, career pages, ...).
+
+    ``fetch(since)`` is the whole contract: return opportunities discovered
+    since ``since``, already normalized to :class:`Opportunity`. Any
+    source-specific mechanics -- pagination, a lack of server-side ``since``
+    filtering, HTML content fields -- are the source's private concern and
+    must not leak into this signature. Adding a second source (Lever, Ashby)
+    must not require changing this interface.
+    """
 
     async def fetch(self, since: datetime) -> list[Opportunity]:
         """Return opportunities discovered since ``since``."""
+        ...
+
+
+@runtime_checkable
+class HttpClient(Protocol):
+    """A minimal async HTTP port so sources depend on an interface, not httpx.
+
+    Kept deliberately tiny: sources need to GET JSON. A real httpx-backed
+    implementation lives in :mod:`career_agent.integrations.http`; tests inject
+    a fake that replays recorded fixtures, so the suite never makes a network
+    call.
+    """
+
+    async def get_json(
+        self, url: str, *, params: dict[str, str] | None = None
+    ) -> object:
+        """GET ``url`` and return the parsed JSON body."""
+        ...
+
+
+@runtime_checkable
+class OpportunityRepository(Protocol):
+    """Idempotent store of discovered opportunities (dedup boundary).
+
+    This is *the contract*; the Phase 4a in-memory implementation and the
+    later SQLite implementation both satisfy exactly these two methods and no
+    more, so the swap is a drop-in. ``add`` is the dedup primitive: it returns
+    ``True`` when the opportunity was newly stored and ``False`` when its
+    :attr:`Opportunity.id` was already present, so a caller emits a discovery
+    event only for genuinely new opportunities.
+    """
+
+    async def add(self, opportunity: Opportunity) -> bool:
+        """Store ``opportunity``; return whether it was newly added.
+
+        Returns ``False`` (and does not overwrite) if the id was already
+        present.
+        """
+        ...
+
+    async def get(self, opportunity_id: str) -> Opportunity | None:
+        """Return the stored opportunity with this id, or ``None``."""
         ...
 
 
