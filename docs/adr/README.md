@@ -70,3 +70,4 @@ The conditions under which we should reopen this decision.
 | [0018](0018-submission-safety.md) | Submission safety: structural approval (SubmittableApplication), confirmation-token binding, verifier isolation | Accepted |
 | [0019](0019-ats-kind-resolution-and-tier-fallback.md) | ATS-kind resolution (reused ADR-0015 pattern-match, no new repository) and no cross-tier auto-retry | Accepted |
 | [0020](0020-browser-tier-session-and-pause.md) | Browser-tier session encryption (OS-keychain-backed, fail-closed) and the token-bound pause/resume guarantee, proven against real Playwright | Accepted |
+| [0021](0021-email-tier-draft-only.md) | Email tier is draft-only: EmailDraftSink has no send method, submit() never claims ApplicationSubmitted | Accepted |

@@ -353,6 +353,19 @@ class Application(BaseModel):
     it. That is exactly why ``Application`` alone must never be the type
     ``Applicator``/``ATSAdapter`` submission methods accept: see
     :class:`SubmittableApplication`.
+
+    ``status="paused_for_human"`` is not one uniform kind of "waiting"
+    (ADR-0021). A browser-tier CAPTCHA/verification pause (ADR-0020) is
+    *temporarily* blocked and genuinely resumable -- the live session is
+    held open and ``BrowserApplicator.resume()`` can advance it once the
+    human clears the challenge. An email-tier pause (ADR-0021) is
+    *permanently* outside this system's reach: a draft was created and
+    nothing further can be automated -- there is no ``resume()`` for the
+    email tier at all, because sending is a capability this project
+    deliberately never gives itself (``EmailDraftSink`` has no ``send``
+    method). A future dashboard or notification surfacing
+    ``paused_for_human`` applications as one list must not imply a uniform
+    "resume" action is available for all of them.
     """
 
     id: str

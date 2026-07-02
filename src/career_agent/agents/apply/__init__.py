@@ -25,6 +25,16 @@ sessions are encrypted at rest with an OS-keychain-held key
 (:mod:`~career_agent.integrations.browser_session`), fail-closed if the
 keychain is unavailable.
 
-Tier 3 (email, via Gmail) and generalizing Tier 2 beyond Greenhouse's form
-shape are still future work.
+``email_applicator.py`` (Phase 7b4, ADR-0021) is Tier 3: creates a draft
+email via an injected :class:`~career_agent.core.interfaces.EmailDraftSink`
+-- which has **no send method at all**, a deliberate interface-level scope
+restraint, not an external fact. ``submit()`` therefore never returns
+``ApplicationSubmitted``, only ``HumanActionRequired`` -- claiming a send
+that didn't happen would be the truthfulness gap ADR-0003 exists to
+prevent. The real, OAuth-backed ``GmailDraftSink`` is not built yet
+(deliberately -- an OAuth token needs the same dedicated review
+ADR-0020 gave session encryption).
+
+Remaining Tier 1 adapters, generalizing Tier 2 beyond Greenhouse's form
+shape, and the real Gmail client are still future work.
 """

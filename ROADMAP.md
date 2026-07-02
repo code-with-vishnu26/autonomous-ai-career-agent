@@ -210,13 +210,34 @@ load-bearing test asserts the fixture's own success marker never appears
 when `resume()` is called with the challenge still visible, the browser-tier
 analogue of ADR-0018's `adapter.calls == []` proof.
 
-**Remaining (7b2, 7b4+):** the remaining Tier 1 adapters (lower priority per
-the reprioritization above) and Tier 3 (email-to-apply), likely via this
-environment's already-connected Gmail integration rather than a new SMTP
-integration (direction flagged, decision deferred to that slice's own
-pre-brief). The profile-staleness gap ADR-0018 names, and generalizing
-`BrowserApplicator` beyond Greenhouse's form shape, must both be addressed
-before any scheduled/autonomous apply run is built.
+**7b4 — email tier, draft-only, merged.** Recorded in **ADR-0021**. A design
+check corrected the pre-brief's own premise mid-flight: the Gmail tool
+surface available in *this development session* has no send capability, but
+that's a fact about this session's connector, not the shipped application —
+so the real guarantee comes from `EmailDraftSink` (`core/interfaces.py`)
+deliberately exposing **no `send` method at all**, pinned by a canary test
+(verified to bite, same as ADR-0019's). `EmailApplicator.submit()` creates a
+draft (same confirmation-token binding as Tier 1/2 — a mismatched/unknown/
+replayed token never reaches `EmailDraftSink`) and always returns
+`HumanActionRequired(reason="confirmation")`, never `ApplicationSubmitted` —
+claiming a send that didn't happen would be the truthfulness gap ADR-0003
+exists to prevent, relocated from resume content to the system's own claims
+about its actions. `Application.status="paused_for_human"` is now documented
+as meaning two structurally different things: a browser-tier pause is
+temporary and resumable (`BrowserApplicator.resume()`); an email-tier pause
+is permanent from this system's perspective (no `resume()` exists for this
+tier at all). The real, OAuth-backed `GmailDraftSink` is explicitly **not
+built this slice** — an OAuth token is the same credentials-risk category
+ADR-0020 designed encryption for, and deserves its own dedicated review, not
+a rider on this one. Recipient-address resolution and confirming a drafted
+email was actually sent are named gaps; the latter is tied to the same
+scheduled/autonomous-run trigger as ADR-0018's profile-staleness gap.
+
+**Remaining:** the lower-priority remaining Tier 1 adapters (7b2); the real
+`GmailDraftSink`; recipient-address resolution; generalizing
+`BrowserApplicator` beyond Greenhouse's form shape. The profile-staleness
+gap and the send-confirmation gap must both close before any
+scheduled/autonomous apply run is built.
 **Done when:** adapters plug in via the registry with no core changes, with tests.
 
 ## ⬜ Phase 8 — Application engine

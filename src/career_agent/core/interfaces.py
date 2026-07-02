@@ -242,6 +242,25 @@ class ATSAdapter(Protocol):
         ...
 
 
+@runtime_checkable
+class EmailDraftSink(Protocol):
+    """Creates a draft email -- and only a draft (ADR-0021).
+
+    Deliberately has **no** ``send`` method. That is a scope restraint this
+    project holds itself to, not a fact about the underlying email API --
+    the real Gmail API can send mail; this Protocol simply never exposes
+    that capability, so nothing in this codebase can call it without first
+    widening the interface, a visible, reviewable change. Tier 3
+    (``EmailApplicator``) can therefore never claim
+    ``ApplicationSubmitted`` -- only a human, acting outside this system in
+    their own email client, can actually send.
+    """
+
+    async def create_draft(self, *, to: str, subject: str, body: str) -> str:
+        """Create a draft email; return an opaque id identifying it."""
+        ...
+
+
 # ---------------------------------------------------------------------------
 # Applying (ADR-0010, ADR-0018) and truthfulness (ADR-0003).
 # ---------------------------------------------------------------------------
