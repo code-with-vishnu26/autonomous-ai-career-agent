@@ -27,7 +27,6 @@ confident job posting is out of scope for this slice; see ADR-0015.
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 
 from career_agent.core.interfaces import (
@@ -37,17 +36,11 @@ from career_agent.core.interfaces import (
     SearchQuery,
     SearchResult,
 )
+from career_agent.domain.ats_urls import match_ats_url
 from career_agent.domain.models import HeldCandidate, Opportunity
 from career_agent.plugins.sources.ashby import AshbySource
 from career_agent.plugins.sources.greenhouse import GreenhouseSource
 from career_agent.plugins.sources.lever import LeverSource
-
-# (ats_kind, pattern) -- pattern captures (board_or_company, job_id)
-_ATS_URL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("greenhouse", re.compile(r"boards\.greenhouse\.io/([^/]+)/jobs/([^/?#]+)")),
-    ("lever", re.compile(r"jobs\.lever\.co/([^/]+)/([^/?#]+)")),
-    ("ashby", re.compile(r"jobs\.ashbyhq\.com/([^/]+)/([^/?#]+)")),
-]
 
 _GENERIC_HELD_CONFIDENCE = 0.15  # a career page / blog post: weak, unstructured
 _UNCONFIRMED_HELD_CONFIDENCE = 0.4  # matched an ATS pattern, but didn't parse
@@ -91,7 +84,7 @@ class SearchOpportunitySource:
         return opportunities
 
     async def _classify(self, result: SearchResult) -> Opportunity | HeldCandidate:
-        match = _match_ats_pattern(result.url)
+        match = match_ats_url(result.url)
         if match is None:
             return self._hold(
                 "ambiguous_parse", result, _GENERIC_HELD_CONFIDENCE
@@ -140,11 +133,3 @@ class SearchOpportunitySource:
 
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-
-def _match_ats_pattern(url: str) -> tuple[str, str, str] | None:
-    for ats_kind, pattern in _ATS_URL_PATTERNS:
-        match = pattern.search(url)
-        if match:
-            return ats_kind, match.group(1), match.group(2)
-    return None

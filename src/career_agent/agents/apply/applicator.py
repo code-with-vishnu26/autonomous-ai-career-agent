@@ -1,15 +1,25 @@
-"""The concrete :class:`Applicator` — Tier 1 (direct ATS API) only (ADR-0018).
+"""The concrete Tier-1-only Applicator (ADR-0018, ADR-0019).
 
 This slice proves the submission safety machinery end-to-end: structural
 approval (``SubmittableApplication``, enforced in ``domain/models.py``, not
-here) and confirmation-token binding (enforced here, in ``submit``). Tier
-selection/fallback across ATS API -> browser -> email (ADR-0010) and
-company/ATS-kind resolution are explicitly **not** built in this slice --
-``TieredApplicator`` wraps exactly one injected :class:`ATSAdapter` and
-always targets it. That is a named, tracked scope boundary (ROADMAP,
-ADR-0018), not an oversight: it lets the safety guarantees be built and
-proven correct before the tier-selection logic ADR-0010 itself flags as
-possibly warranting its own future ADR is added on top.
+here) and confirmation-token binding (enforced here, in ``submit``).
+``TieredApplicator`` resolves which registered :class:`ATSAdapter` applies to
+a given opportunity from its ``source_url`` (ADR-0019, reusing the same
+pattern-match ADR-0015 built for web search) -- but it still wraps only Tier
+1. Tier 2 (browser) and Tier 3 (email) don't exist yet, so there is nothing
+to fall back to: an opportunity with no matching or no registered adapter is
+an explicit, typed failure to *prepare* (:class:`NoApplicableAdapterError`),
+not a silent no-op. That is a named, tracked scope boundary (ROADMAP,
+ADR-0018/0019), not an oversight.
+
+Cross-tier fallback, when Tier 2/3 exist, is **not** built into this class
+and never will be automatic here (ADR-0019): a ``HumanConfirmation`` names
+one exact tier, target, and content shape, so falling back from Tier 1 to a
+different tier is a materially different real-world action and must go
+through its own ``prepare()``/confirm/``submit()`` cycle, requiring its own
+confirmation -- an orchestration layer above this one (a future Apply Agent)
+decides whether and how to retry a failed tier; ``TieredApplicator`` itself
+only ever executes the one confirmed action it was given.
 """
 
 from __future__ import annotations
@@ -17,12 +27,26 @@ from __future__ import annotations
 import uuid
 
 from career_agent.core.events import ApplicationFailed, Event
-from career_agent.core.interfaces import ATSAdapter
+from career_agent.core.interfaces import ATSAdapter, OpportunityRepository
+from career_agent.domain.ats_urls import resolve_ats_kind
 from career_agent.domain.models import (
     HumanConfirmation,
     SubmissionPreview,
     SubmittableApplication,
 )
+
+
+class NoApplicableAdapterError(Exception):
+    """No Tier 1 adapter applies to this opportunity, so it cannot be prepared.
+
+    Fires when the opportunity isn't found, its ``source_url`` doesn't match
+    a known ATS pattern, or it matches a pattern this ``TieredApplicator``
+    has no adapter registered for. With only Tier 1 built, this means
+    submission genuinely cannot proceed right now -- there is no fallback
+    tier to try yet. Never silently swallowed into an empty/failed result;
+    the caller must see this to eventually retry via a different tier once
+    one exists (ADR-0019).
+    """
 
 
 class SubmissionError(Exception):
@@ -39,7 +63,7 @@ class SubmissionError(Exception):
 
 
 class TieredApplicator:
-    """Tier 1 only this slice (ADR-0018).
+    """Tier 1 only this slice (ADR-0018, ADR-0019).
 
     Confirmation-token binding is the load-bearing guarantee here: ``submit``
     refuses to call the adapter at all unless ``confirmation.preview_token``
@@ -47,22 +71,56 @@ class TieredApplicator:
     never reaches ``ATSAdapter``.
     """
 
-    def __init__(self, ats_adapter: ATSAdapter) -> None:
-        """Wrap a single ATS adapter -- multi-tier fallback is a later slice."""
-        self._ats_adapter = ats_adapter
-        self._pending: dict[str, tuple[SubmissionPreview, SubmittableApplication]] = {}
+    def __init__(
+        self,
+        ats_adapters: dict[str, ATSAdapter],
+        opportunity_repo: OpportunityRepository,
+    ) -> None:
+        """Wrap the registered Tier 1 adapters, keyed by ``ats_kind``.
+
+        ``opportunity_repo`` resolves an application's opportunity so its
+        ``source_url`` can be pattern-matched to an ``ats_kind`` (ADR-0019) --
+        no separate ``CompanyRepository`` is introduced for this; the same
+        already-proven, already-tested pattern-match ADR-0015 built for web
+        search is reused rather than a new persistence layer speculatively
+        built ahead of an actual need.
+        """
+        self._ats_adapters = ats_adapters
+        self._opportunity_repo = opportunity_repo
+        self._pending: dict[
+            str, tuple[SubmissionPreview, SubmittableApplication, ATSAdapter]
+        ] = {}
 
     async def prepare(self, application: SubmittableApplication) -> SubmissionPreview:
-        """Assemble what would be sent. No network I/O; cannot itself submit."""
+        """Assemble what would be sent. No network I/O; cannot itself submit.
+
+        Raises :class:`NoApplicableAdapterError` if the opportunity can't be
+        resolved to a registered Tier 1 adapter -- with only Tier 1 built,
+        that means preparation genuinely cannot proceed.
+        """
         app = application.application
+        opportunity = await self._opportunity_repo.get(app.opportunity_id)
+        if opportunity is None:
+            raise NoApplicableAdapterError(
+                f"opportunity {app.opportunity_id!r} not found -- cannot "
+                f"resolve which ATS adapter applies"
+            )
+        ats_kind = resolve_ats_kind(opportunity.source_url)
+        adapter = self._ats_adapters.get(ats_kind) if ats_kind else None
+        if adapter is None:
+            raise NoApplicableAdapterError(
+                f"no Tier 1 adapter available for opportunity "
+                f"{app.opportunity_id!r} (resolved ats_kind={ats_kind!r}, "
+                f"registered: {sorted(self._ats_adapters)})"
+            )
         preview = SubmissionPreview(
             application_id=app.id,
             tier="ats_api",
-            target=self._ats_adapter.ats_kind,
+            target=adapter.ats_kind,
             rendered_content=app.resume.rendered_text or app.resume.content.summary,
             preview_token=str(uuid.uuid4()),
         )
-        self._pending[preview.preview_token] = (preview, application)
+        self._pending[preview.preview_token] = (preview, application, adapter)
         return preview
 
     async def submit(
@@ -85,7 +143,7 @@ class TieredApplicator:
                 f"{preview.preview_token!r} -- call prepare() first, and "
                 f"never submit the same preview twice"
             )
-        stored_preview, application = pending
+        stored_preview, application, adapter = pending
         if stored_preview != preview:
             raise ValueError(
                 "preview does not match the one issued by prepare() for "
@@ -103,7 +161,7 @@ class TieredApplicator:
         # replay -- a genuine retry must go through prepare() again.
         del self._pending[preview.preview_token]
         try:
-            return await self._ats_adapter.submit(application)
+            return await adapter.submit(application)
         except SubmissionError as exc:
             return ApplicationFailed(
                 correlation_id=application.application.opportunity_id,

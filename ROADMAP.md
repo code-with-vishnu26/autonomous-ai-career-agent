@@ -172,10 +172,31 @@ from Phase 4's version of offline-fixture-first discipline. This slice wraps
 exactly one `ATSAdapter` (no tier fallback, no company/ATS-kind resolution
 yet) — named, not silently dropped.
 
-**Remaining (7b+):** multi-tier fallback (browser, email) and
-company/ATS-kind resolution; real Greenhouse/Lever/Ashby `submit()`
-implementations (live-validated only on the user's own machine, per
-ADR-0018); the profile-staleness gap ADR-0018 names must close before any
+**7b1 — ATS-kind resolution + the cross-tier confirmation rule, merged.**
+Recorded in **ADR-0019**. `domain/ats_urls.py` extracts the ADR-0015
+pattern-match classifier (originally built for web search) into a shared,
+dependency-free module; `TieredApplicator` now resolves which registered
+`ATSAdapter` applies to an opportunity from its `source_url` via an injected
+`OpportunityRepository` (Phase 4a's existing port — deliberately no new
+`CompanyRepository`, YAGNI same as Phase 6's loader), raising
+`NoApplicableAdapterError` explicitly when nothing applies. Decided and
+fixed in the type's shape now, before Tier 2/3 exist to make it concrete: a
+tier-fallback attempt is never an automatic retry under the original
+`HumanConfirmation` — each tier attempt requires its own `prepare()` →
+confirm → `submit()` cycle, since a fallback tier is a materially different
+real-world action (different target, sometimes different content shape),
+not a retried transport for the same one.
+
+**Remaining (7b2+), reprioritized by real-world coverage, not slice number:**
+Tier 1's real submission APIs likely cover a narrow slice of postings in
+practice (most companies only expose a public *read* API, not a submission
+one) — so **Tier 2 (browser, Playwright + Browser-Use, session reuse and
+CAPTCHA/verification pause points per ADR-0008) is next**, ahead of building
+out the remaining Tier 1 adapters, since it is expected to cover most real
+applications. Tier 3 (email-to-apply) follows, likely via this environment's
+already-connected Gmail integration rather than a new SMTP integration
+(direction flagged now, decision deferred to that slice's own pre-brief).
+The profile-staleness gap ADR-0018 names must close before any
 scheduled/autonomous apply run is built.
 **Done when:** adapters plug in via the registry with no core changes, with tests.
 
