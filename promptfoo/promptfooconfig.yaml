@@ -1,0 +1,24 @@
+# Truthfulness gate promptfoo eval (ADR-0016).
+#
+# Hard merge gate for the real, Claude-backed ClaimVerifier -- see README.md.
+# Requires ANTHROPIC_API_KEY and network access; not runnable in the sandbox
+# this project was built in. Run from your own machine.
+
+description: "Truthfulness gate -- adversarial fabrication matrix (12 cases)"
+
+prompts:
+  - file://prompt.txt
+
+providers:
+  # Pinned to the same, most-capable tier as AnthropicClaimVerifier -- never
+  # substitute a cheaper model here (ADR-0016's cost-cascade exemption).
+  - id: anthropic:messages:claude-opus-4-8
+    config:
+      temperature: 0
+      max_tokens: 300
+
+tests: file://tests.yaml
+
+defaultTest:
+  assert:
+    - type: is-json

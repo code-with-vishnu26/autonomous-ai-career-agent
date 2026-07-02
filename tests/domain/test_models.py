@@ -94,6 +94,7 @@ def test_truthfulness_result_profile_version_matches_draft() -> None:
         profile_version=draft.profile_version,
         approved=True,
         statements=[],
+        prompt_version="test-v1",
     )
     # this is the load-bearing check: the two versions must agree before a
     # TailoredResume can be legitimately assembled from a draft + a result
@@ -122,6 +123,7 @@ def test_rejected_draft_still_produces_an_auditable_tailored_resume() -> None:
                 detail='skill "AWS" not found in master profile',
             )
         ],
+        prompt_version="test-v1",
     )
     resume = TailoredResume(
         id="resume-1",
@@ -241,7 +243,10 @@ def test_application_requires_status() -> None:
         profile_version=profile.version,
         content=draft.content,
         truthfulness=TruthfulnessResult(
-            profile_version=profile.version, approved=True, statements=[]
+            profile_version=profile.version,
+            approved=True,
+            statements=[],
+            prompt_version="test-v1",
         ),
     )
     app = Application(

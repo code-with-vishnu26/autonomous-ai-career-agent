@@ -105,7 +105,10 @@ class _FakeTruthfulnessGate:
         self, draft: TailoredResumeDraft, profile: MasterProfile
     ) -> TruthfulnessResult:
         return TruthfulnessResult(
-            profile_version=draft.profile_version, approved=True, statements=[]
+            profile_version=draft.profile_version,
+            approved=True,
+            statements=[],
+            prompt_version="test-v1",
         )
 
 

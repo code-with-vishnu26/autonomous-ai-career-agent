@@ -1,0 +1,141 @@
+# The reviewer-defined 12-case adversarial matrix (ADR-0016), as promptfoo
+# test cases. Mirrors tests/agents/_profile_fixture.py's sample_master_profile
+# and tests/agents/test_truthfulness_gate.py's matrix exactly -- keep both in
+# sync if either changes.
+#
+# 10 of the 12 cases appear here, not 12: #4 (fabricated employer) and #6
+# (extended dates) are resolved STRUCTURALLY by the gate's orchestration code
+# (a source_entry_id that doesn't resolve, and TailoredWorkEntry carrying no
+# date fields at all) -- they never reach the LLM verifier, so there is
+# nothing for a prompt eval to test. See tests/agents/test_truthfulness_gate.py
+# for those two.
+
+- description: "#1 clean honest rephrase -- must be verified (false-positive guard)"
+  vars:
+    evidence: |
+      Position: Software Engineer
+      - Built REST APIs serving 2M requests/day
+      - Cut pipeline runtime 40%
+      Skills: Python, Django, PostgreSQL, Docker
+      Project (Internal Tool): Built an internal tool
+    statement: "Architected high-throughput REST APIs handling 2M+ daily requests"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === true"
+
+- description: "#2 unsupported skill -- must be blocked, skill_not_found"
+  vars:
+    evidence: "Skills: Python, Django, PostgreSQL, Docker"
+    statement: "AWS"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === false"
+    - type: javascript
+      value: "JSON.parse(output).category === 'skill_not_found'"
+
+- description: "#3 inflated metric -- must be blocked, metric_unsupported"
+  vars:
+    evidence: |
+      Position: Software Engineer
+      - Built REST APIs serving 2M requests/day
+      - Cut pipeline runtime 40%
+      Skills: Python, Django, PostgreSQL, Docker
+    statement: "Cut pipeline runtime 90%"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === false"
+    - type: javascript
+      value: "JSON.parse(output).category === 'metric_unsupported'"
+
+- description: "#5 real employer, inflated title -- must be blocked, employer_mismatch"
+  vars:
+    evidence: |
+      Position: Software Engineer
+      - Built REST APIs serving 2M requests/day
+      - Cut pipeline runtime 40%
+      Skills: Python, Django, PostgreSQL, Docker
+    statement: "Senior Software Engineer"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === false"
+    - type: javascript
+      value: "JSON.parse(output).category === 'employer_mismatch'"
+
+- description: "#7 invented detail with nothing to compare against -- must be blocked, metric_unsupported"
+  vars:
+    evidence: |
+      Position: Software Engineer
+      - Built REST APIs serving 2M requests/day
+      - Cut pipeline runtime 40%
+      Skills: Python, Django, PostgreSQL, Docker
+    statement: "Led a team of 8 engineers"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === false"
+    - type: javascript
+      value: "JSON.parse(output).category === 'metric_unsupported'"
+
+- description: "#8 honest generalization/vagueness -- must be verified (false-positive guard)"
+  vars:
+    evidence: |
+      Position: Software Engineer
+      - Built REST APIs serving 2M requests/day
+      - Cut pipeline runtime 40%
+      Skills: Python, Django, PostgreSQL, Docker
+    statement: "Improved system performance"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === true"
+
+- description: "#9 skill listed but never demonstrated in a bullet -- must be verified (skills list is first-class evidence)"
+  vars:
+    evidence: |
+      Position: Software Engineer
+      - Built REST APIs serving 2M requests/day
+      - Cut pipeline runtime 40%
+      Skills: Python, Django, PostgreSQL, Docker
+    statement: "Containerized services using Docker"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === true"
+
+- description: "#10 composite fabrication -- real facts stitched into an untrue combined claim, must be blocked for the RIGHT reason"
+  vars:
+    evidence: |
+      Position: Software Engineer
+      - Built REST APIs serving 2M requests/day
+      - Cut pipeline runtime 40%
+      Skills: Python, Django, PostgreSQL, Docker
+    statement: "Built a Django-based microservices platform serving 2M requests"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === false"
+    # the detail must actually name the invented piece, not just fire on
+    # something coincidental -- Django (real) must not be what's blamed
+    - type: javascript
+      value: "!JSON.parse(output).detail.toLowerCase().includes('django')"
+
+- description: "#11 synonym/elaboration, not verbatim -- must be verified (false-positive guard)"
+  vars:
+    evidence: |
+      Position: Software Engineer
+      - Built REST APIs serving 2M requests/day
+      - Cut pipeline runtime 40%
+      Skills: Python, Django, PostgreSQL, Docker
+    statement: "relational database design (PostgreSQL)"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === true"
+
+- description: "#12 real project, fabricated outcome -- must be blocked, metric_unsupported"
+  vars:
+    evidence: |
+      Project: Internal Tool
+      - Built an internal tool
+      Skills: Python, Django, PostgreSQL, Docker
+    statement: "Built an internal tool that saved the company $200K annually"
+  assert:
+    - type: javascript
+      value: "JSON.parse(output).verified === false"
+    - type: javascript
+      value: "JSON.parse(output).category === 'metric_unsupported'"

@@ -9,9 +9,9 @@ them (see ROADMAP.md).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from career_agent.core.events import Event
 from career_agent.domain.models import (
@@ -281,6 +281,67 @@ class TruthfulnessGate(Protocol):
         self, draft: TailoredResumeDraft, profile: MasterProfile
     ) -> TruthfulnessResult:
         """Verify every statement in ``draft`` against ``profile``."""
+        ...
+
+
+class ClaimVerdict(BaseModel):
+    """One :class:`ClaimVerifier` judgment on a single claim (ADR-0016).
+
+    ``confidence`` is required, not optional -- a verdict of ``verified=True``
+    said with low confidence must not be trusted the same as one said with
+    high confidence (same discipline as ``Provenance.extraction_confidence``
+    and ``HeldCandidate``, not invented a third way). The gate treats
+    sub-threshold confidence as unverified regardless of ``verified``.
+    """
+
+    verified: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    category: (
+        Literal[
+            "skill_not_found",
+            "evidence_missing",
+            "employer_mismatch",
+            "date_inconsistency",
+            "metric_unsupported",
+            "verification_failed",
+        ]
+        | None
+    ) = None
+    detail: str = ""
+    matched_index: int | None = None
+
+
+@runtime_checkable
+class ClaimVerifier(Protocol):
+    """Judges whether one claim is entailed by evidence text (ADR-0016).
+
+    A narrow, purpose-built port -- not the general Claude cost-cascade client
+    named in the project stack. The real implementation
+    (:mod:`career_agent.llm.claim_verifier`) is free to eventually delegate to
+    that cascade client once it exists, without this phase needing to build it
+    first.
+
+    This is the first place in the architecture where correctness rests on a
+    model's judgment rather than a structural guarantee (a required field, an
+    AST-checked import, an import-linter contract). ``verify_claim`` is
+    permanently exempt from cost-down routing (ADR-0016): implementations must
+    use the most capable model tier, never the cheap end of a cascade, because
+    a false-approve here is catastrophic and a heuristic cannot safely
+    distinguish honest rephrasing from fabrication in both directions at once.
+    """
+
+    #: Identifies the exact prompt/model configuration that produced verdicts
+    #: from this instance, so every :class:`TruthfulnessResult` it contributes
+    #: to is reproducible against the prompt that produced it.
+    prompt_version: str
+
+    async def verify_claim(self, statement_text: str, evidence: str) -> ClaimVerdict:
+        """Judge whether ``statement_text`` is entailed by ``evidence``.
+
+        Must raise on failure (timeout, API error, malformed response) rather
+        than return a fabricated verdict -- the gate treats any exception as
+        an explicit block, never a silent pass.
+        """
         ...
 
 

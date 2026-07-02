@@ -138,6 +138,11 @@ class RejectionReason(BaseModel):
         "employer_mismatch",
         "date_inconsistency",
         "metric_unsupported",
+        # Infrastructure failure (verifier timeout/error/malformed response),
+        # NOT a content judgment -- kept as its own category (ADR-0016) rather
+        # than overloading a content category, because "we couldn't check" is
+        # not the same claim as "we checked and it's unsupported."
+        "verification_failed",
     ]
     detail: str
 
@@ -150,12 +155,19 @@ class TruthfulnessResult(BaseModel):
     the gate implementation (Phase 5/7), not merely carried as data.
     Re-verifying an application later against a newer profile produces a new
     TruthfulnessResult; it never mutates a stored one.
+
+    ``prompt_version`` is required (ADR-0016): the exact prompt that produced
+    this verdict is part of the verdict's identity, not an afterthought -- a
+    verdict must always be reproducible against the prompt that produced it,
+    and re-verification with a changed prompt is expected to be able to
+    diverge from the original (recorded, not a surprise).
     """
 
     profile_version: str
     approved: bool
     statements: list[Statement]
     rejections: list[RejectionReason] = Field(default_factory=list)
+    prompt_version: str
 
 
 # ---------------------------------------------------------------------------
