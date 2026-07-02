@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "url": "https://boards.greenhouse.io/acme/jobs/4012345",
+      "title": "Senior Backend Engineer at Acme",
+      "text": "Acme is hiring a Senior Backend Engineer, remote."
+    },
+    {
+      "url": "https://boards.greenhouse.io/acme/jobs/9999999",
+      "title": "Backend Engineer at Acme (expired?)",
+      "text": "This listing may have been removed."
+    },
+    {
+      "url": "https://acme.com/blog/were-hiring-in-2026",
+      "title": "We're hiring in 2026",
+      "text": "Acme is growing fast and looking for great engineers to join us."
+    }
+  ]
+}

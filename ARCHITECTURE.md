@@ -180,6 +180,7 @@ pull request is checked against.
 | [0012](docs/adr/0012-opportunity-provenance-and-confidence.md) | Opportunity provenance + extraction confidence; honest uncertainty for freeform sources |
 | [0013](docs/adr/0013-held-candidate-mechanism.md) | Held-candidate mechanism; freeform sources hold ambiguous input with a visible discard pile |
 | [0014](docs/adr/0014-cross-source-opportunity-identity.md) | Cross-source opportunity identity; two-key dedup + canonical company, decided against real multi-source data |
+| [0015](docs/adr/0015-web-search-classification.md) | Web-search results are classified, not trusted; a matched ATS URL is confirmed by re-parsing, never trusted on shape alone |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.
