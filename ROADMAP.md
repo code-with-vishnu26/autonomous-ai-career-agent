@@ -39,19 +39,24 @@ test suite.
 **Done when:** a sample plugin can register and agents can communicate purely via
 events, covered by tests.
 
-## ⬜ Phase 4 — Discovery Engine
+## ✅ Phase 4 — Discovery Engine (with one named gap — see below)
 Discovery Agent + first opportunity sources: Greenhouse / Lever / Ashby ATS APIs,
 then YC `hiring.json` + Hacker News, then Career Page Finder + ATS Detector, then
 the provider-abstracted search layer (Exa + Google CSE failover).
 **Done when:** real openings can be discovered and normalized into `Opportunity`
 records, ToS-respecting, with tests.
 
-Sub-slices: **4a** Discovery Agent + wiring + one real source (Greenhouse) —
-merged. **4b** remaining ATS/feed sources, split: **4b-ATS** Lever + Ashby (same
-shape as Greenhouse — proves the `OpportunitySource` contract survives a
-differently-shaped API of the same kind), then **4b-feeds** YC `hiring.json` + HN
-"Who's Hiring" (the harder test — a firehose to filter, no structured job
-object). **4c** the provider-abstracted search layer + dynamic ranking (ADR-0002).
+Sub-slices, all merged: **4a** Discovery Agent + wiring + one real source
+(Greenhouse). **4b** remaining ATS/feed sources, split: **4b-ATS** Lever + Ashby
+(same shape as Greenhouse — proved the `OpportunitySource` contract survives a
+differently-shaped API of the same kind; `interfaces.py` diff empty), then
+**4b-feeds** YC `hiring.json` + HN "Who's Hiring" (the harder test — a firehose to
+filter, no structured job object; ADR-0013's held-candidate mechanism landed
+here). **4c** the provider-abstracted search layer + dynamic ranking (ADR-0002),
+split further: **4c-slice-1** cross-source identity (ADR-0014), **4c-slice-2**
+Exa `SearchProvider` + web-search classification (ADR-0015, applying ADR-0013 to
+search), **4c-slice-3** Google CSE + capability/health ranking (ADR-0002
+amendment).
 
 > **Phase 4c decision checkpoint — resolved in [ADR-0014](docs/adr/0014-cross-source-opportunity-identity.md)
 > (4c-slice-1).** Decided against the five existing sources before web search
@@ -63,6 +68,18 @@ object). **4c** the provider-abstracted search layer + dynamic ranking (ADR-0002
 > safe-direction gaps are recorded with revisit criteria: ATS sources have no
 > domain (under-merge, not corruption) and a rare cross-source over-merge is
 > accepted as the quality-over-volume trade-off.
+
+> **Named gap: Career Page Finder + ATS Detector was never built.** The original
+> scope above names it explicitly; no 4a/4b/4c sub-slice built it, and the
+> sub-slice breakdown silently dropped it without a recorded decision to defer
+> it — an oversight, caught here rather than left implicit. What exists today is
+> adjacent but not equivalent: `SearchOpportunitySource` (4c-slice-2) already
+> recognizes known ATS URL *patterns* inside search results and confirms them by
+> re-parsing, but it does not *discover* a company's career page independently of
+> search, and it does not detect an ATS from a career page's own markup. This
+> needs an explicit decision — build it as a discrete future slice, or
+> consciously accept the gap because web search + the six existing sources cover
+> enough real coverage — not silently absorbed into "Phase 4 done."
 
 ## ⬜ Phase 5 — JSON Resume master profile
 The structured master profile (JSON Resume schema), its loader/validator, and the
