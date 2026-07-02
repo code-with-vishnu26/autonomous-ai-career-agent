@@ -69,47 +69,90 @@ amendment).
 > domain (under-merge, not corruption) and a rare cross-source over-merge is
 > accepted as the quality-over-volume trade-off.
 
-> **Named gap: Career Page Finder + ATS Detector was never built.** The original
-> scope above names it explicitly; no 4a/4b/4c sub-slice built it, and the
-> sub-slice breakdown silently dropped it without a recorded decision to defer
-> it — an oversight, caught here rather than left implicit. What exists today is
-> adjacent but not equivalent: `SearchOpportunitySource` (4c-slice-2) already
-> recognizes known ATS URL *patterns* inside search results and confirms them by
-> re-parsing, but it does not *discover* a company's career page independently of
-> search, and it does not detect an ATS from a career page's own markup. This
-> needs an explicit decision — build it as a discrete future slice, or
-> consciously accept the gap because web search + the six existing sources cover
-> enough real coverage — not silently absorbed into "Phase 4 done."
+> **Named gap: Career Page Finder + ATS Detector — resolved, gap accepted with
+> reasoning, not by default.** The original scope named it explicitly; no
+> 4a/4b/4c sub-slice built it, and the breakdown silently dropped it without a
+> recorded decision — caught here rather than left implicit. Its original
+> purpose was: given a company name with no other information, find its careers
+> page and detect which ATS it runs, so it could be polled. But the six sources
+> actually built collectively substitute for most of that practical value: the
+> four ATS sources (Greenhouse/Lever/Ashby) cover any company on a known ATS
+> directly, by config (board token), without ever needing to *discover* the
+> page; YC covers YC-backed companies structurally; and
+> `SearchOpportunitySource` (4c-slice-2) already does a narrower but real form
+> of ATS detection — it recognizes known ATS URL patterns inside search results
+> and confirms them against the real parser, i.e. detection triggered by a
+> posting surfacing in search, not by a company name with no jobs yet found.
+> For a personal, quality-over-volume job search that is very likely sufficient
+> coverage of *currently open* jobs. What is genuinely left is a **different**
+> capability — proactively finding and watching career pages for companies with
+> **no currently-visible postings** — not unfinished discovery of open jobs.
+> That is logged as its own future phase, **"Company Watchlist / Proactive
+> Career Page Monitoring,"** in the deferred-work list at the bottom, rather
+> than reopened as Phase 4 work.
 
-## ⬜ Phase 5 — JSON Resume master profile
-The structured master profile (JSON Resume schema), its loader/validator, and the
-**fabrication-detection gate** scaffolding that later grounds all generated
-content.
+## ⬜ Phase 5 — Truthfulness gate: adversarial verification suite
+Brought forward ahead of the JSON Resume master profile, deliberately. The gate
+has been a **tracked, merge-blocking deliverable since Phase 2/3** — every
+downstream design decision in this build (Phase 4c's `SearchOpportunitySource`
+holding uncertain results, ADR-0013's held-candidate mechanism, ADR-0003 itself)
+has deferred to it as the ultimate backstop, and it is the single most
+safety-critical piece of the whole system. Phase 4's "Career Page Finder" gap
+just demonstrated how a tracked item can silently survive multiple phases when
+each individual phase looks complete on its own terms — the gate must not be
+allowed to do the same. Build a minimal real `MasterProfile` fixture and the
+concrete `TruthfulnessGate.verify()` implementation, then validate it against a
+**reviewer-defined adversarial fabrication matrix** (same discipline proven twice
+already: the HN held-candidate matrix, ADR-0013; the cross-source dedup branches,
+ADR-0014) — the user drafts the adversarial cases, the agent implements against
+them, fixtures are verified as genuine near-misses before merge, not strawmen.
+**Done when:** the gate blocks every case in the matrix and passes every honest
+rephrasing case in it, with real fixtures independently verified, not just a
+passing test summary.
+
+## ⬜ Phase 6 — JSON Resume master profile
+The structured master profile (JSON Resume schema) and its loader/validator —
+now built with the gate's real `verify()` already in hand, so the profile model
+is validated against what the gate actually needs, not a scaffolding guess.
 **Done when:** a validated profile loads and the grounding contract is defined.
 
-## ⬜ Phase 6 — ATS adapters
+## ⬜ Phase 7 — ATS adapters
 Concrete ATS adapters registered as plugins for reading postings and (where
 supported) submitting applications.
 **Done when:** adapters plug in via the registry with no core changes, with tests.
 
-## ⬜ Phase 7 — Application engine
+## ⬜ Phase 8 — Application engine
 Resume Agent + Apply Agent: truthful tailoring through the cost cascade, the
-fabrication gate as a hard blocker, and the tiered/supervised applicator
+fabrication gate (Phase 5) as a hard blocker, and the tiered/supervised applicator
 (API → browser → email), with throttling and human-in-the-loop pauses.
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision.
 
-## ⬜ Phase 8 — Learning engine
+## ⬜ Phase 9 — Learning engine
 Learning Agent: capture outcomes and feed them back into scoring, targeting, and
 tailoring.
 **Done when:** outcomes are recorded and demonstrably influence prioritization.
 
-## ⬜ Phase 9 — Dashboard
+## ⬜ Phase 10 — Dashboard
 Local visibility into the pipeline: status, decisions, and exports (SQLite +
 openpyxl spreadsheet).
 **Done when:** the user can see and audit what the agent is doing.
 
-## ⬜ Phase 10 — Deployment
+## ⬜ Phase 11 — Deployment
 Self-hosting story: configuration, secrets handling, scheduling, and docs to run
 it reliably on the user's own machine.
 **Done when:** a new user can stand the agent up from the README.
+
+---
+
+## Deferred work (named, not forgotten)
+
+Items explicitly scoped out of the numbered phases above, with a recorded reason
+— tracked here so they don't quietly reopen an already-"done" phase.
+
+- **Company Watchlist / Proactive Career Page Monitoring.** Deferred from Phase
+  4 (see the named-gap note above). Distinct from job *discovery*: proactively
+  finding and watching the career pages of companies with no currently-visible
+  postings, so a listing is caught the moment it appears rather than only when
+  it surfaces via a known ATS or search. Needs its own pre-brief when prioritized
+  — not a Phase 4 patch.
