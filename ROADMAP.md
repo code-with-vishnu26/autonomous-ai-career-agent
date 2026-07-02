@@ -120,11 +120,28 @@ it may be wired into Phase 7's apply path.
 rephrasing case in it, with real fixtures independently verified, not just a
 passing test summary.
 
-## ⬜ Phase 6 — JSON Resume master profile
+## ✅ Phase 6 — JSON Resume master profile
 The structured master profile (JSON Resume schema) and its loader/validator —
-now built with the gate's real `verify()` already in hand, so the profile model
-is validated against what the gate actually needs, not a scaffolding guess.
-**Done when:** a validated profile loads and the grounding contract is defined.
+built with the gate's real `verify()` already in hand, so the profile model
+was validated against what the gate actually needs, not a scaffolding guess.
+Recorded in **ADR-0017**: every `work`/`education`/`skills`/`projects` entry
+must carry an explicit `id` (JSON Resume has none natively) — rejected as a
+loud, actionable validation failure if missing or duplicated, never inferred
+or silently written back, since only a deliberately-committed id honors the
+"assigned once, never reused" guarantee `EvidenceRef` (ADR-0012) depends on.
+`version` is a deterministic SHA-256 over exactly the fields `MasterProfile`
+models, not the raw file — an unmodeled JSON Resume section (`awards`,
+`publications`, `languages`, `interests`, `references`, `volunteer`,
+structured `basics.location`/`basics.profiles`) changing must not falsely
+bump `version` and invalidate every stored `EvidenceRef` pointing at facts
+that didn't actually change; those sections are named as a tracked gap
+(Career Page Finder pattern), not silently ignored. `load_master_profile` is
+a plain function, not a `Protocol` — one real format, no second
+implementation on the roadmap, so no speculative abstraction.
+**Done when:** a validated profile loads and the grounding contract is
+defined. ✅ 12 tests: valid-profile mapping, deterministic/scoped version
+hashing, missing/duplicate id rejection (within and across sections), and
+non-id validation errors surfaced from Pydantic unwrapped.
 
 ## ⬜ Phase 7 — ATS adapters
 Concrete ATS adapters registered as plugins for reading postings and (where

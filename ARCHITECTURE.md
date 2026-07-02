@@ -182,6 +182,7 @@ pull request is checked against.
 | [0014](docs/adr/0014-cross-source-opportunity-identity.md) | Cross-source opportunity identity; two-key dedup + canonical company, decided against real multi-source data |
 | [0015](docs/adr/0015-web-search-classification.md) | Web-search results are classified, not trusted; a matched ATS URL is confirmed by re-parsing, never trusted on shape alone |
 | [0016](docs/adr/0016-truthfulness-gate-verification.md) | Truthfulness gate verification; entailment over keyword matching, the category rubric, and the five-control harness around the first model-judged safety component |
+| [0017](docs/adr/0017-master-profile-loader.md) | Master profile loader; required per-entry ids rejected-not-inferred, version scoped to grounding fields only, plain function over a speculative Protocol |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.
