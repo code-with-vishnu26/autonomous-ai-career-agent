@@ -146,6 +146,23 @@ class FakeATSAdapter:
         )
 
 
+class FakeEmailDraftSink:
+    """Satisfies :class:`~career_agent.core.interfaces.EmailDraftSink`.
+
+    Has no ``send`` method either -- the fake mirrors the real port's
+    deliberate scope restraint exactly, not a looser test-only shape.
+    Records every call so a test can assert a draft was (or was never)
+    created.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    async def create_draft(self, *, to: str, subject: str, body: str) -> str:
+        self.calls.append({"to": to, "subject": subject, "body": body})
+        return f"draft-{len(self.calls)}"
+
+
 class FakeKeyProvider:
     """Satisfies :class:`~career_agent.integrations.browser_session.KeyProvider`.
 
