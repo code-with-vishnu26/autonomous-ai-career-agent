@@ -292,10 +292,37 @@ real content" in one slice — the same sequencing discipline as 7a before
 7b3. Confirmed on-demand only; the profile-staleness and send-confirmation
 gaps stay correctly deferred.
 
-**Remaining:** wiring `ResumeTailoringResult.submittable` into a real
-`Applicator` call — tier selection and obtaining a genuine
-`HumanConfirmation` from a person — is the milestone that finally exercises
-discover-through-submit on one real path, and is its own next slice.
+**8c — real confirmation + single-tier submission wiring, merged.** Recorded
+in **ADR-0024**. Closes the one remaining unexercised link in the entire
+submission-safety chain: `cli.confirm_submission` is this project's first
+real, executable source of a `HumanConfirmation` — reads a yes/no-shaped
+answer from stdin (via an injected, fully-testable `input_fn`, no
+monkeypatching needed), returns a confirmation only for an exact "y"/"yes,"
+**no default-to-yes path** (verified: the guarantee was broken on purpose,
+the test caught it, reverted). Deliberately built now rather than deferred
+behind a port the way `AnthropicClaimVerifier`/the real `GmailDraftSink`
+were — those deferrals were forced by being untestable live in this
+sandbox; a local stdin/stdout prompt has no such constraint, so that
+precedent doesn't transfer. `SubmissionPipeline` (`agents/apply/pipeline.py`)
+composes any `Applicator` with any matching confirmation source
+(`prepare()` → `confirm()` → `submit()` or a clean, non-error abort),
+proven here against a real `TieredApplicator` — single-tier only, since
+`TieredApplicator`/`BrowserApplicator`/`EmailApplicator` are three
+independent `Applicator` implementations with nothing that chooses between
+them (ADR-0010's "tier selection is internal" describes a component that
+was never actually built). Multi-tier selection is real, confirmed,
+deferred work, not assumed to exist.
+
+**Remaining:** real multi-tier selection across the three `Applicator`
+implementations; a real, argument-parsed `career-agent apply <id>` CLI
+command wiring `confirm_submission`/`SubmissionPipeline` together (today
+only the confirmation function exists, not the command). **Named gap, not
+yet closed:** `domain.rendering.resolve_work_dates` (ADR-0016's Case #6
+correction) is still never actually called by anything — no renderer
+exists yet that resolves real employment dates onto a submitted resume.
+Every tailored work entry submitted through this pipeline today carries no
+dates at all, not the real dates the correction promised; this must close
+before Phase 8 can be marked done, per its own criterion below.
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored
 work entry.

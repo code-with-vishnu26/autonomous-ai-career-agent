@@ -35,6 +35,20 @@ prevent. The real, OAuth-backed ``GmailDraftSink`` is not built yet
 (deliberately -- an OAuth token needs the same dedicated review
 ADR-0020 gave session encryption).
 
+``pipeline.py`` (Phase 8c, ADR-0024) composes any
+:class:`~career_agent.core.interfaces.Applicator` with any real or fake
+confirmation source into ``prepare() -> confirm() -> submit()``, or a clean,
+non-error abort on a declined confirmation --
+:func:`~career_agent.cli.confirm_submission` is the first real one,
+deliberately built now rather than deferred (unlike
+``AnthropicClaimVerifier``/the real ``GmailDraftSink``, a local stdin/stdout
+prompt is fully testable in this sandbox, so that deferral precedent
+doesn't transfer). Single-tier only this slice -- multi-tier selection
+across the three ``Applicator`` implementations above remains real,
+confirmed, unbuilt work (ADR-0010's "tier selection is internal" describes
+a component that was never actually built).
+
 Remaining Tier 1 adapters, generalizing Tier 2 beyond Greenhouse's form
-shape, and the real Gmail client are still future work.
+shape, the real Gmail client, multi-tier selection, and a real
+`career-agent apply` command are still future work.
 """
