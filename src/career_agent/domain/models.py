@@ -221,6 +221,38 @@ class Opportunity(BaseModel):
     discovered_at: datetime
 
 
+class HeldCandidate(BaseModel):
+    """A candidate a freeform source looked at but did not emit (ADR-0013).
+
+    It is its own type, not a low-confidence ``Opportunity``, on purpose: a
+    reply, a "seeking work" post, or vague prose is not a job we are merely
+    unsure about -- it is often not a job at all. Demoting it to a
+    low-confidence ``Opportunity`` would corrupt the meaning of that type
+    (which must always mean "a job we vouch is real") and hand the downstream
+    truthfulness gate things that were never postings. Same discipline as
+    ``TailoredResumeDraft`` vs ``TailoredResume``: model the uncertain thing as
+    its own type rather than a nullable field on the certain one.
+
+    Held candidates are recorded (never silently dropped) so the discard pile
+    is visible and auditable -- a human or the Learning engine can later see
+    "HN held N comments this run, and why", with ``reference`` pointing back to
+    the exact raw item and ``extraction_confidence`` carrying its sub-threshold
+    score (the ADR-0012 channel).
+    """
+
+    source: Literal["hn", "career_page", "web_search"]
+    reason: Literal[
+        "below_threshold",  # looked like a posting but a required field failed
+        "not_a_posting",  # a reply, a question, or meta noise
+        "seeking_work",  # a candidate advertising themselves, not a job
+        "ambiguous_parse",  # job-adjacent prose with no parseable structure
+    ]
+    reference: str  # pointer to the raw item held (e.g. an HN comment permalink)
+    raw_excerpt: str
+    extraction_confidence: float = Field(ge=0.0, le=1.0)
+    held_at: datetime
+
+
 # ---------------------------------------------------------------------------
 # Tailored content (ADR-0011): structured, not free text.
 # ---------------------------------------------------------------------------

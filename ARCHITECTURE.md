@@ -178,6 +178,7 @@ pull request is checked against.
 | [0010](docs/adr/0010-hybrid-application-strategy.md) | Hybrid tiered applicator; ATS API → browser → email |
 | [0011](docs/adr/0011-structured-tailored-content.md) | Structured tailored resume content; not free text |
 | [0012](docs/adr/0012-opportunity-provenance-and-confidence.md) | Opportunity provenance + extraction confidence; honest uncertainty for freeform sources |
+| [0013](docs/adr/0013-held-candidate-mechanism.md) | Held-candidate mechanism; freeform sources hold ambiguous input with a visible discard pile |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.

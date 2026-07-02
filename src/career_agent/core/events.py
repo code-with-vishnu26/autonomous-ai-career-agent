@@ -115,3 +115,18 @@ class OutcomeRecorded(Event):
     application_id: str
     outcome_id: str
     kind: str
+
+
+class CandidateHeld(Event):
+    """A freeform source held a candidate instead of emitting it (ADR-0013).
+
+    Puts the discovery discard pile on the event bus (the visibility spine) so
+    a dashboard or the Learning engine can see what was held and why, rather
+    than it vanishing. ``reference`` points back to the raw item held.
+    """
+
+    event_type: str = "CandidateHeld"
+    source: str
+    reason: str
+    reference: str
+    extraction_confidence: float

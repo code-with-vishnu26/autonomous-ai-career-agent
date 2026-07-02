@@ -11,7 +11,7 @@ emitted events, not through repository internals.
 
 from __future__ import annotations
 
-from career_agent.domain.models import Opportunity
+from career_agent.domain.models import HeldCandidate, Opportunity
 
 
 class InMemoryOpportunityRepository:
@@ -31,3 +31,21 @@ class InMemoryOpportunityRepository:
     async def get(self, opportunity_id: str) -> Opportunity | None:
         """Return the stored opportunity with ``opportunity_id``, or ``None``."""
         return self._by_id.get(opportunity_id)
+
+
+class InMemoryHeldCandidateSink:
+    """In-memory :class:`HeldCandidateSink` (ADR-0013).
+
+    Keeps held candidates in a list so tests can assert exactly which archetype
+    produced which held reason. The production sink publishes ``CandidateHeld``
+    events to the bus instead (see ``agents.discovery.sinks``); both satisfy the
+    same contract.
+    """
+
+    def __init__(self) -> None:
+        """Create an empty sink."""
+        self.held: list[HeldCandidate] = []
+
+    async def record(self, held: HeldCandidate) -> None:
+        """Append ``held`` to the recorded discard pile."""
+        self.held.append(held)

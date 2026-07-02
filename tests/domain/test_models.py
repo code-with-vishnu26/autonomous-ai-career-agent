@@ -12,6 +12,7 @@ from career_agent.domain.models import (
     Application,
     BasicsSection,
     EvidenceRef,
+    HeldCandidate,
     MasterProfile,
     Opportunity,
     Outcome,
@@ -153,6 +154,29 @@ def test_provenance_confidence_bounds_enforced() -> None:
     with pytest.raises(ValidationError):
         Provenance(
             method="text_extraction", reference="ref", extraction_confidence=1.5
+        )
+
+
+def test_held_candidate_is_a_distinct_type_from_opportunity() -> None:
+    """ADR-0013: a held candidate is its own type, never a low-confidence
+    Opportunity -- a non-job must not be demoted into the vouched type."""
+    held = HeldCandidate(
+        source="hn",
+        reason="seeking_work",
+        reference="https://news.ycombinator.com/item?id=1",
+        raw_excerpt="Backend engineer, open to work",
+        extraction_confidence=0.0,
+        held_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    assert not isinstance(held, Opportunity)
+    with pytest.raises(ValidationError):
+        HeldCandidate(
+            source="hn",
+            reason="not_a_posting",
+            reference="ref",
+            raw_excerpt="x",
+            extraction_confidence=1.4,  # out of bounds
+            held_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
 
