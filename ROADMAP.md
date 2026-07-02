@@ -143,9 +143,40 @@ defined. ✅ 12 tests: valid-profile mapping, deterministic/scoped version
 hashing, missing/duplicate id rejection (within and across sections), and
 non-id validation errors surfaced from Pydantic unwrapped.
 
-## ⬜ Phase 7 — ATS adapters
+## 🔶 Phase 7 — ATS adapters (in progress: 7a merged)
 Concrete ATS adapters registered as plugins for reading postings and (where
-supported) submitting applications.
+supported) submitting applications. This is the first phase that *acts* on
+the real world rather than reads it, and is sub-sliced accordingly (Phase 4a
+precedent: prove the safety machinery correct on one path before adding
+breadth) — recorded in **ADR-0018**.
+
+**7a — submission safety scaffolding, merged.** `SubmittableApplication`
+(`domain/models.py`) makes submitting an unapproved resume type-level
+impossible — a Pydantic validator that runs on every construction path, not
+a designated-factory-only check, the same "impossible to construct
+otherwise" discipline as `TailoredResumeDraft`/`TailoredResume` (ADR-0011).
+`Applicator.apply()` is replaced by `prepare()`/`submit(preview,
+confirmation)`: `HumanConfirmation` is a token bound to one exact
+`SubmissionPreview`, not a boolean — a mismatched, unknown, or replayed
+token is refused by `TieredApplicator` (`agents/apply/applicator.py`)
+*before* the `ATSAdapter` is ever reached, tested by asserting the adapter's
+call log stays empty, not just that an error came back. A fourth
+import-linter contract mechanically forbids orchestration from importing
+`AnthropicClaimVerifier` directly (verified to bite, same as the
+`core.config` contract) — Phase 7 is built and tested 100%
+`FakeClaimVerifier`-backed; the real verifier stays unwired until a live
+promptfoo run passes. `FakeATSAdapter` fixtures model real ATS-side failure
+(duplicate submission, rate limit, malformed payload) as a distinct outcome,
+not just the happy path — consequence, not testability, is what's different
+from Phase 4's version of offline-fixture-first discipline. This slice wraps
+exactly one `ATSAdapter` (no tier fallback, no company/ATS-kind resolution
+yet) — named, not silently dropped.
+
+**Remaining (7b+):** multi-tier fallback (browser, email) and
+company/ATS-kind resolution; real Greenhouse/Lever/Ashby `submit()`
+implementations (live-validated only on the user's own machine, per
+ADR-0018); the profile-staleness gap ADR-0018 names must close before any
+scheduled/autonomous apply run is built.
 **Done when:** adapters plug in via the registry with no core changes, with tests.
 
 ## ⬜ Phase 8 — Application engine

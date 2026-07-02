@@ -15,11 +15,13 @@ from pydantic import BaseModel, Field
 
 from career_agent.core.events import Event
 from career_agent.domain.models import (
-    Application,
     Company,
     HeldCandidate,
+    HumanConfirmation,
     MasterProfile,
     Opportunity,
+    SubmissionPreview,
+    SubmittableApplication,
     TailoredResumeDraft,
     TruthfulnessResult,
 )
@@ -217,7 +219,17 @@ class HeldCandidateSink(Protocol):
 
 @runtime_checkable
 class ATSAdapter(Protocol):
-    """A pluggable ATS integration (Greenhouse, Lever, Ashby, ...)."""
+    """A pluggable ATS integration (Greenhouse, Lever, Ashby, ...).
+
+    ``submit`` takes :class:`~career_agent.domain.models.SubmittableApplication`,
+    not a bare ``Application`` -- structurally, this method cannot be called
+    with a resume the truthfulness gate has not approved (ADR-0018). Only the
+    tiered ``Applicator`` implementation is expected to call this; it is not
+    meant to be invoked directly by orchestration code, which is why it has
+    no confirmation parameter of its own -- confirmation is obtained and
+    checked one layer up, in ``Applicator.submit``, before an adapter is ever
+    reached.
+    """
 
     ats_kind: str
 
@@ -225,27 +237,43 @@ class ATSAdapter(Protocol):
         """Return ``company``'s current postings from this ATS."""
         ...
 
-    async def submit(self, application: Application) -> Event:
+    async def submit(self, application: SubmittableApplication) -> Event:
         """Submit ``application`` directly through this ATS's API."""
         ...
 
 
 # ---------------------------------------------------------------------------
-# Applying (ADR-0010) and truthfulness (ADR-0003).
+# Applying (ADR-0010, ADR-0018) and truthfulness (ADR-0003).
 # ---------------------------------------------------------------------------
 
 
 @runtime_checkable
 class Applicator(Protocol):
-    """One interface for submitting an application.
+    """The single interface orchestration code uses to submit an application.
 
     Tier selection (direct ATS API / driven browser / email-to-apply) is an
     internal strategy this implementation chooses between -- callers never
     see three separate interfaces for the three tiers (ADR-0010).
+
+    Split into ``prepare``/``submit`` rather than one ``apply`` call
+    (ADR-0018): ``prepare`` performs no network I/O and cannot itself send
+    anything; ``submit`` is the only method that can, and it requires a
+    :class:`~career_agent.domain.models.HumanConfirmation` naming the exact
+    :class:`~career_agent.domain.models.SubmissionPreview` being authorized,
+    not a boolean flag that could default to "yes". There is no ``apply()``
+    that bypasses this by calling both steps internally -- that would put the
+    confirmation requirement back behind something callers could no longer
+    see or skip.
     """
 
-    async def apply(self, application: Application) -> Event:
-        """Submit ``application`` through whichever tier this implementation selects."""
+    async def prepare(self, application: SubmittableApplication) -> SubmissionPreview:
+        """Assemble exactly what would be sent, performing no network I/O."""
+        ...
+
+    async def submit(
+        self, preview: SubmissionPreview, confirmation: HumanConfirmation
+    ) -> Event:
+        """Send ``preview``, only if ``confirmation`` names that exact preview."""
         ...
 
 

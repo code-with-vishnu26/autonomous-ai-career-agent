@@ -183,6 +183,7 @@ pull request is checked against.
 | [0015](docs/adr/0015-web-search-classification.md) | Web-search results are classified, not trusted; a matched ATS URL is confirmed by re-parsing, never trusted on shape alone |
 | [0016](docs/adr/0016-truthfulness-gate-verification.md) | Truthfulness gate verification; entailment over keyword matching, the category rubric, and the five-control harness around the first model-judged safety component |
 | [0017](docs/adr/0017-master-profile-loader.md) | Master profile loader; required per-entry ids rejected-not-inferred, version scoped to grounding fields only, plain function over a speculative Protocol |
+| [0018](docs/adr/0018-submission-safety.md) | Submission safety; SubmittableApplication makes an unapproved submission type-level impossible, confirmation is a token bound to one exact preview, AnthropicClaimVerifier isolation is import-linter-enforced |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.

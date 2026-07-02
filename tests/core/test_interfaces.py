@@ -26,12 +26,14 @@ from career_agent.core.interfaces import (
     TruthfulnessGate,
 )
 from career_agent.domain.models import (
-    Application,
     BasicsSection,
     Company,
+    HumanConfirmation,
     MasterProfile,
     Opportunity,
     Provenance,
+    SubmissionPreview,
+    SubmittableApplication,
     TailoredContent,
     TailoredResumeDraft,
     TruthfulnessResult,
@@ -76,16 +78,31 @@ class _FakeATSAdapter:
     async def fetch_postings(self, company: Company) -> list[Opportunity]:
         return []
 
-    async def submit(self, application: Application) -> Event:
+    async def submit(self, application: SubmittableApplication) -> Event:
         return ApplicationSubmitted(
-            correlation_id="c1", application_id=application.id, tier_used="ats_api"
+            correlation_id="c1",
+            application_id=application.application.id,
+            tier_used="ats_api",
         )
 
 
 class _FakeApplicator:
-    async def apply(self, application: Application) -> Event:
+    async def prepare(self, application: SubmittableApplication) -> SubmissionPreview:
+        return SubmissionPreview(
+            application_id=application.application.id,
+            tier="browser",
+            target="https://example.com/apply",
+            rendered_content="x",
+            preview_token="t1",
+        )
+
+    async def submit(
+        self, preview: SubmissionPreview, confirmation: HumanConfirmation
+    ) -> Event:
         return ApplicationSubmitted(
-            correlation_id="c1", application_id=application.id, tier_used="browser"
+            correlation_id="c1",
+            application_id=preview.application_id,
+            tier_used="browser",
         )
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ---------------------------------------------------------------------------
 # Master profile (ADR-0006): JSON-Resume-shaped, immutable per version.
@@ -346,7 +346,14 @@ class TailoredResume(BaseModel):
 
 
 class Application(BaseModel):
-    """One submission attempt, tracked through the tiered applicator (ADR-0010)."""
+    """One submission attempt, tracked through the tiered applicator (ADR-0010).
+
+    Constructible with a resume the gate rejected -- Phase 5's audit
+    commitment keeps a blocked attempt visible, it does not forbid recording
+    it. That is exactly why ``Application`` alone must never be the type
+    ``Applicator``/``ATSAdapter`` submission methods accept: see
+    :class:`SubmittableApplication`.
+    """
 
     id: str
     opportunity_id: str
@@ -354,6 +361,81 @@ class Application(BaseModel):
     tier_used: Literal["ats_api", "browser", "email"] | None = None
     status: Literal["pending", "paused_for_human", "submitted", "failed"]
     submitted_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# Submission safety (ADR-0018): structural approval + confirmation binding.
+# ---------------------------------------------------------------------------
+
+
+class SubmittableApplication(BaseModel):
+    """An :class:`Application` whose resume has passed the truthfulness gate.
+
+    The only shape ``Applicator``/``ATSAdapter`` submission methods accept
+    (``core/interfaces.py``). Enforced by a model validator, not by a
+    designated factory function -- ``SubmittableApplication(application=...)``
+    raises on an unapproved resume exactly as ``to_submittable()`` does,
+    because it *is* the same call underneath. There is no construction path
+    that skips the check. This is the same "impossible to construct
+    otherwise" discipline as ``TailoredResumeDraft`` vs ``TailoredResume``,
+    applied one step further downstream, to submission rather than tailoring.
+    """
+
+    application: Application
+
+    @model_validator(mode="after")
+    def _require_approved_resume(self) -> SubmittableApplication:
+        truthfulness = self.application.resume.truthfulness
+        if not truthfulness.approved:
+            raise ValueError(
+                "SubmittableApplication requires an Application whose "
+                "resume.truthfulness.approved is True; got "
+                f"{len(truthfulness.rejections)} unresolved rejection(s) for "
+                f"application {self.application.id!r}."
+            )
+        return self
+
+
+def to_submittable(application: Application) -> SubmittableApplication:
+    """Named entry point for readability at call sites.
+
+    Not the *only* thing enforcing the approval check -- the model validator
+    on :class:`SubmittableApplication` does that regardless of how the type
+    is constructed. This function exists so callers read "make this
+    submittable" rather than a bare, unexplained model construction.
+    """
+    return SubmittableApplication(application=application)
+
+
+class SubmissionPreview(BaseModel):
+    """Exactly what one submission attempt would send, no network I/O yet.
+
+    Produced by ``Applicator.prepare()``. ``preview_token`` is generated
+    fresh per call and must be echoed back,
+    unmodified, inside the :class:`HumanConfirmation` that authorizes sending
+    it -- binding a confirmation to *this exact* preview, not "a submission"
+    in general. ``Applicator.submit()`` rejects any mismatch (ADR-0018).
+    """
+
+    application_id: str
+    tier: Literal["ats_api", "browser", "email"]
+    target: str
+    rendered_content: str
+    preview_token: str
+
+
+class HumanConfirmation(BaseModel):
+    """A human's explicit, specific authorization to send one preview.
+
+    Names the exact :class:`SubmissionPreview` it authorizes.
+    ``preview_token`` must equal the preview being submitted exactly; a
+    confirmation is not a boolean flag an orchestration step can default to
+    "yes" -- it names which preview, who confirmed it, and when (ADR-0018).
+    """
+
+    preview_token: str
+    confirmed_by: str
+    confirmed_at: datetime
 
 
 #: Funnel ordering for outcome stages (ADR-0009). Not an exclusivity rule: an
