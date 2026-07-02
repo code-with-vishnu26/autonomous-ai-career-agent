@@ -144,3 +144,30 @@ class FakeATSAdapter:
             application_id=app_id,
             tier_used="ats_api",
         )
+
+
+class FakeKeyProvider:
+    """Satisfies :class:`~career_agent.integrations.browser_session.KeyProvider`.
+
+    In-memory only -- no real OS keychain touched. ``unavailable=True``
+    simulates a keychain the process cannot reach (headless/CI, no backend
+    configured), so callers can be tested against the fail-closed path
+    without needing a real backend to fail.
+    """
+
+    def __init__(self, *, unavailable: bool = False) -> None:
+        self._unavailable = unavailable
+        self._key: bytes | None = None
+
+    def get_or_create_key(self) -> bytes:
+        if self._unavailable:
+            from career_agent.integrations.browser_session import (
+                SessionEncryptionUnavailableError,
+            )
+
+            raise SessionEncryptionUnavailableError("simulated keychain unavailable")
+        if self._key is None:
+            from cryptography.fernet import Fernet
+
+            self._key = Fernet.generate_key()
+        return self._key

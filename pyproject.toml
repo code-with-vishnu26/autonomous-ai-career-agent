@@ -32,6 +32,8 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "playwright>=1.44",
     "browser-use>=0.1",
+    "cryptography>=42.0",
+    "keyring>=25.0",
     "python-dotenv>=1.0",
 ]
 

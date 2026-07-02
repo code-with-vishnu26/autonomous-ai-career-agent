@@ -25,5 +25,9 @@ beautifulsoup4>=4.12
 playwright>=1.44
 browser-use>=0.1
 
+# --- Secrets: encrypting a persisted browser session at rest (ADR-0020) ---
+cryptography>=42.0
+keyring>=25.0
+
 # --- Config / environment ---
 python-dotenv>=1.0

@@ -9,8 +9,6 @@ import comes from an allowlist, instead of merely asserting it in a docstring.
 from __future__ import annotations
 
 import ast
-import importlib
-import pkgutil
 from pathlib import Path
 
 import career_agent.domain as domain_pkg
@@ -93,21 +91,42 @@ def test_importing_domain_does_not_pull_in_io_libraries() -> None:
 
     Import-time side effects (rather than just static analysis) are what
     would actually leak an I/O dependency into every consumer of domain/, so
-    this checks the real, post-import module table too.
+    this checks the real, post-import module table too -- in a fresh
+    subprocess, not this test process. Phase 7b3 added the first tests in
+    this suite that genuinely import a forbidden library (real Playwright,
+    driven against a local fixture) for a *different* module; checking
+    ``sys.modules`` in-process would make this test's result depend on
+    unrelated test collection order rather than on what importing ``domain``
+    itself does, which is the one thing this test exists to verify.
     """
-    import sys
+    import subprocess
+    import sys as _sys
 
-    for _finder, name, _ispkg in pkgutil.walk_packages(
-        domain_pkg.__path__, prefix="career_agent.domain."
-    ):
-        importlib.import_module(name)
+    script = (
+        "import sys, importlib, pkgutil\n"
+        "import career_agent.domain as domain_pkg\n"
+        "for _finder, name, _ispkg in pkgutil.walk_packages(\n"
+        "    domain_pkg.__path__, prefix='career_agent.domain.'\n"
+        "):\n"
+        "    importlib.import_module(name)\n"
+        "forbidden = {\n"
+        "    'httpx', 'playwright', 'anthropic', 'sqlite3', 'langgraph', 'openpyxl'\n"
+        "}\n"
+        "loaded = {m for m in sys.modules if m.split('.')[0] in forbidden}\n"
+        "print(','.join(sorted(loaded)))\n"
+    )
+    import os
 
-    forbidden_loaded = {
-        mod
-        for mod in sys.modules
-        if mod.split(".")[0]
-        in {"httpx", "playwright", "anthropic", "sqlite3", "langgraph", "openpyxl"}
-    }
+    src_dir = str(Path(domain_pkg.__file__).parent.parent.parent)
+    env = {**os.environ, "PYTHONPATH": src_dir}
+    result = subprocess.run(
+        [_sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    forbidden_loaded = {m for m in result.stdout.strip().split(",") if m}
     assert not forbidden_loaded, (
         f"importing career_agent.domain pulled in I/O libraries: {forbidden_loaded}"
     )
