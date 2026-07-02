@@ -182,15 +182,20 @@ async def test_case_5_inflated_title_is_blocked() -> None:
 
 
 # ---------------------------------------------------------------------------
-# #6 -- extended dates: structurally impossible, not behaviorally caught
+# #6 -- extended dates: structurally impossible for the generator to write,
+# not caught behaviorally -- but NOT absent from the resume either. Real
+# dates are resolved downstream (see tests/domain/test_rendering.py).
 # ---------------------------------------------------------------------------
 
 
 def test_case_6_tailored_work_entry_cannot_carry_dates_at_all() -> None:
-    """Dates are always the linked profile entry's own, by construction --
-    TailoredWorkEntry has no date field, so date fabrication in structured
-    content is impossible to construct, not merely caught by the gate. This is
-    a STRONGER guarantee than a behavioral check."""
+    """The generator cannot fabricate a date because TailoredWorkEntry has no
+    date field to write into -- date fabrication in structured content is
+    impossible to construct, not merely caught by the gate. This is a
+    stronger guarantee than a behavioral check, but it is NOT a guarantee
+    that the rendered resume has no dates: those are resolved downstream from
+    ``source_entry_id`` via ``domain.rendering.resolve_work_dates``, read-only,
+    never generator-writable (ADR-0016's "Case #6 revisited" note)."""
     assert "start_date" not in TailoredWorkEntry.model_fields
     assert "end_date" not in TailoredWorkEntry.model_fields
     assert set(TailoredWorkEntry.model_fields) == {
