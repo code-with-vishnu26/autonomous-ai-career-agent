@@ -91,6 +91,20 @@ not automatically regenerated against the rejection feedback; that is
 separate, named future work (regenerate-with-feedback), kept out for the
 same "one problem at a time" reason `summary` was kept out of Phase 5.
 
+**A meaningful data point from this integration, worth recording rather
+than letting pass as just another passing test:** the unknown-`source_entry_id`
+case required **zero new gate logic**. The `employer_mismatch` check that
+catches it was written in Phase 5, against hand-authored adversarial
+fixtures, months before `ResumeGenerator` existed — and it caught a
+fabrication from a producer it was never tested against, with no
+special-casing added for generator output. That is stronger evidence than
+the Phase 5 matrix alone could provide that the gate is a genuine,
+general-purpose mechanism rather than something implicitly shaped to its
+own test suite's assumptions. It generalized to a new caller on first
+contact. Worth weighting this when deciding how much independent scrutiny
+future gate-adjacent components need — the gate has now demonstrated it
+doesn't have a blind spot specific to content the system itself produces.
+
 ### Prompt versioning: tracked, but not a required field on every draft
 
 `RESUME_DRAFT_PROMPT_VERSION` is a git-tracked constant (`llm/prompts.py`),
