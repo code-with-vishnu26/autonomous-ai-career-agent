@@ -189,6 +189,7 @@ pull request is checked against.
 | [0021](docs/adr/0021-email-tier-draft-only.md) | Email tier is draft-only by interface design (EmailDraftSink has no send method); submit() always returns HumanActionRequired, never claims ApplicationSubmitted |
 | [0022](docs/adr/0022-resume-generator.md) | ResumeGenerator; summary sourced read-only from the profile (never drafted), missing summary rejected loudly not derived, ContentDrafter scoped narrow but not permanently cascade-exempt, no self-verification |
 | [0023](docs/adr/0023-resume-tailoring-pipeline.md) | Resume-tailoring pipeline; composition stops before Applicator (canary-checked), Application gains a "rejected" status distinct from "failed", dormant Phase 2 events (ResumeTailored/TruthfulnessRejected) finally get emitted |
+| [0024](docs/adr/0024-real-confirmation-and-submission-wiring.md) | Real human confirmation (cli.confirm_submission, verified no default-to-yes) drives a real, single-tier SubmissionPipeline for the first time; multi-tier selection confirmed never built, named as deferred work |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.
