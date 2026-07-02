@@ -1,0 +1,15 @@
+{
+  "kind": "customsearch#search",
+  "items": [
+    {
+      "title": "Senior Backend Engineer at Acme",
+      "link": "https://boards.greenhouse.io/acme/jobs/4012345",
+      "snippet": "Acme is hiring a Senior Backend Engineer, remote."
+    },
+    {
+      "title": "Careers at Acme",
+      "link": "https://acme.com/careers",
+      "snippet": "See our open roles."
+    }
+  ]
+}
