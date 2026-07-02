@@ -108,6 +108,13 @@ async def test_multi_job_comment_emits_each_role_independently() -> None:
         "Frontend Engineer",
         "Data Scientist",
     }
+    # Assert three DISTINCT ids directly, not just distinct titles: the
+    # guarantee is "one comment with three jobs yields three distinct
+    # opportunities". Distinct titles imply distinct ids only while the id keys
+    # on a title-bearing fingerprint -- an assumption 4c (two-key identity /
+    # canonical_company) is about to change, so assert the id property directly
+    # or it stops being tested silently.
+    assert len({o.id for o in globex}) == 3
 
 
 async def test_clean_format_but_junk_role_is_held_not_emitted() -> None:
