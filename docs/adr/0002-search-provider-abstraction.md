@@ -100,3 +100,47 @@ Revisit if:
   might then be simpler).
 - Cost structure changes such that "query-all-and-merge" becomes affordable.
 - Search quality stops correlating with the chosen scoring terms.
+
+## Amendment (2026-07-02): the ranking formula, implemented (4c slice-3)
+
+This amendment records the concrete implementation of the abstract formula
+above, not a new decision — the same pattern as the ADR-0005 "events notify,
+they do not gate" amendment: a slice makes an already-decided principle
+concrete, so it is recorded here rather than under a new ADR number.
+
+- **Two pure functions** in `core/ranking.py`: `is_eligible(capabilities,
+  query) -> bool` and `score_provider(health) -> float`, composed by
+  `select_provider(providers, query) -> SearchProvider`.
+- **Eligibility is a gate, not a scoring term.** A query's requirements
+  (`requires_semantic`, `requires_freshness`, `site`) are a floor: a provider
+  missing a required capability is excluded entirely, never merely scored
+  lower. A semantic query never even considers a keyword-only provider, no
+  matter how healthy that provider is.
+- **Score** among eligible providers: `10·success_rate − 1·(latency_ms/1000) −
+  5·cost_per_query`. Weights favor reliability first, then speed, then cost;
+  they are relative (only their ratios matter for comparison), not calibrated
+  to any absolute quality scale.
+- **`select_provider` raises `NoEligibleProviderError`** when no registered
+  provider satisfies a query's requirements — it never silently falls back to
+  an ineligible provider. A silent fallback would mean a semantic query gets
+  quietly answered by a keyword-only provider with nobody told the result is
+  structurally worse: the discovery-side equivalent of presenting an unverified
+  result as confident. Same fail-loud instinct as duplicate plugin registration
+  raising immediately (ADR-0004) rather than silently overwriting.
+- Google CSE (`plugins/search/google_cse.py`) is the second provider — deliberately
+  keyword-only (`supports_semantic_search=False`), the direct capability contrast
+  to Exa, so the eligibility gate has a real difference to exercise rather than
+  ranking between two providers that do the same thing.
+
+### Explicitly deferred (not built in this slice)
+
+- **Who calls `select_provider`, and when.** These are pure functions with no
+  dependency on the Planner or any scheduling story; wiring them into a live
+  discovery flow is a Planner-phase decision, made when the Planner is designed
+  — not guessed at here.
+- **Persistent rolling health across process restarts.** `health()` is
+  in-memory per provider instance today (true for both Exa and Google CSE); a
+  durable store is a storage-phase concern.
+- **Failover-on-failure orchestration** (try the top-ranked provider, catch a
+  failure, retry the next-best). `select_provider` picks one provider; retry
+  policy belongs to whatever calls `search()` in a loop, not to ranking itself.
