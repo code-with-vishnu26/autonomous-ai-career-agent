@@ -114,3 +114,30 @@ async def test_two_authoritative_reqs_sharing_a_fingerprint_stay_separate() -> N
     assert await repo.add(req_b) is True  # same fingerprint, but both authoritative
     assert (await repo.get("greenhouse:acme:1")) is not None
     assert (await repo.get("greenhouse:acme:2")) is not None
+
+
+async def test_two_non_authoritative_hits_sharing_a_fingerprint_merge() -> None:
+    """The third branch of the authoritativeness rule (ADR-0014), previously
+    untested: two NON-authoritative opportunities (e.g. HN + a synthetic
+    career-page hit, neither with a native ATS id) for the same canonical
+    company/title/location must merge -- not just auth+nonauth (tested by
+    test_cross_source_duplicate_is_deduped_by_fingerprint) or auth+auth (tested
+    above). The rule fires on the incoming side's authoritativeness regardless
+    of what added the existing fingerprint, so this must dedup too."""
+    repo = InMemoryOpportunityRepository()
+    hn_hit = _opp(
+        "hn-fingerprint-1",
+        canonical_company="acme.com",
+        title="Senior Rust Engineer",
+        location="Remote",
+        ats_ref=None,  # non-authoritative
+    )
+    career_page_hit = _opp(
+        "career-page-fingerprint-1",
+        canonical_company="acme.com",
+        title="Senior Rust Engineer",
+        location="Remote",
+        ats_ref=None,  # also non-authoritative
+    )
+    assert await repo.add(hn_hit) is True
+    assert await repo.add(career_page_hit) is False  # deduped: same fingerprint

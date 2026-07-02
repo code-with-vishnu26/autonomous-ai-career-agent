@@ -101,8 +101,14 @@ internally. Same pin as ADR-0012.
 
 - All five existing sources populate `canonical_company`; the repository's two-key
   dedup is validated on known data before 4c's web-search source arrives.
-- The negative guarantee (two authoritative same-fingerprint reqs stay separate)
-  is tested at the repository level, not only at `opportunity_id`.
+- The authoritativeness rule has three branches, all tested at the repository
+  level (`tests/storage/test_memory_repo.py`): authoritative + authoritative
+  (same fingerprint, distinct native ids) stay **separate**; authoritative +
+  non-authoritative **merge** (the common case: an ATS job later found via a
+  weak-identity source); non-authoritative + non-authoritative **merge** (two
+  weak-identity hits for the same job, e.g. HN + a career-page find). The rule
+  fires on the *incoming* opportunity's authoritativeness, regardless of which
+  kind of source produced the already-stored fingerprint match.
 - 4c's `SearchProvider`-derived opportunities will be non-authoritative
   (`ats_ref=None`), so they dedup against known ATS jobs by fingerprint for free.
 
