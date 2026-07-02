@@ -76,6 +76,15 @@ regression: the loud-raise behavior was broken on purpose (wrapping the
 date lookup in a swallowed `try`/`except KeyError: continue`), confirmed
 the test failed, reverted.
 
+**Skills are deliberately not resolved the same way.** `content.skills`
+renders directly as plain strings, with no cross-check against
+`profile.skills` — a considered asymmetry, not an oversight. A skill string
+has no separate identity to resolve the way a `source_entry_id` does, so
+there is no equivalent "does this reference exist" question for the
+renderer to independently re-verify; the truthfulness gate already checks
+exact skill presence (`skill_not_found`) during verification, which is the
+only check that shape of value can meaningfully have.
+
 ### Test discipline: adversarial-matrix weight, not routine-formatting weight
 
 This is the first artifact in the whole system a human outside the project
