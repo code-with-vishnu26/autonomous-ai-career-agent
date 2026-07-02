@@ -438,6 +438,22 @@ class HumanConfirmation(BaseModel):
     confirmed_at: datetime
 
 
+class PauseAcknowledgment(BaseModel):
+    """A human's acknowledgment that a mid-submission challenge is cleared.
+
+    Covers CAPTCHA, verification, or a login wall for one specific paused
+    browser session (ADR-0020). Mirrors :class:`HumanConfirmation`'s shape
+    deliberately -- ``pause_token`` names the exact pause being cleared, not
+    a boolean a caller could satisfy for the wrong session.
+    ``BrowserApplicator.resume()`` rejects any mismatch, and re-checks the
+    challenge is actually gone rather than trusting the acknowledgment alone.
+    """
+
+    pause_token: str
+    confirmed_by: str
+    confirmed_at: datetime
+
+
 #: Funnel ordering for outcome stages (ADR-0009). Not an exclusivity rule: an
 #: application can accumulate several :class:`Outcome` rows over its lifetime
 #: (e.g. viewed, then interview, then rejection). ``"rejection"`` is

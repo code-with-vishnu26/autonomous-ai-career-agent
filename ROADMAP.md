@@ -187,17 +187,36 @@ confirm → `submit()` cycle, since a fallback tier is a materially different
 real-world action (different target, sometimes different content shape),
 not a retried transport for the same one.
 
-**Remaining (7b2+), reprioritized by real-world coverage, not slice number:**
-Tier 1's real submission APIs likely cover a narrow slice of postings in
-practice (most companies only expose a public *read* API, not a submission
-one) — so **Tier 2 (browser, Playwright + Browser-Use, session reuse and
-CAPTCHA/verification pause points per ADR-0008) is next**, ahead of building
-out the remaining Tier 1 adapters, since it is expected to cover most real
-applications. Tier 3 (email-to-apply) follows, likely via this environment's
-already-connected Gmail integration rather than a new SMTP integration
-(direction flagged now, decision deferred to that slice's own pre-brief).
-The profile-staleness gap ADR-0018 names must close before any
-scheduled/autonomous apply run is built.
+**7b3 — browser-tier session encryption + pause/resume, merged.** Recorded
+in **ADR-0020**. `BrowserApplicator` (`agents/apply/browser_applicator.py`)
+targets Greenhouse's public apply form only this slice (same Greenhouse-
+first discipline as Phase 4a and ADR-0019) — generalizing to arbitrary
+career pages is separate future work. Two new structural guarantees, both
+the same weight as ADR-0018's: (1) `EncryptedSessionStore`
+(`integrations/browser_session.py`) encrypts a persisted, reusable session
+at rest with a key held in the OS keychain (`keyring`) — never together with
+the ciphertext on disk — and **fails closed**: if the keychain backend is
+unavailable, the session is not persisted at all, never silently written
+unencrypted. (2) A mid-submission challenge (CAPTCHA/verification/login)
+returns `HumanActionRequired` (a Phase 2 event type, unused until now) and
+holds the live browser page open; `resume(pause_token, ack)` mirrors
+`HumanConfirmation`'s token-binding shape but goes further — it re-verifies
+the challenge is actually gone on the live page before touching it again,
+never trusting the acknowledgment alone. Tested against a real, local
+Chromium driven against an offline HTML fixture (`tests/fixtures/greenhouse/
+apply_form.html`, loaded via `file://`) rather than Python-level fakes — a
+materially stronger proof for browser behavior than fixtures alone, and the
+load-bearing test asserts the fixture's own success marker never appears
+when `resume()` is called with the challenge still visible, the browser-tier
+analogue of ADR-0018's `adapter.calls == []` proof.
+
+**Remaining (7b2, 7b4+):** the remaining Tier 1 adapters (lower priority per
+the reprioritization above) and Tier 3 (email-to-apply), likely via this
+environment's already-connected Gmail integration rather than a new SMTP
+integration (direction flagged, decision deferred to that slice's own
+pre-brief). The profile-staleness gap ADR-0018 names, and generalizing
+`BrowserApplicator` beyond Greenhouse's form shape, must both be addressed
+before any scheduled/autonomous apply run is built.
 **Done when:** adapters plug in via the registry with no core changes, with tests.
 
 ## ⬜ Phase 8 — Application engine

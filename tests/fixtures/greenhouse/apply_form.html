@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<!--
+  A local, offline stand-in for Greenhouse's public application form DOM
+  shape (ADR-0020) -- not a copy of real Greenhouse markup, just field
+  names/ids close enough to drive real Playwright form-filling logic
+  against. Loaded via file://, no network involved.
+
+  Query params drive test scenarios:
+    ?challenge=1   shows the verification-challenge panel after submit is
+                   clicked, instead of completing -- BrowserApplicator must
+                   detect it and pause rather than treating the click as done.
+
+  window.__clearChallenge() is exposed so a test can simulate a human
+  clearing the challenge before calling resume().
+-->
+<html>
+<head><title>Apply - Acme (Greenhouse fixture)</title></head>
+<body>
+  <form id="application-form">
+    <input id="first_name" name="first_name" type="text" />
+    <input id="last_name" name="last_name" type="text" />
+    <input id="email" name="email" type="email" />
+    <textarea id="resume_text" name="resume_text"></textarea>
+    <button id="submit_app" type="button">Submit Application</button>
+  </form>
+
+  <div id="verification-challenge" style="display:none;">
+    Please verify you are human before continuing.
+  </div>
+
+  <div id="application-success" style="display:none;">
+    Application submitted successfully.
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const challengeEnabled = params.get("challenge") === "1";
+
+    window.__clearChallenge = function () {
+      document.getElementById("verification-challenge").style.display = "none";
+    };
+
+    document.getElementById("submit_app").addEventListener("click", function () {
+      const challengeVisible =
+        document.getElementById("verification-challenge").style.display !== "none";
+      if (challengeVisible) {
+        // Already-visible challenge blocks re-submission until cleared.
+        return;
+      }
+      if (challengeEnabled && !window.__challengeShown) {
+        window.__challengeShown = true;
+        document.getElementById("verification-challenge").style.display = "block";
+        return;
+      }
+      document.getElementById("application-success").style.display = "block";
+    });
+  </script>
+</body>
+</html>
