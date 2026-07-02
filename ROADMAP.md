@@ -134,9 +134,14 @@ supported) submitting applications.
 ## ⬜ Phase 8 — Application engine
 Resume Agent + Apply Agent: truthful tailoring through the cost cascade, the
 fabrication gate (Phase 5) as a hard blocker, and the tiered/supervised applicator
-(API → browser → email), with throttling and human-in-the-loop pauses.
+(API → browser → email), with throttling and human-in-the-loop pauses. The
+renderer **must** call `domain.rendering.resolve_work_dates` for every work
+entry's dates — never re-derive them another way, never omit them (ADR-0016's
+Case #6 correction: the generator can't write a date, but the resume still
+has to show the real one).
 **Done when:** an application can be assembled, gated for truthfulness, and
-submitted under supervision.
+submitted under supervision, with real employment dates on every tailored
+work entry.
 
 ## ⬜ Phase 9 — Learning engine
 Learning Agent: capture outcomes and feed them back into scoring, targeting, and

@@ -62,21 +62,39 @@ already defined, meanings clarified and one value added)
 | `evidence_missing` | any other unsupported detail (architecture, scope, technology) that isn't a metric, employer, date, or skill claim |
 | `verification_failed` | **new.** Infrastructure failure (verifier timeout/error/malformed response) — not a content judgment, so kept as its own category rather than overloading a content category. "We couldn't check" is not the same claim as "we checked and it's unsupported." |
 
-### Case #6 (extended dates) resolved structurally, not behaviorally — a
-stronger guarantee than the matrix asked for
+### Case #6 (extended dates): the generator can't write one, but the resume
+still has to show one — resolved structurally, then corrected
 
 `TailoredWorkEntry` carries no date fields (unchanged from its Phase 2 shape:
 `source_entry_id`, `position`, `highlights` only). A tailored entry therefore
-**cannot independently assert dates** — they are always the linked profile
-entry's own, by construction. Date fabrication in structured content is not
-caught by the gate; it is impossible to construct in the first place. This is
-tested as a model-shape assertion, not a gate-behavior test, and it is a
-*stronger* guarantee than the matrix's originally-described behavioral check —
-in keeping with this project's general preference for structural guarantees
-over probabilistic ones wherever a structural one is available. (Not addressed
-explicitly in the pre-brief that was approved; resolved here and flagged for
-correction if a different answer — e.g. deliberately allowing dates in
-`TailoredWorkEntry` for some future rendering reason — was intended.)
+**cannot independently assert dates** — the generator has no date-shaped field
+to write into, so date fabrication in structured content is impossible to
+construct, not merely caught. That half of the original resolution stands.
+
+**Corrected after review:** the original write-up of this case stopped there,
+and that was a false economy, caught before Phase 6 started. Removing the
+field prevents fabrication but does nothing to get a *real* date onto the
+resume — and a tailored resume with no employment dates is not one a
+recruiter or ATS parser will accept; the absence reads as a red flag in its
+own right. Deleting a required capability to avoid solving the verification
+problem is a different, smaller system than the one the matrix was testing
+for, not a strictly stronger version of it.
+
+The fix keeps the structural guarantee and restores the capability:
+`career_agent.domain.rendering.resolve_work_dates(entry, profile)` resolves
+the real `start_date`/`end_date` **downstream**, by looking up
+`entry.source_entry_id` against `profile.work` — read-only, never a field the
+generator can populate. "The generator cannot fabricate a date" and "the
+rendered resume shows the real one" are now both true, the same way a
+column can be read-only-computed rather than either free-text or dropped
+entirely. Phase 8's renderer (whatever form it takes — plain text, PDF, ATS
+form fields) must call this resolver rather than re-deriving dates some other
+way; this is now a load-bearing contract for that phase, not an implementation
+detail left to whoever builds it. `resolve_work_dates` raises `KeyError` if
+`source_entry_id` doesn't resolve (should never happen post-gate, since a
+missing entry is blocked upstream as `employer_mismatch`) rather than
+returning `None`/silently omitting the date — same fail-loud discipline used
+throughout this gate.
 
 ### Case #9 (skill listed, never demonstrated in a bullet) — resolved: approve
 
@@ -203,6 +221,10 @@ phase's scope boundary (4c-slice-3's ranking functions, not Planner wiring).
 - `interfaces.py`'s existing `TruthfulnessGate`/`ResumeGenerator`/
   `TailoredResumeDraft` types (Phase 2) are unchanged; this phase adds
   `ClaimVerdict` and `ClaimVerifier`, both additive.
+- `domain/rendering.py` (`resolve_work_dates`) is new and is a **required**
+  call site for Phase 8's renderer, not an optional convenience — a renderer
+  that re-derives dates any other way (or omits them) reopens the gap this
+  correction closed.
 - `TruthfulnessResult.prompt_version` is now a required field — touches every
   construction site (four pre-existing test call sites updated in this
   change), the same "required field forces universality visible in the diff"
