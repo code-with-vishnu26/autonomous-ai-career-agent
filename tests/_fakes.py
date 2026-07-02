@@ -13,7 +13,7 @@ from pathlib import Path
 
 from career_agent.core.events import ApplicationSubmitted, Event
 from career_agent.core.interfaces import ClaimVerdict
-from career_agent.domain.models import SubmittableApplication
+from career_agent.domain.models import DraftedTailoring, SubmittableApplication
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -161,6 +161,32 @@ class FakeEmailDraftSink:
     async def create_draft(self, *, to: str, subject: str, body: str) -> str:
         self.calls.append({"to": to, "subject": subject, "body": body})
         return f"draft-{len(self.calls)}"
+
+
+class FakeContentDrafter:
+    """Satisfies :class:`~career_agent.core.interfaces.ContentDrafter`.
+
+    Deterministic, fixture-driven, the same pattern as ``FakeClaimVerifier``:
+    ``result`` is the canned :class:`DraftedTailoring` returned on every
+    call (or an ``Exception`` to simulate drafter failure). Records every
+    call so a test can assert whether the drafter was ever reached at all.
+    """
+
+    def __init__(
+        self,
+        result: DraftedTailoring | Exception,
+        *,
+        prompt_version: str = "fake-draft-v1",
+    ) -> None:
+        self._result = result
+        self.prompt_version = prompt_version
+        self.calls: list[tuple[str, str]] = []
+
+    async def draft(self, opportunity: object, profile: object) -> DraftedTailoring:
+        self.calls.append((opportunity.id, profile.version))  # type: ignore[attr-defined]
+        if isinstance(self._result, Exception):
+            raise self._result
+        return self._result
 
 
 class FakeKeyProvider:

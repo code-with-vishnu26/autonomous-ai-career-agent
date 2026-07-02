@@ -240,14 +240,41 @@ gap and the send-confirmation gap must both close before any
 scheduled/autonomous apply run is built.
 **Done when:** adapters plug in via the registry with no core changes, with tests.
 
-## ⬜ Phase 8 — Application engine
+## 🔶 Phase 8 — Application engine (in progress: 8a merged)
 Resume Agent + Apply Agent: truthful tailoring through the cost cascade, the
 fabrication gate (Phase 5) as a hard blocker, and the tiered/supervised applicator
 (API → browser → email), with throttling and human-in-the-loop pauses. The
 renderer **must** call `domain.rendering.resolve_work_dates` for every work
 entry's dates — never re-derive them another way, never omit them (ADR-0016's
 Case #6 correction: the generator can't write a date, but the resume still
-has to show the real one).
+has to show the real one). Sub-sliced (same discipline as Phase 7): 8a proves
+generation + gating correct in isolation before 8b wires it to real
+submission — recorded in **ADR-0022**.
+
+**8a — ResumeGenerator + gate wiring, merged.** `summary` is sourced
+read-only from `profile.basics.summary`, never LLM-drafted —
+`DraftedTailoring` (`domain/models.py`) structurally has no `summary` field
+at all, the same move as `TailoredWorkEntry` having no date fields
+(ADR-0016's Case #6). A missing profile summary is a loud
+`MissingSummaryError`, raised before the drafter is ever called — not a
+structurally-derived fallback, which would be zero-invention but produce an
+obviously templated, low-quality resume (a quality-over-volume failure, the
+4c search-confidence problem's shape, not a truthfulness one).
+`ContentDrafter` (the narrow LLM port, mirroring `ClaimVerifier`'s shape) is
+**not** permanently cost-cascade-exempt like `ClaimVerifier` — a
+false-approve on tailoring is recoverable via the independent gate, unlike a
+false-approve on verification, so the exemption's actual justification
+doesn't transfer. `LLMResumeGenerator` does no self-verification; the first
+integration test feeds real generator output (not hand-authored fixtures)
+into the real `LLMTruthfulnessGate` and proves an honest draft approves, a
+hallucinated skill blocks structurally, and a hallucinated `source_entry_id`
+blocks as `employer_mismatch` — the seam between two independently-built
+components, proven, not assumed.
+
+**Remaining (8b):** wiring `ResumeGenerator` output into
+`SubmittableApplication`/`Applicator` for real end-to-end submission — the
+milestone that finally exercises the whole pipeline, discover through
+submit, on one real path.
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored
 work entry.

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from career_agent.core.events import Event
 from career_agent.domain.models import (
     Company,
+    DraftedTailoring,
     HeldCandidate,
     HumanConfirmation,
     MasterProfile,
@@ -310,6 +311,30 @@ class ResumeGenerator(Protocol):
         self, opportunity: Opportunity, profile: MasterProfile
     ) -> TailoredResumeDraft:
         """Produce an unverified, structured draft for ``opportunity``."""
+        ...
+
+
+@runtime_checkable
+class ContentDrafter(Protocol):
+    """The narrow LLM port behind the real :class:`ResumeGenerator` (ADR-0022).
+
+    Scoped exactly like :class:`ClaimVerifier` was for the gate: a single,
+    narrow capability (draft work/skill/project selections) rather than the
+    general Haiku->Sonnet->Opus cascade client the architecture still
+    describes as future work. Unlike ``ClaimVerifier``, this port is *not*
+    permanently exempted from future cost-cascade routing -- a false-approve
+    on tailoring is recoverable (the gate catches it downstream); a
+    false-approve on verification is not, which is the actual reason
+    ``ClaimVerifier`` earned its exemption, not something that transfers
+    here by default.
+    """
+
+    prompt_version: str
+
+    async def draft(
+        self, opportunity: Opportunity, profile: MasterProfile
+    ) -> DraftedTailoring:
+        """Draft work/skill/project selections. Never asked for ``summary``."""
         ...
 
 
