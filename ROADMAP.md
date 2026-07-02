@@ -271,10 +271,31 @@ hallucinated skill blocks structurally, and a hallucinated `source_entry_id`
 blocks as `employer_mismatch` — the seam between two independently-built
 components, proven, not assumed.
 
-**Remaining (8b):** wiring `ResumeGenerator` output into
-`SubmittableApplication`/`Applicator` for real end-to-end submission — the
-milestone that finally exercises the whole pipeline, discover through
-submit, on one real path.
+**8b — the resume-tailoring pipeline, merged.** Recorded in **ADR-0023**.
+`ResumeTailoringPipeline` (`agents/resume/pipeline.py`) composes
+`ResumeGenerator` → `TruthfulnessGate` into one on-demand call: a real
+`Opportunity` + `MasterProfile` in, an audited `Application` out always, plus
+a `SubmittableApplication` when approved. `Application.status` gains
+`"rejected"` — deliberately distinct from `"failed"`, since a gate rejection
+(a content problem, never reached a submission attempt) and a submission
+failure (a real-world event, possibly worth a different tier) are different
+events that would otherwise be forced to share one status word, requiring
+every future consumer to re-derive the distinction from
+`resume.truthfulness.approved`. `ResumeTailored`/`TruthfulnessRejected` —
+defined since Phase 2, never emitted — finally fire, reuse over invention
+again. **Deliberately stops before calling `Applicator`**, canary-checked
+(the module imports neither `Applicator` nor `ATSAdapter`): actually
+invoking a tier is a separate action requiring tier selection and a real
+`HumanConfirmation`, and folding it in here would compound "first real
+generation-to-submission wiring" with "first real confirmation flow against
+real content" in one slice — the same sequencing discipline as 7a before
+7b3. Confirmed on-demand only; the profile-staleness and send-confirmation
+gaps stay correctly deferred.
+
+**Remaining:** wiring `ResumeTailoringResult.submittable` into a real
+`Applicator` call — tier selection and obtaining a genuine
+`HumanConfirmation` from a person — is the milestone that finally exercises
+discover-through-submit on one real path, and is its own next slice.
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored
 work entry.

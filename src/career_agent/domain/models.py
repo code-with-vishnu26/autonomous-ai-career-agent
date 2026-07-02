@@ -383,13 +383,26 @@ class Application(BaseModel):
     method). A future dashboard or notification surfacing
     ``paused_for_human`` applications as one list must not imply a uniform
     "resume" action is available for all of them.
+
+    ``status="rejected"`` (ADR-0023) is deliberately distinct from
+    ``"failed"``. ``"failed"`` means a submission attempt was made through a
+    tier and did not succeed -- a real-world event, potentially worth
+    retrying via a different tier. ``"rejected"`` means the truthfulness
+    gate blocked the resume before any submission was ever attempted -- a
+    content problem, where retrying via a different tier accomplishes
+    nothing until the resume itself is fixed. Collapsing these into one
+    status would force every future consumer (a dashboard, a retry policy,
+    the Learning engine) to re-derive the distinction by also inspecting
+    ``resume.truthfulness.approved`` -- exactly the kind of
+    should-be-structural distinction this project has refused to leave to
+    inference everywhere else.
     """
 
     id: str
     opportunity_id: str
     resume: TailoredResume
     tier_used: Literal["ats_api", "browser", "email"] | None = None
-    status: Literal["pending", "paused_for_human", "submitted", "failed"]
+    status: Literal["pending", "paused_for_human", "submitted", "failed", "rejected"]
     submitted_at: datetime | None = None
 
 
