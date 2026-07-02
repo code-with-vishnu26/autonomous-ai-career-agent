@@ -240,7 +240,7 @@ gap and the send-confirmation gap must both close before any
 scheduled/autonomous apply run is built.
 **Done when:** adapters plug in via the registry with no core changes, with tests.
 
-## 🔶 Phase 8 — Application engine (in progress: 8a merged)
+## ✅ Phase 8 — Application engine
 Resume Agent + Apply Agent: truthful tailoring through the cost cascade, the
 fabrication gate (Phase 5) as a hard blocker, and the tiered/supervised applicator
 (API → browser → email), with throttling and human-in-the-loop pauses. The
@@ -313,19 +313,35 @@ them (ADR-0010's "tier selection is internal" describes a component that
 was never actually built). Multi-tier selection is real, confirmed,
 deferred work, not assumed to exist.
 
-**Remaining:** real multi-tier selection across the three `Applicator`
-implementations; a real, argument-parsed `career-agent apply <id>` CLI
-command wiring `confirm_submission`/`SubmissionPipeline` together (today
-only the confirmation function exists, not the command). **Named gap, not
-yet closed:** `domain.rendering.resolve_work_dates` (ADR-0016's Case #6
-correction) is still never actually called by anything — no renderer
-exists yet that resolves real employment dates onto a submitted resume.
-Every tailored work entry submitted through this pipeline today carries no
-dates at all, not the real dates the correction promised; this must close
-before Phase 8 can be marked done, per its own criterion below.
+**8d — the resume renderer, merged.** Recorded in **ADR-0025**. Closes the
+gap 8c's own writeup surfaced: not just missing dates, but no renderer at
+all — every real confirmation this project could perform showed only
+`content.summary`, since `TailoredResume.rendered_text` had existed as a
+documented "derived cache" since Phase 2 with nothing ever populating it.
+`render_tailored_resume` (`domain/rendering.py`) is computed once, in
+`ResumeTailoringPipeline` at resume-creation time — the one place
+`draft.content` and `profile` are both already in scope — requiring **zero
+changes to any `Applicator`**, whose `rendered_text or content.summary`
+fallback was correctly designed from the start. Raises loudly
+(`KeyError`) rather than silently dropping a work/project entry it can't
+resolve: the renderer is a second, independent consumer of
+`source_entry_id` references and must not assume the gate already ran —
+verified to actually catch a regression (broke the raise into a silent
+skip on purpose, confirmed the test failed, reverted). Tested with
+adversarial-matrix weight, not routine-formatting weight: a realistic,
+multi-entry profile render is asserted structurally complete (every work
+entry, real dates, highlights, skills, projects all present), not just
+"renders without crashing."
+
+**Remaining (named, not blocking Phase 8's own criterion below):** real
+multi-tier selection across the three `Applicator` implementations; a real,
+argument-parsed `career-agent apply <id>` CLI command wiring
+`confirm_submission`/`SubmissionPipeline` together (today only the
+confirmation function exists, not the command); the real, OAuth-backed
+`GmailDraftSink`; generalizing `BrowserApplicator` beyond Greenhouse's form.
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored
-work entry.
+work entry. ✅
 
 ## ⬜ Phase 9 — Learning engine
 Learning Agent: capture outcomes and feed them back into scoring, targeting, and

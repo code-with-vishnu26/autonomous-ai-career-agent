@@ -74,3 +74,4 @@ The conditions under which we should reopen this decision.
 | [0022](0022-resume-generator.md) | ResumeGenerator: structural summary (no drafter write access), narrow ContentDrafter port not permanently cascade-exempt, no self-verification | Accepted |
 | [0023](0023-resume-tailoring-pipeline.md) | Resume-tailoring pipeline: composition stops at SubmittableApplication (no Applicator call), new "rejected" status distinct from "failed", reuses dormant ResumeTailored/TruthfulnessRejected events | Accepted |
 | [0024](0024-real-confirmation-and-submission-wiring.md) | Real human confirmation (cli.confirm_submission, no default-to-yes) and single-tier SubmissionPipeline; multi-tier selection confirmed unbuilt, deferred | Accepted |
+| [0025](0025-resume-renderer.md) | Resume renderer: computed once at pipeline resume-creation time (no Applicator changes needed), raises loudly rather than silently dropping an unresolvable entry | Accepted |
