@@ -62,3 +62,4 @@ The conditions under which we should reopen this decision.
 | [0010](0010-hybrid-application-strategy.md) | Hybrid (tiered) application strategy (API → browser → email) | Accepted |
 | [0011](0011-structured-tailored-content.md) | Structured tailored resume content (not free text) | Accepted |
 | [0012](0012-opportunity-provenance-and-confidence.md) | Opportunity provenance + extraction confidence (honest uncertainty) | Accepted |
+| [0013](0013-held-candidate-mechanism.md) | Held-candidate mechanism for freeform extraction sources (visible discard pile) | Accepted |

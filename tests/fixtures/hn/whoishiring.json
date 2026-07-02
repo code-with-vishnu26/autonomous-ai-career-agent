@@ -1,0 +1,82 @@
+{
+  "thread": {
+    "id": 44444444,
+    "type": "story",
+    "title": "Ask HN: Who is hiring? (July 2026)",
+    "kids": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+  },
+  "comments": {
+    "101": {
+      "id": 101,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "Acme | Senior Rust Engineer | Remote (EU) | full-time | apply@acme.com<p>We build reliable systems in Rust and care about correctness."
+    },
+    "102": {
+      "id": 102,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "Is this US-remote or EU-only?"
+    },
+    "103": {
+      "id": 103,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "Location: Berlin | Remote: Yes | Willing to relocate: No | Seeking: Backend/platform roles | Résumé: example.com&#x2F;cv<p>Backend engineer, 8 years, Go and Rust."
+    },
+    "104": {
+      "id": 104,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "We&#x27;re a small team growing fast, reach out if interested."
+    },
+    "105": {
+      "id": 105,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "Acme Corp | Remote (US)"
+    },
+    "106": {
+      "id": 106,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "great thread!"
+    },
+    "107": {
+      "id": 107,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "Globex | Backend Engineer | Remote (US) | full-time | jobs@globex.com<p>Globex | Frontend Engineer | Remote (US) | full-time | jobs@globex.com<p>Globex | Data Scientist | NYC | full-time | jobs@globex.com"
+    },
+    "108": {
+      "id": 108,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "Acme | we are hiring!! | Remote"
+    },
+    "109": {
+      "id": 109,
+      "type": "comment",
+      "time": 1781965800,
+      "text": " | Backend Engineer | Remote | apply@x.com"
+    },
+    "110": {
+      "id": 110,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "株式会社ACME | ソフトウェアエンジニア | リモート | 正社員 | apply@acme.jp<p>信頼性の高いシステムを構築します。"
+    },
+    "111": {
+      "id": 111,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "Acme | Senior Rust Engineer | Remote (EU) | full-time | apply@acme.com<p>Re-posting our Rust role from last month."
+    },
+    "112": {
+      "id": 112,
+      "type": "comment",
+      "time": 1781965800,
+      "text": "Companies hiring this month: Acme, Globex, Initech"
+    }
+  }
+}

@@ -17,6 +17,7 @@ from career_agent.core.events import Event
 from career_agent.domain.models import (
     Application,
     Company,
+    HeldCandidate,
     MasterProfile,
     Opportunity,
     TailoredResumeDraft,
@@ -179,6 +180,23 @@ class OpportunityRepository(Protocol):
 
     async def get(self, opportunity_id: str) -> Opportunity | None:
         """Return the stored opportunity with this id, or ``None``."""
+        ...
+
+
+@runtime_checkable
+class HeldCandidateSink(Protocol):
+    """Where a freeform source records candidates it held, not emitted (ADR-0013).
+
+    An *additive, optional* collaborator: only extraction-type sources (Hacker
+    News, later) need it. It imposes nothing on the structured sources and does
+    not change ``OpportunitySource.fetch`` or the :class:`Opportunity` type --
+    held candidates leave through this sink, never through ``fetch()``'s return
+    value. Implementations may keep them in memory (tests) or publish a
+    ``CandidateHeld`` event onto the bus (production visibility).
+    """
+
+    async def record(self, held: HeldCandidate) -> None:
+        """Record a held candidate so the discard pile stays visible."""
         ...
 
 
