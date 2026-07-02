@@ -68,3 +68,4 @@ The conditions under which we should reopen this decision.
 | [0016](0016-truthfulness-gate-verification.md) | Truthfulness gate verification: entailment, categories, and the ClaimVerifier harness | Accepted |
 | [0017](0017-master-profile-loader.md) | Master profile loader: required ids, scoped content hash, plain function not a Protocol | Accepted |
 | [0018](0018-submission-safety.md) | Submission safety: structural approval (SubmittableApplication), confirmation-token binding, verifier isolation | Accepted |
+| [0019](0019-ats-kind-resolution-and-tier-fallback.md) | ATS-kind resolution (reused ADR-0015 pattern-match, no new repository) and no cross-tier auto-retry | Accepted |
