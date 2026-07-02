@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from career_agent.domain.identity import (
     canonical_fingerprint,
+    domain_of,
     normalize,
     opportunity_id,
 )
@@ -12,6 +13,16 @@ from career_agent.domain.identity import (
 def test_normalize_is_case_punctuation_and_whitespace_insensitive() -> None:
     assert normalize("  Senior  Back-End Engineer! ") == "senior back end engineer"
     assert normalize("") == ""
+
+
+def test_domain_of_extracts_from_email_and_url() -> None:
+    """ADR-0014: the apply email/URL domain is a cross-source employer identity."""
+    assert domain_of("apply@acme.com") == "acme.com"
+    assert domain_of("https://jobs.acme.com/123") == "jobs.acme.com"
+    assert domain_of("http://www.acme.io/careers") == "acme.io"
+    assert domain_of("careers@sub.acme.co.uk") == "sub.acme.co.uk"
+    assert domain_of("no domain here") is None
+    assert domain_of(None) is None
 
 
 def test_fingerprint_is_source_independent() -> None:

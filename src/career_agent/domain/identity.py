@@ -28,6 +28,9 @@ import re
 
 _WHITESPACE = re.compile(r"\s+")
 _NON_ALNUM = re.compile(r"[^a-z0-9 ]+")
+_DOMAIN = re.compile(
+    r"(?:https?://)?(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})", re.IGNORECASE
+)
 
 
 def normalize(text: str) -> str:
@@ -39,6 +42,23 @@ def normalize(text: str) -> str:
     lowered = text.casefold().strip()
     without_punct = _NON_ALNUM.sub(" ", lowered)
     return _WHITESPACE.sub(" ", without_punct).strip()
+
+
+def domain_of(value: str | None) -> str | None:
+    """Extract a bare domain from a URL or email address, if present.
+
+    Used to derive a cross-source canonical company identity (ADR-0014): the
+    domain in a Hacker News post's apply email/URL, or a web-search result's
+    URL, is a far more stable employer identity than a board token or parsed
+    company text. Returns a lower-cased domain (``"acme.com"``) or ``None``.
+    """
+    if not value:
+        return None
+    candidate = value.strip()
+    if "@" in candidate:  # an email address: take the domain part
+        candidate = candidate.rsplit("@", 1)[-1]
+    match = _DOMAIN.search(candidate)
+    return match.group(1).casefold() if match else None
 
 
 def canonical_fingerprint(

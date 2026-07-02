@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from career_agent.core.interfaces import HttpClient
-from career_agent.domain.identity import opportunity_id
+from career_agent.domain.identity import normalize, opportunity_id
 from career_agent.domain.models import Opportunity, Provenance
 from career_agent.plugins.sources._dates import as_utc
 
@@ -71,6 +71,7 @@ class AshbySource:
                 location=location,
             ),
             company_id=board,
+            canonical_company=normalize(board),  # no domain from Ashby (ADR-0014)
             title=title,
             source="ats_api",
             source_url=str(raw.get("jobUrl", "")),

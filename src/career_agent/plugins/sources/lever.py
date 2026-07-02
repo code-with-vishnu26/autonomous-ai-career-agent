@@ -24,7 +24,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from career_agent.core.interfaces import HttpClient
-from career_agent.domain.identity import opportunity_id
+from career_agent.domain.identity import normalize, opportunity_id
 from career_agent.domain.models import Opportunity, Provenance
 from career_agent.plugins.sources._dates import as_utc
 
@@ -77,6 +77,7 @@ class LeverSource:
                 location=location,
             ),
             company_id=company,
+            canonical_company=normalize(company),  # no domain from Lever (ADR-0014)
             title=title,
             source="ats_api",
             source_url=str(raw.get("hostedUrl", "")),

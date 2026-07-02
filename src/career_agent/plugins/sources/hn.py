@@ -32,7 +32,7 @@ import re
 from datetime import UTC, datetime
 
 from career_agent.core.interfaces import HeldCandidateSink, HttpClient
-from career_agent.domain.identity import normalize, opportunity_id
+from career_agent.domain.identity import domain_of, normalize, opportunity_id
 from career_agent.domain.models import HeldCandidate, Opportunity, Provenance
 from career_agent.plugins.sources._dates import as_utc
 
@@ -196,19 +196,24 @@ class HNSource:
             )
 
         location = fields[2] or None
+        apply_target = _apply_target(fields)
+        # Prefer the apply email/URL domain as the canonical employer identity
+        # (ADR-0014); fall back to the normalized company text.
+        canonical_company = domain_of(apply_target) or normalize(company)
         return Opportunity(
             id=opportunity_id(
                 ats_kind=None,
                 board_token=None,
                 ats_ref=None,  # HN keys on the fingerprint so re-posts dedup
-                company=company,
+                company=canonical_company,
                 title=role,
                 location=location,
             ),
             company_id=normalize(company) or company,
+            canonical_company=canonical_company,
             title=role,
             source="hn",
-            source_url=_apply_target(fields) or reference,
+            source_url=apply_target or reference,
             provenance=Provenance(
                 method="text_extraction",
                 reference=reference,
