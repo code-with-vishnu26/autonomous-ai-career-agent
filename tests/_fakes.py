@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from career_agent.core.interfaces import ClaimVerdict
+
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -60,3 +62,44 @@ class FakeHttpClient:
         if self._default is not None:
             return self._default
         raise KeyError(f"no fake response registered for {url!r}")
+
+
+class FakeClaimVerifier:
+    """Satisfies :class:`~career_agent.core.interfaces.ClaimVerifier`.
+
+    Deterministic, fixture-driven, exactly ``FakeHttpClient``'s pattern applied
+    to the truthfulness gate: ``verdicts`` maps exact statement text to a
+    canned :class:`~career_agent.core.interfaces.ClaimVerdict` (or an
+    :class:`Exception` instance/class to simulate verifier failure). A missing
+    key raises loudly rather than returning a silent default -- a test that
+    doesn't specify a verdict for a statement it exercises is a broken test,
+    not a pass.
+
+    Proves the gate's *orchestration* is correct (evidence assembly, category
+    mapping, fail-closed aggregation) -- it proves nothing about whether a real
+    model judges these claims correctly. That is what the promptfoo suite is
+    for (ADR-0016); this fake is not a substitute for it.
+    """
+
+    def __init__(
+        self,
+        verdicts: dict[str, ClaimVerdict | Exception | type[Exception]],
+        *,
+        prompt_version: str = "fake-v1",
+    ) -> None:
+        self._verdicts = verdicts
+        self.prompt_version = prompt_version
+        self.calls: list[tuple[str, str]] = []
+
+    async def verify_claim(self, statement_text: str, evidence: str) -> ClaimVerdict:
+        self.calls.append((statement_text, evidence))
+        if statement_text not in self._verdicts:
+            raise KeyError(
+                f"no fake verdict registered for statement {statement_text!r}"
+            )
+        outcome = self._verdicts[statement_text]
+        if isinstance(outcome, Exception):
+            raise outcome
+        if isinstance(outcome, type) and issubclass(outcome, Exception):
+            raise outcome("simulated verifier failure")
+        return outcome

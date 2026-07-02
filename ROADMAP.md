@@ -91,7 +91,7 @@ amendment).
 > Career Page Monitoring,"** in the deferred-work list at the bottom, rather
 > than reopened as Phase 4 work.
 
-## ⬜ Phase 5 — Truthfulness gate: adversarial verification suite
+## ✅ Phase 5 — Truthfulness gate: adversarial verification suite
 Brought forward ahead of the JSON Resume master profile, deliberately. The gate
 has been a **tracked, merge-blocking deliverable since Phase 2/3** — every
 downstream design decision in this build (Phase 4c's `SearchOpportunitySource`
@@ -100,12 +100,22 @@ has deferred to it as the ultimate backstop, and it is the single most
 safety-critical piece of the whole system. Phase 4's "Career Page Finder" gap
 just demonstrated how a tracked item can silently survive multiple phases when
 each individual phase looks complete on its own terms — the gate must not be
-allowed to do the same. Build a minimal real `MasterProfile` fixture and the
-concrete `TruthfulnessGate.verify()` implementation, then validate it against a
-**reviewer-defined adversarial fabrication matrix** (same discipline proven twice
-already: the HN held-candidate matrix, ADR-0013; the cross-source dedup branches,
-ADR-0014) — the user drafts the adversarial cases, the agent implements against
-them, fixtures are verified as genuine near-misses before merge, not strawmen.
+allowed to do the same. Built a real `MasterProfile` fixture and the concrete
+`LLMTruthfulnessGate.verify()` implementation, validated against a
+**reviewer-defined 12-case adversarial fabrication matrix** (same discipline
+proven twice already: the HN held-candidate matrix, ADR-0013; the cross-source
+dedup branches, ADR-0014) — the user drafted the adversarial cases, the agent
+implemented against them, fixtures verified as genuine near-misses, not
+strawmen. Recorded in **ADR-0016**: entailment-over-keyword-matching (catches
+composite fabrication for the right reason, not by coincidence), the category
+rubric, `summary` explicitly out of scope and coupled to Phase 8's
+`ResumeGenerator` design, and — because this is the first safety-critical
+component resting on model judgment rather than a structural guarantee — five
+required compensating controls around the `ClaimVerifier` port: required
+confidence with sub-threshold blocking, verifier-failure-is-an-explicit-block,
+permanent cost-cascade exemption, documented temperature/variance limits, and a
+**promptfoo suite as the hard merge gate** for the real implementation before
+it may be wired into Phase 7's apply path.
 **Done when:** the gate blocks every case in the matrix and passes every honest
 rephrasing case in it, with real fixtures independently verified, not just a
 passing test summary.

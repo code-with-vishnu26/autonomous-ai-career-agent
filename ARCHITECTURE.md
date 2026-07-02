@@ -181,6 +181,7 @@ pull request is checked against.
 | [0013](docs/adr/0013-held-candidate-mechanism.md) | Held-candidate mechanism; freeform sources hold ambiguous input with a visible discard pile |
 | [0014](docs/adr/0014-cross-source-opportunity-identity.md) | Cross-source opportunity identity; two-key dedup + canonical company, decided against real multi-source data |
 | [0015](docs/adr/0015-web-search-classification.md) | Web-search results are classified, not trusted; a matched ATS URL is confirmed by re-parsing, never trusted on shape alone |
+| [0016](docs/adr/0016-truthfulness-gate-verification.md) | Truthfulness gate verification; entailment over keyword matching, the category rubric, and the five-control harness around the first model-judged safety component |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.
