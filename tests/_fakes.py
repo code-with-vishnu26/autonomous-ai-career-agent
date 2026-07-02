@@ -11,7 +11,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from career_agent.core.events import ApplicationSubmitted, Event
 from career_agent.core.interfaces import ClaimVerdict
+from career_agent.domain.models import SubmittableApplication
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -103,3 +105,42 @@ class FakeClaimVerifier:
         if isinstance(outcome, type) and issubclass(outcome, Exception):
             raise outcome("simulated verifier failure")
         return outcome
+
+
+class FakeATSAdapter:
+    """Satisfies :class:`~career_agent.core.interfaces.ATSAdapter`.
+
+    ``submit_outcomes`` maps an ``Application.id`` to either ``None`` (record
+    the call, return a canned ``ApplicationSubmitted``) or a
+    :class:`~career_agent.agents.apply.applicator.SubmissionError` instance
+    to simulate a real ATS-side failure (duplicate submission, rate limit,
+    malformed payload) -- so submission-time failure handling is exercised
+    against something other than the happy path, same discipline as
+    ``FakeClaimVerifier``'s exception-simulation. Every call is recorded on
+    ``calls`` so a test can assert whether the adapter was ever reached at
+    all -- the load-bearing assertion for confirmation-token rejection.
+    """
+
+    def __init__(
+        self,
+        *,
+        ats_kind: str = "greenhouse",
+        submit_outcomes: dict[str, Exception] | None = None,
+    ) -> None:
+        self.ats_kind = ats_kind
+        self._submit_outcomes = submit_outcomes or {}
+        self.calls: list[SubmittableApplication] = []
+
+    async def fetch_postings(self, company: object) -> list[object]:
+        raise NotImplementedError("FakeATSAdapter is submit-only in this suite")
+
+    async def submit(self, application: SubmittableApplication) -> Event:
+        self.calls.append(application)
+        app_id = application.application.id
+        if app_id in self._submit_outcomes:
+            raise self._submit_outcomes[app_id]
+        return ApplicationSubmitted(
+            correlation_id=application.application.opportunity_id,
+            application_id=app_id,
+            tier_used="ats_api",
+        )

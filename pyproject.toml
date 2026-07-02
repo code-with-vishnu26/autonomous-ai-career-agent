@@ -132,3 +132,14 @@ name = "Plugins never import core.config directly (config flows inward via injec
 type = "forbidden"
 source_modules = ["career_agent.plugins"]
 forbidden_modules = ["career_agent.core.config"]
+
+[[tool.importlinter.contracts]]
+name = "Orchestration never imports the concrete AnthropicClaimVerifier (ADR-0018)"
+type = "forbidden"
+source_modules = [
+    "career_agent.agents",
+    "career_agent.core",
+    "career_agent.plugins",
+    "career_agent.storage",
+]
+forbidden_modules = ["career_agent.llm.claim_verifier"]
