@@ -145,16 +145,31 @@ class OpportunitySource(Protocol):
 class HttpClient(Protocol):
     """A minimal async HTTP port so sources depend on an interface, not httpx.
 
-    Kept deliberately tiny: sources need to GET JSON. A real httpx-backed
-    implementation lives in :mod:`career_agent.integrations.http`; tests inject
-    a fake that replays recorded fixtures, so the suite never makes a network
-    call.
+    Kept deliberately tiny: sources need to GET or POST JSON. A real
+    httpx-backed implementation lives in :mod:`career_agent.integrations.http`;
+    tests inject a fake that replays recorded fixtures, so the suite never
+    makes a network call.
+
+    ``post_json`` was added in 4c slice-2 (additively -- existing ``get_json``
+    callers are unaffected) because Exa's real search API is POST with a JSON
+    body, not GET with query params; a GET-only port could not honestly reach
+    it once the user runs this against the real service.
     """
 
     async def get_json(
         self, url: str, *, params: dict[str, str] | None = None
     ) -> object:
         """GET ``url`` and return the parsed JSON body."""
+        ...
+
+    async def post_json(
+        self,
+        url: str,
+        *,
+        json: dict[str, object],
+        headers: dict[str, str] | None = None,
+    ) -> object:
+        """POST ``json`` to ``url`` and return the parsed JSON response body."""
         ...
 
 

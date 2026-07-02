@@ -16,7 +16,7 @@ import httpx
 
 
 class HttpxClient:
-    """An async HTTP client that GETs JSON, with a sane timeout and UA."""
+    """An async HTTP client that GETs/POSTs JSON, with a sane timeout and UA."""
 
     def __init__(
         self,
@@ -41,5 +41,20 @@ class HttpxClient:
             timeout=self._timeout, headers=self._headers
         ) as client:
             response = await client.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+
+    async def post_json(
+        self,
+        url: str,
+        *,
+        json: dict[str, object],
+        headers: dict[str, str] | None = None,
+    ) -> object:
+        """POST ``json`` to ``url`` and return the parsed JSON response body."""
+        async with httpx.AsyncClient(
+            timeout=self._timeout, headers={**self._headers, **(headers or {})}
+        ) as client:
+            response = await client.post(url, json=json)
             response.raise_for_status()
             return response.json()
