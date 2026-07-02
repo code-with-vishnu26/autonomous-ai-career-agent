@@ -1,4 +1,4 @@
-"""Git-versioned prompts (ADR-0016).
+"""Git-versioned prompts (ADR-0016, ADR-0022).
 
 The truthfulness-gate prompt is the first prompt this project ships, and the
 highest-stakes one, so prompt versioning starts here rather than being deferred
@@ -7,6 +7,15 @@ further. ``TRUTHFULNESS_GATE_PROMPT_VERSION`` is carried on every
 verdict for, so a verdict is always reproducible against the exact prompt text
 that produced it. Bump the version string whenever the prompt text changes; do
 not edit a shipped version's text in place.
+
+``RESUME_DRAFT_PROMPT_VERSION`` is tracked the same way (a git-versioned
+constant) but is *not* carried as a required field on every
+:class:`~career_agent.domain.models.TailoredResumeDraft` the way the gate's
+version is on every verdict -- a draft is not an authoritative, audited
+record the way a verdict is (ADR-0016); the gate independently re-verifies
+every claim in it regardless of which prompt drafted it, so per-instance
+reproducibility carries less weight here. A deliberate, considered scoping
+choice (ADR-0022), not an oversight.
 """
 
 from __future__ import annotations
@@ -50,4 +59,46 @@ EVIDENCE:
 
 CLAIM:
 {statement}
+"""
+
+RESUME_DRAFT_PROMPT_VERSION = "resume-draft-v1"
+
+RESUME_DRAFT_PROMPT = """\
+You are tailoring a candidate's resume content for one specific job opportunity. \
+You draft selections and phrasing; you do NOT decide what is true -- a separate, \
+independent fact-checker verifies everything you produce afterward and blocks \
+anything unsupported. Your job is to select and rephrase, never to invent.
+
+Rules:
+- Every highlight you write must be a faithful rephrasing or reasonable, honest \
+generalization of something already stated in the candidate's profile below. \
+Never state a number, technology, employer detail, or outcome that is not \
+already in the profile.
+- Never combine multiple separate true facts into a new claim that was never \
+actually stated.
+- You may select which of the candidate's real skills to include, but never \
+list a skill that is not in the candidate's profile skills list.
+- You are NOT asked for and must NOT produce a summary/objective section -- \
+that is handled separately, outside your output.
+- For each work/project entry you draft, use exactly the id given for that \
+entry in the profile below as "source_entry_id" -- never invent an id.
+
+Respond with ONLY a JSON object, no other text, in this exact shape:
+{{
+  "work": [
+    {{"source_entry_id": "<id from profile>", "position": "<title>", \
+"highlights": ["<highlight>", ...]}}
+  ],
+  "skills": ["<skill from profile.skills only>", ...],
+  "projects": [
+    {{"source_entry_id": "<id from profile>", "name": "<name>", \
+"highlights": ["<highlight>", ...]}}
+  ]
+}}
+
+OPPORTUNITY:
+{opportunity_description}
+
+CANDIDATE PROFILE:
+{profile_json}
 """

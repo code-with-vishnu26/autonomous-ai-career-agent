@@ -187,6 +187,7 @@ pull request is checked against.
 | [0019](docs/adr/0019-ats-kind-resolution-and-tier-fallback.md) | ATS-kind resolution via the reused ADR-0015 URL pattern-match (no new CompanyRepository); tier fallback never auto-cascades under one confirmation |
 | [0020](docs/adr/0020-browser-tier-session-and-pause.md) | Browser-tier session encryption (OS-keychain key, fail-closed on unavailability) and a token-bound pause/resume that re-verifies the live page, not just the acknowledgment |
 | [0021](docs/adr/0021-email-tier-draft-only.md) | Email tier is draft-only by interface design (EmailDraftSink has no send method); submit() always returns HumanActionRequired, never claims ApplicationSubmitted |
+| [0022](docs/adr/0022-resume-generator.md) | ResumeGenerator; summary sourced read-only from the profile (never drafted), missing summary rejected loudly not derived, ContentDrafter scoped narrow but not permanently cascade-exempt, no self-verification |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.

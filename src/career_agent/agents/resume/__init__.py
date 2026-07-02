@@ -1,13 +1,18 @@
-"""Resume Agent (Phase 7).
+"""Resume Agent (Phase 8).
 
 Tailors a resume for a specific opportunity using only facts present in the user's
-master profile (JSON Resume schema). Routes generation through the Claude cost
-cascade. Every output must pass the fabrication-detection gate before use.
+master profile (JSON Resume schema). Every output must pass the
+fabrication-detection gate before use.
 
 ``gate.py`` (Phase 5, ADR-0016) implements the concrete
-:class:`~career_agent.core.interfaces.TruthfulnessGate`. The generator
-(``ResumeGenerator``) that produces drafts for the gate to check is still
-Phase 7 work -- Phase 5 built and validated the gate against directly-
-constructed :class:`~career_agent.domain.models.TailoredResumeDraft` fixtures,
-deliberately without a generator to build against.
+:class:`~career_agent.core.interfaces.TruthfulnessGate`.
+
+``generator.py`` (Phase 8a, ADR-0022) implements the concrete
+:class:`~career_agent.core.interfaces.ResumeGenerator`. `summary` is sourced
+read-only from the profile, never LLM-drafted -- the drafter it wraps
+(:class:`~career_agent.core.interfaces.ContentDrafter`) structurally cannot
+produce one. Routes drafting through a single pinned model this phase, not
+yet the general Haiku->Sonnet->Opus cascade (still future work) -- unlike
+the gate's `ClaimVerifier`, this port is not permanently cost-cascade-exempt,
+since a bad draft is recoverable by the gate downstream.
 """

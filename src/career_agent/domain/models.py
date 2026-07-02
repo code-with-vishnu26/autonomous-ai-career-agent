@@ -308,6 +308,23 @@ class TailoredContent(BaseModel):
     projects: list[TailoredProjectEntry] = Field(default_factory=list)
 
 
+class DraftedTailoring(BaseModel):
+    """What an LLM-backed :class:`ContentDrafter` is allowed to produce (ADR-0022).
+
+    Deliberately has **no** ``summary`` field -- the same "impossible to
+    construct otherwise" move as ``TailoredWorkEntry`` having no date fields
+    (ADR-0016's Case #6 correction). `summary` is sourced read-only from
+    ``MasterProfile.basics.summary`` by the orchestrating
+    ``LLMResumeGenerator``, never drafted by the LLM; this type structurally
+    cannot carry one, so there is no path for a drafter implementation to
+    slip invented summary prose into a draft even by mistake.
+    """
+
+    work: list[TailoredWorkEntry] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    projects: list[TailoredProjectEntry] = Field(default_factory=list)
+
+
 class TailoredResumeDraft(BaseModel):
     """The Resume Agent's generator output, before verification.
 
