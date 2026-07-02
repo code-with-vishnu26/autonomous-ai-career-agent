@@ -95,6 +95,32 @@ async def test_an_approved_draft_produces_pending_plus_submittable() -> None:
     assert isinstance(result.submittable, SubmittableApplication)
 
 
+async def test_an_approved_draft_gets_a_full_rendered_text() -> None:
+    """ADR-0025: rendered_text is computed here, at resume-creation time,
+    once both content and profile are in scope -- and it must actually
+    contain the real work history, not just the summary."""
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer."
+    bus = EventBus()
+    pipeline = _pipeline(
+        _honest_drafted(),
+        {
+            "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
+            "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                verified=True, confidence=0.95
+            ),
+        },
+        bus,
+    )
+    result = await pipeline.run(_opportunity(), profile)
+    rendered = result.application.resume.rendered_text
+    assert rendered is not None
+    assert "Backend engineer." in rendered
+    assert "Software Engineer" in rendered
+    assert "Built REST APIs serving 2M requests/day" in rendered
+    assert "Python" in rendered
+
+
 async def test_a_rejected_draft_produces_rejected_status_no_submittable() -> None:
     """The core proof: status is "rejected", not "failed" -- distinct from a
     submission failure, and no SubmittableApplication is ever produced."""
@@ -111,6 +137,8 @@ async def test_a_rejected_draft_produces_rejected_status_no_submittable() -> Non
     assert result.application.status != "failed"
     assert result.application.resume.truthfulness.approved is False
     assert result.submittable is None
+    # a rejected resume was never going to be submitted -- nothing to render
+    assert result.application.resume.rendered_text is None
 
 
 async def test_approval_publishes_resumetailored_not_truthfulnessrejected() -> None:

@@ -25,6 +25,13 @@ produces an audited
 approved. Deliberately stops there -- it never calls
 :class:`~career_agent.core.interfaces.Applicator`; tier selection and
 obtaining a real
-:class:`~career_agent.domain.models.HumanConfirmation` are a separate,
-later slice.
+:class:`~career_agent.domain.models.HumanConfirmation` are a separate
+slice (Phase 8c, ``agents/apply/pipeline.py``).
+
+For an approved draft, ``ResumeTailoringPipeline.run()`` also computes
+``TailoredResume.rendered_text`` via
+:func:`~career_agent.domain.rendering.render_tailored_resume` (Phase 8d,
+ADR-0025) -- the one place ``draft.content`` and ``profile`` are both
+already in scope, so no ``Applicator`` needs a profile dependency just to
+render a preview.
 """

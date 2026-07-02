@@ -15,6 +15,16 @@ On-demand only: this pipeline runs once per call, given an explicit
 select opportunities on its own -- the profile-staleness and
 send-confirmation gaps (ADR-0018/ADR-0021) stay correctly deferred; nothing
 here trips their "before any scheduled/autonomous run" trigger.
+
+``TailoredResume.rendered_text`` (ADR-0025) is computed here, once, only
+for an *approved* draft -- the one place both ``draft.content`` and
+``profile`` are in scope at resume-creation time, so no ``Applicator``
+needs its own profile dependency to render a preview later. A rejected
+draft's ``rendered_text`` stays ``None``: rendering could itself raise
+(``render_tailored_resume`` independently re-verifies every
+``source_entry_id``, the same discipline the gate already applied), and a
+rejected resume was never going to be submitted, so there is nothing to
+render it for.
 """
 
 from __future__ import annotations
@@ -33,6 +43,7 @@ from career_agent.domain.models import (
     TailoredResume,
     to_submittable,
 )
+from career_agent.domain.rendering import render_tailored_resume
 
 
 class ResumeTailoringResult(NamedTuple):
@@ -75,11 +86,17 @@ class ResumeTailoringPipeline:
         draft = await self._generator.tailor(opportunity, profile)
         truthfulness = await self._gate.verify(draft, profile)
 
+        rendered_text = (
+            render_tailored_resume(draft.content, profile)
+            if truthfulness.approved
+            else None
+        )
         resume = TailoredResume(
             id=str(uuid.uuid4()),
             opportunity_id=opportunity.id,
             profile_version=profile.version,
             content=draft.content,
+            rendered_text=rendered_text,
             truthfulness=truthfulness,
         )
         application = Application(
