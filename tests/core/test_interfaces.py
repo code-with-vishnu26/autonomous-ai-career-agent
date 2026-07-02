@@ -156,6 +156,22 @@ def test_applicator_is_one_interface_not_three() -> None:
     assert isinstance(_FakeApplicator(), Applicator)
 
 
+def test_applicator_exposes_only_prepare_and_submit() -> None:
+    """Canary for ADR-0019's no-cross-tier-auto-retry rule.
+
+    Does not prove a fallback attempt requires a fresh confirmation -- no
+    Tier 2/3 exist yet to make that a real, testable behavior. It pins
+    today's interface surface so that a future change adding a third method
+    (e.g. an ``apply_with_fallback()`` that chains tiers internally, bypassing
+    per-tier confirmation) breaks this test and must be a deliberate,
+    reviewed choice, never a silent addition.
+    """
+    public_methods = {
+        name for name in vars(Applicator) if not name.startswith("_")
+    }
+    assert public_methods == {"prepare", "submit"}
+
+
 def test_resume_generator_and_truthfulness_gate_are_separate_protocols() -> None:
     """A ResumeGenerator has no method that can mark its own output verified
     -- verification lives on a distinct interface (ADR-0003)."""
