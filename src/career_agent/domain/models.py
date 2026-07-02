@@ -209,6 +209,11 @@ class Opportunity(BaseModel):
 
     id: str
     company_id: str
+    #: A cross-source canonical employer identity (ADR-0014), computed by the
+    #: source (a domain where available, else a normalized company name), so the
+    #: repository can dedup the same job across sources by fingerprint. Required:
+    #: a source cannot emit an opportunity without declaring one.
+    canonical_company: str
     title: str
     source: Literal["ats_api", "yc", "hn", "career_page", "web_search"]
     source_url: str

@@ -53,17 +53,16 @@ differently-shaped API of the same kind), then **4b-feeds** YC `hiring.json` + H
 "Who's Hiring" (the harder test — a firehose to filter, no structured job
 object). **4c** the provider-abstracted search layer + dynamic ranking (ADR-0002).
 
-> **Phase 4c decision checkpoint (do not let drift).** Opportunity identity today
-> uses the ATS-native id for exact idempotency (`opportunity_id`) with
-> `canonical_fingerprint(company, title, location)` as the source-independent
-> cross-source key. 4c is the phase where web search finds a job the ATS API
-> already returned, so 4c **must make an explicit, ADR-recorded choice** on
-> cross-source dedup: fingerprint-primary vs. a two-key match — decided with the
-> real multi-source case in front of it, not settled by convenience. A related
-> sub-decision surfaces in 4b: the fingerprint's *company* component is currently
-> the ATS **board token**, which differs across ATSes for the same employer, so
-> 4c's dedup decision must also settle **company-identity normalization**
-> (canonical company/domain). Both are deferred consciously, not overlooked.
+> **Phase 4c decision checkpoint — resolved in [ADR-0014](docs/adr/0014-cross-source-opportunity-identity.md)
+> (4c-slice-1).** Decided against the five existing sources before web search
+> arrived: two-key dedup (ATS-native id for exact idempotency; a
+> `canonical_fingerprint` match for cross-source collapse, but only when the
+> incoming opportunity is non-authoritative, so two authoritative same-title
+> reqs never over-merge) and a required `canonical_company` field each source
+> computes (a domain where available, else a normalized token/slug). Two bounded,
+> safe-direction gaps are recorded with revisit criteria: ATS sources have no
+> domain (under-merge, not corruption) and a rare cross-source over-merge is
+> accepted as the quality-over-volume trade-off.
 
 ## ⬜ Phase 5 — JSON Resume master profile
 The structured master profile (JSON Resume schema), its loader/validator, and the

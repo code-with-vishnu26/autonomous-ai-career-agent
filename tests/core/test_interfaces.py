@@ -164,6 +164,7 @@ async def test_generator_then_gate_orchestration_never_self_approves() -> None:
     opportunity = Opportunity(
         id="opp-1",
         company_id="co-1",
+        canonical_company="co-1",
         title="Engineer",
         source="ats_api",
         source_url="https://example.com/job",

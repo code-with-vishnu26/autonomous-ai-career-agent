@@ -63,3 +63,4 @@ The conditions under which we should reopen this decision.
 | [0011](0011-structured-tailored-content.md) | Structured tailored resume content (not free text) | Accepted |
 | [0012](0012-opportunity-provenance-and-confidence.md) | Opportunity provenance + extraction confidence (honest uncertainty) | Accepted |
 | [0013](0013-held-candidate-mechanism.md) | Held-candidate mechanism for freeform extraction sources (visible discard pile) | Accepted |
+| [0014](0014-cross-source-opportunity-identity.md) | Cross-source opportunity identity: two-key dedup + canonical company | Accepted |

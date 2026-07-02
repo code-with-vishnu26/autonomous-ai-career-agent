@@ -9,11 +9,19 @@ from career_agent.domain.models import Opportunity, Provenance
 from career_agent.storage.memory import InMemoryOpportunityRepository
 
 
-def _opp(opportunity_id: str = "id-1") -> Opportunity:
+def _opp(
+    opportunity_id: str = "id-1",
+    *,
+    canonical_company: str = "acme",
+    title: str = "Engineer",
+    location: str | None = None,
+    ats_ref: str | None = None,
+) -> Opportunity:
     return Opportunity(
         id=opportunity_id,
         company_id="acme",
-        title="Engineer",
+        canonical_company=canonical_company,
+        title=title,
         source="ats_api",
         source_url="https://example.invalid/1",
         provenance=Provenance(
@@ -21,6 +29,8 @@ def _opp(opportunity_id: str = "id-1") -> Opportunity:
             reference="https://example.invalid/api/1",
             extraction_confidence=1.0,
         ),
+        ats_ref=ats_ref,
+        location=location,
         description_raw="",
         discovered_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
@@ -54,3 +64,53 @@ async def test_get_returns_stored_or_none() -> None:
     await repo.add(stored)
     assert (await repo.get("id-1")) == stored
     assert (await repo.get("missing")) is None
+
+
+async def test_cross_source_duplicate_is_deduped_by_fingerprint() -> None:
+    """ADR-0014 two-key: a non-authoritative opportunity (e.g. an HN or web
+    hit, no native id) whose canonical company + title + location match a known
+    ATS job is a duplicate -- even though its primary id differs."""
+    repo = InMemoryOpportunityRepository()
+    ats_job = _opp(
+        "greenhouse:acme:1",
+        canonical_company="acme.com",
+        title="Senior Rust Engineer",
+        location="Remote",
+        ats_ref="1",  # authoritative
+    )
+    # same job, discovered via a non-authoritative source: different primary id,
+    # no native ref, but the same canonical company/title/location.
+    hn_hit = _opp(
+        "fingerprint-hash-xyz",
+        canonical_company="acme.com",
+        title="Senior Rust Engineer",
+        location="Remote",
+        ats_ref=None,  # non-authoritative
+    )
+    assert await repo.add(ats_job) is True
+    assert await repo.add(hn_hit) is False  # deduped by fingerprint match
+
+
+async def test_two_authoritative_reqs_sharing_a_fingerprint_stay_separate() -> None:
+    """The negative guarantee two-key exists to protect: two distinct ATS reqs
+    at one company with identical title+location (different native ids) must NOT
+    merge. A dedup that only proves things merge is half a test."""
+    repo = InMemoryOpportunityRepository()
+    req_a = _opp(
+        "greenhouse:acme:1",
+        canonical_company="acme",
+        title="Software Engineer",
+        location="Remote",
+        ats_ref="1",
+    )
+    req_b = _opp(
+        "greenhouse:acme:2",  # distinct native id
+        canonical_company="acme",
+        title="Software Engineer",
+        location="Remote",
+        ats_ref="2",
+    )
+    assert await repo.add(req_a) is True
+    assert await repo.add(req_b) is True  # same fingerprint, but both authoritative
+    assert (await repo.get("greenhouse:acme:1")) is not None
+    assert (await repo.get("greenhouse:acme:2")) is not None
