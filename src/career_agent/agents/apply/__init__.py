@@ -119,9 +119,39 @@ therefore not a generalization nice-to-have -- it is the actual gate on
 this project's practical usefulness on the one platform it already
 supports.
 
-Remaining future work: real per-question-type answering for custom/EEOC
-questions -- now understood as load-bearing for practical completion, not
-just thorough (its own dedicated ADR, not this one); confirming the exact
+``question_answerer.py`` (Phase 8j, ADR-0031) builds the deferred
+custom-questions/EEOC design pass ADR-0030 re-prioritized as load-bearing:
+a single, shared :class:`~career_agent.agents.apply.question_answerer.
+QuestionCategory` classifier plus four category-specific answering
+functions, deliberately one component rather than per-``FormFiller``
+logic (the categories are properties of the question, not the platform --
+splitting them risks the EEOC absolute drifting in one platform's copy).
+``answer_eeoc_question`` takes no ``MasterProfile`` parameter at all --
+never auto-fills, never suggest-then-confirms, only ever returns a
+human's own response. ``answer_factual_question`` routes work-authorization
+and sponsorship questions through a new, narrow ``MasterProfile.
+legal_status: LegalStatusSection`` (``work_authorized_us``,
+``requires_sponsorship``), where ``None`` structurally means "not yet
+captured" and raises ``MissingLegalStatusFactError`` rather than ever
+defaulting to "no." Subjective/motivational questions have no answering
+function at all -- the no-LLM-drafting guarantee is structural.
+``match_dropdown_option`` deterministically fuzzy-matches a profile value
+against a form's real, live-enumerated options and refuses
+(``matched_option=None``) rather than picking a close-but-wrong option,
+returning its own ``DropdownMatchResult`` type kept deliberately distinct
+from ``ClaimVerdict`` (a similarity judgment, not a truth judgment). Built
+against a 20-case adversarial matrix the user drafted personally; the four
+cases flagged as load-bearing were each independently verified by
+deliberately injecting the violation and confirming the test caught it
+before reverting. This module classifies and answers a question in
+isolation only -- wiring it into ``BrowserApplicator.submit()``'s live
+pause/resume flow is real, separate, deliberately deferred future work,
+the same isolated-mechanism-first sequencing this project used for
+``ResumeTailoringPipeline`` (ADR-0023) before ``SubmissionPipeline``
+(ADR-0024) wired a real ``Applicator`` in.
+
+Remaining future work: wiring ``QuestionAnswerer`` into
+``BrowserApplicator.submit()``'s live DOM flow; confirming the exact
 Greenhouse resume-field interaction sequence; resolving the resume-field
 interaction shape and confirming Lever's selectors generalize across more
 than one company before ``LeverFormFiller`` can move past a stub; Ashby's
