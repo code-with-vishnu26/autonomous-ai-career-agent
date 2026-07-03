@@ -36,9 +36,15 @@ def test_subpackages_import() -> None:
 
 
 def test_cli_entrypoint_runs(capsys) -> None:
-    """The placeholder CLI entry point executes and prints a banner."""
+    """With no subcommand, the CLI prints the Phase 1 placeholder banner.
+
+    Passes an explicit empty argv (Phase 8e, ADR-0026): main() now parses
+    real arguments for the ``apply`` subcommand, so calling it
+    programmatically must never fall through to reading *this test
+    process's* own sys.argv (pytest's own CLI flags).
+    """
     from career_agent.cli import main
 
-    main()
+    main([])
     out = capsys.readouterr().out
     assert "Autonomous AI Career Agent" in out

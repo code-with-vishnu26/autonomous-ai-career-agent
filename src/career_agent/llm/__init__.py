@@ -19,4 +19,12 @@ tiering for this port is real, undecided future work.
 ``prompts.py`` holds both ports' git-versioned prompt text. The general
 cascade client this package's docstring describes is still future work;
 neither concrete class here depends on it.
+
+``promptfoo_gate.py`` (Phase 8e, ADR-0026) is not a port implementation --
+it is the mechanism that positively verifies, against an actual results
+artifact on disk, that the promptfoo suite has passed for the current
+truthfulness-gate prompt version before ``cli.py`` constructs a real
+``AnthropicClaimVerifier``. This is what makes ADR-0016's promptfoo
+requirement a structural check rather than a policy a future run could
+silently skip.
 """
