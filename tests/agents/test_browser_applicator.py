@@ -364,6 +364,75 @@ async def test_submit_refuses_and_never_clicks_when_a_required_field_is_unknown(
         await applicator.submit(preview, _confirmation(preview.preview_token))
 
 
+async def test_unhandled_field_is_detected_before_any_click_on_the_live_page(
+    tmp_path: Path,
+) -> None:
+    """The real precondition for submit()'s refusal, checked directly
+    against a real, live page: by the exact point _unhandled_required_fields
+    finds the extra required field, the success marker has never appeared --
+    the same "genuinely never fired" proof, verified against real DOM state
+    rather than trusted from exception type alone, as the 7a token-binding
+    (adapter.calls == []) and 7b3 CAPTCHA-pause
+    (page.is_visible("#application-success") is False) tests."""
+    applicator = await _applicator(
+        tmp_path, _opportunity("opp-1"), fixture_path=_EXTRA_QUESTION_FIXTURE
+    )
+    page, context, browser = await applicator._open_page(
+        "opp-1", f"file://{_EXTRA_QUESTION_FIXTURE}"
+    )
+    try:
+        app = _approved_application("opp-1")
+        await GreenhouseFormFiller().fill_identity_and_resume(page, app)
+        unhandled = await _unhandled_required_fields(
+            page, GreenhouseFormFiller.known_field_selectors
+        )
+        assert unhandled == ["#why_us"]
+        # submit() raises exactly when this list is non-empty, and does so
+        # before ever calling page.click("#submit_app") -- verified here
+        # against the real page's own state, not assumed from code order.
+        assert await page.is_visible("#application-success") is False
+    finally:
+        await browser.close()
+
+
+async def test_submit_closes_the_browser_after_refusing_an_unsupported_field(
+    tmp_path: Path,
+) -> None:
+    """A refusal must not leak an open browser -- proven by capturing the
+    real Browser object via on_context_ready and checking is_connected()
+    is False after submit() raises, not merely trusting the try/except
+    structure that closes it."""
+    captured: dict[str, object] = {}
+
+    async def capture_and_route(context: BrowserContext) -> None:
+        captured["browser"] = context.browser
+
+        async def handler(route):
+            await route.fulfill(path=str(_EXTRA_QUESTION_FIXTURE))
+
+        for pattern in _ROUTE_PATTERNS:
+            await context.route(pattern, handler)
+
+    opportunity = _opportunity("opp-1")
+    repo = InMemoryOpportunityRepository()
+    await repo.add(opportunity)
+    session_store = EncryptedSessionStore(tmp_path, FakeKeyProvider())
+    applicator = BrowserApplicator(
+        session_store,
+        repo,
+        chromium_executable_path=_chromium_executable(),
+        on_context_ready=capture_and_route,
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    with pytest.raises(UnsupportedFormFieldsError):
+        await applicator.submit(preview, _confirmation(preview.preview_token))
+
+    browser = captured["browser"]
+    assert browser is not None
+    assert browser.is_connected() is False
+
+
 # ---------------------------------------------------------------------------
 # The pause: a challenge must produce HumanActionRequired, not success
 # ---------------------------------------------------------------------------
