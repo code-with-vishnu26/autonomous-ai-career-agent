@@ -396,11 +396,29 @@ class Application(BaseModel):
     ``resume.truthfulness.approved`` -- exactly the kind of
     should-be-structural distinction this project has refused to leave to
     inference everywhere else.
+
+    ``applicant`` (Phase 8f, ADR-0027) is a **frozen snapshot** of
+    ``MasterProfile.basics`` at the moment this ``Application`` was built --
+    not a live pointer resolved again at submission time. This is the same
+    "was this true when submitted" discipline ``TailoredResume.profile_version``
+    already applies to resume content, now extended to identity: a
+    live lookup at ``Applicator.submit()`` time would let a profile edit
+    between ``prepare()`` and ``submit()`` silently submit a name/email that
+    disagrees with the content that was actually gated and rendered --
+    submitted identity and submitted content coming from two different
+    moments in time, with nothing to flag the mismatch. Freezing both
+    together here closes that gap. Required, not optional-with-a-default,
+    for the same "impossible to construct otherwise" reason
+    ``canonical_company``/``provenance`` are required elsewhere in this
+    codebase: nothing should be able to build a real ``Application`` with no
+    identity and have that go unnoticed until a real external form tries to
+    fill blank fields.
     """
 
     id: str
     opportunity_id: str
     resume: TailoredResume
+    applicant: BasicsSection
     tier_used: Literal["ats_api", "browser", "email"] | None = None
     status: Literal["pending", "paused_for_human", "submitted", "failed", "rejected"]
     submitted_at: datetime | None = None

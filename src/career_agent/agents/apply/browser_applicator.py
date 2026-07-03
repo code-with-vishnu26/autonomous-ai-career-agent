@@ -18,6 +18,15 @@ resolves the form URL directly from the opportunity's ``source_url``.
 Generalizing to arbitrary company career pages is real, separate future
 work (ADR-0020), the same way Greenhouse-first proved the ATS contract in
 Phase 4a before Lever/Ashby were added.
+
+``_fill_form`` (Phase 8f, ADR-0027) fills the form's identity fields from
+``application.application.applicant`` -- a frozen ``BasicsSection`` snapshot
+now carried on every ``Application`` -- rather than the placeholder literal
+strings this class filled with before that field existed. ``_split_name``
+below is a documented, known-imprecise stopgap for turning one JSON-Resume
+``name`` string into Greenhouse's separate first/last fields; real
+correctness needs per-field human confirmation, not a smarter heuristic,
+and stays named, deferred future work.
 """
 
 from __future__ import annotations
@@ -207,10 +216,12 @@ class BrowserApplicator:
         return page, context, browser
 
     async def _fill_form(self, page: Page, application: SubmittableApplication) -> None:
+        applicant = application.application.applicant
+        first_name, last_name = _split_name(applicant.name)
         summary = application.application.resume.content.summary
-        await page.fill("#first_name", "Applicant")
-        await page.fill("#last_name", "Name")
-        await page.fill("#email", "applicant@example.com")
+        await page.fill("#first_name", first_name)
+        await page.fill("#last_name", last_name)
+        await page.fill("#email", applicant.email)
         await page.fill("#resume_text", summary)
 
     async def _finish(
@@ -229,3 +240,21 @@ class BrowserApplicator:
             application_id=application.application.id,
             tier_used="browser",
         )
+
+
+def _split_name(name: str) -> tuple[str, str]:
+    """Split one JSON-Resume ``basics.name`` into Greenhouse's first/last fields.
+
+    A **known-imprecise stopgap, not an assumed-correct split** (ADR-0027):
+    the last whitespace-separated token becomes ``last_name``, everything
+    before it becomes ``first_name``; a single-token name puts that token in
+    ``first_name`` with an empty ``last_name``. It gets multi-part surnames
+    ("van der Berg"), suffixes ("Jr.", "III"), and non-Western name orders
+    wrong. Solving this properly needs per-field human confirmation before a
+    real submission, not a smarter heuristic -- that is named, deferred
+    future work (ADR-0027), not something silently left for later.
+    """
+    parts = name.rsplit(" ", 1)
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], parts[1]

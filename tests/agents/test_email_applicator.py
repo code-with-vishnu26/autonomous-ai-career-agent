@@ -13,6 +13,7 @@ from career_agent.agents.apply.email_applicator import EmailApplicator
 from career_agent.core.events import HumanActionRequired
 from career_agent.domain.models import (
     Application,
+    BasicsSection,
     HumanConfirmation,
     Opportunity,
     Provenance,
@@ -59,7 +60,11 @@ def _approved_application(opportunity_id: str) -> SubmittableApplication:
         ),
     )
     app = Application(
-        id="app-1", opportunity_id=opportunity_id, resume=resume, status="pending"
+        id="app-1",
+        opportunity_id=opportunity_id,
+        resume=resume,
+        applicant=BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+        status="pending",
     )
     return SubmittableApplication(application=app)
 

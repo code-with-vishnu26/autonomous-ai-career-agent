@@ -354,10 +354,40 @@ its ordering before real client construction, and the `argv` fix) were
 verified by deliberately breaking each, confirming a test caught it, then
 reverting.
 
+**8f — applicant identity snapshot + real data into BrowserApplicator, merged.**
+Recorded in **ADR-0027**. Investigating a real Tier 1 `ATSAdapter` (the
+natural next step after 8e) found it isn't a real capability at all:
+verified against Greenhouse's, Lever's, and Ashby's own API docs that
+direct submission requires an employer-issued credential no generic
+applicant tool can obtain -- confirmed across all three platforms, not a
+Greenhouse-specific quirk. That makes `BrowserApplicator` (Tier 2, the same
+public form a human uses, no company cooperation required) the only tier
+that can carry real submission weight -- but checking it before proposing
+how to generalize it past Greenhouse's one form found a sharper gap:
+`_fill_form` filled the form with hardcoded placeholder strings
+(`"Applicant"`, `"Name"`, `"applicant@example.com"`), never real applicant
+data, undetected since 7b3 because that slice's own review was correctly
+focused on pause/resume/session-encryption, not the identity fields
+incidental to it. `Application` gains a required, frozen
+`applicant: BasicsSection` snapshot, populated once in
+`ResumeTailoringPipeline` alongside `profile_version` -- the same "was this
+true when submitted" discipline preventing a profile edit between
+`prepare()` and `submit()` from silently submitting mismatched identity and
+content. `_fill_form` now reads real data, with a documented,
+known-imprecise name-splitting heuristic (multi-part surnames, suffixes,
+non-Western name orders named as real, deferred limitations, not silently
+assumed correct). Both the required-field guarantee and the real-data fix
+were verified by deliberately breaking each and confirming a test caught
+it (the latter checked against a real, live Chromium page, not simulated).
+
 **Remaining (named, not blocking Phase 8's own criterion below):** real
-multi-tier selection across the three `Applicator` implementations; a real
-`ATSAdapter` for `apply` to actually submit through; the real, OAuth-backed
-`GmailDraftSink`; generalizing `BrowserApplicator` beyond Greenhouse's form.
+multi-tier selection across the three `Applicator` implementations;
+generalizing `BrowserApplicator` beyond Greenhouse's one form (which
+reopens the custom-questions/EEOC problem that killed Tier 1, now as a
+truthfulness-adjacent design question for freeform application answers);
+the real, OAuth-backed `GmailDraftSink`. Tier 1 direct-API submission for
+arbitrary companies is no longer on this list -- confirmed dead, not
+merely deferred (ADR-0027).
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored
 work entry. ✅
