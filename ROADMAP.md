@@ -475,10 +475,46 @@ re-prioritized accordingly: it is not a generalization nice-to-have, it is
 the actual gate on this project's practical usefulness on the one
 platform it already supports.
 
-**Remaining (named, not blocking Phase 8's own criterion below):** the
-custom-questions/EEOC-answering design itself -- now understood as
-load-bearing for practical completion, not just thorough (its own ADR,
-per 8g/8i); confirming the exact Greenhouse resume-field interaction
+**8j — QuestionAnswerer: the four custom-question categories, merged.**
+Recorded in **ADR-0031**. Builds the component 8i re-prioritized: EEOC
+self-identification (an absolute -- `answer_eeoc_question` takes no
+`MasterProfile` parameter at all, proven by a signature-inspection test,
+not just runtime behavior), profile-groundable factual yes/no (routed
+through a new, narrow `LegalStatusSection` on `MasterProfile` --
+`work_authorized_us`/`requires_sponsorship`, `None` structurally meaning
+"not yet captured," never a default "no," enforced by
+`MissingLegalStatusFactError`), subjective/motivational freeform (no
+`answer_subjective_question` function exists anywhere -- the no-LLM-drafting
+guarantee is structural, not a runtime check), and structured-but-unmatchable
+dropdowns (`match_dropdown_option`, deterministic Jaccard similarity, its
+own `DropdownMatchResult` type kept distinct from `ClaimVerdict`, refuses
+on both a low-confidence best match and a near-tie between two plausible
+options). All four categories investigate deterministic template matching
+over an LLM call -- and land there for all four, not just the two
+originally expected, because EEOC and legal-status questions follow
+OFCCP-standardized boilerplate wording widely enough to make templates
+defensible; a real LLM-backed classifier stays a named, deferred
+escalation. Built against a 20-case adversarial matrix the user drafted
+personally (same discipline as the truthfulness gate's and HN's matrices),
+with the four cases the user flagged as load-bearing -- 1d (no profile
+lookup ever attempted for EEOC fields), 2b (negated-polarity questions),
+3c (restating true profile content is still unapproved generation), and
+4c (a close-but-wrong dropdown pick is worse than blank) -- each
+independently verified by deliberately injecting the corresponding
+violation, confirming the test caught it, then reverting. Named,
+honestly-recorded limitation: Category 2 is scoped to `LegalStatusSection`
+only this slice, so a profile-groundable-but-non-legal-status question
+("years of Python experience") currently falls to the safe SUBJECTIVE
+default rather than being properly classified. Deliberately **not** wired
+into `BrowserApplicator.submit()`'s live DOM flow this slice -- proven in
+isolation first, wiring is its own separate, deferred step, the same
+sequencing 8c/8d used for `ResumeTailoringPipeline` before
+`SubmissionPipeline`.
+
+**Remaining (named, not blocking Phase 8's own criterion below):** wiring
+`QuestionAnswerer` into `BrowserApplicator.submit()`'s live pause/resume
+flow (own new pause semantics needed, beyond ADR-0020's single challenge
+pause); confirming the exact Greenhouse resume-field interaction
 sequence; real multi-tier selection across the three `Applicator`
 implementations; resolving the resume-field interaction shape and
 confirming Lever's selectors generalize across more than one company

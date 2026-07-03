@@ -74,6 +74,34 @@ class ProjectEntry(BaseModel):
     keywords: list[str] = Field(default_factory=list)
 
 
+class LegalStatusSection(BaseModel):
+    """User-confirmed facts needed to answer common eligibility questions.
+
+    Each field is ``None`` **only** to mean "not yet captured" -- never as
+    an implicit "no." Structurally distinct from a false answer on purpose:
+    if ``bool = False`` were the default, an uncaptured fact would silently
+    *answer* a real legal-status question the moment anything touched this
+    field before a human had ever been asked -- a materially worse failure
+    than any resume-tailoring fabrication, because this is a legal
+    representation made to a real employer, not a resume claim. Any code
+    that needs one of these facts and finds ``None`` must trigger an
+    explicit capture flow (the same "cannot proceed without this, ask the
+    human" shape as :class:`~career_agent.agents.resume.generator.
+    MissingSummaryError`), never infer, never default.
+
+    Deliberately narrow -- exactly the fields real, observed application
+    questions have needed so far, not a general "arbitrary future facts"
+    mechanism. The same discipline this project has applied everywhere a
+    speculative generalization was tempting (``resolve_ats_kind`` over a
+    ``CompanyRepository``, the flat ``Settings`` object, ``load_master_
+    profile`` as a plain function): solve the concrete case, generalize
+    later only if real additional cases actually appear.
+    """
+
+    work_authorized_us: bool | None = None
+    requires_sponsorship: bool | None = None
+
+
 class MasterProfile(BaseModel):
     """The single source of truth for every applicant-facing claim (ADR-0006).
 
@@ -91,6 +119,7 @@ class MasterProfile(BaseModel):
     education: list[EducationEntry] = Field(default_factory=list)
     skills: list[SkillEntry] = Field(default_factory=list)
     projects: list[ProjectEntry] = Field(default_factory=list)
+    legal_status: LegalStatusSection = Field(default_factory=LegalStatusSection)
 
 
 # ---------------------------------------------------------------------------
