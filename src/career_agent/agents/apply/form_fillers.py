@@ -1,12 +1,24 @@
-"""Per-``ats_kind`` form-filling strategies for ``BrowserApplicator`` (ADR-0028).
+"""Per-``ats_kind`` form-filling strategies for ``BrowserApplicator`` (ADR-0028/0029).
 
 A :class:`FormFiller` knows how to fill *identity and resume* fields for
 exactly one ATS platform's public apply form, and declares
 ``known_field_selectors`` -- the exact set of fields it fills and nothing
-else. ``BrowserApplicator`` uses that declaration to detect any *other*
-required field a real posting's form has (a custom question, an EEOC/
-demographic question, anything else) and refuse rather than guess at it
-(:class:`~career_agent.agents.apply.browser_applicator.UnsupportedFormFieldsError`).
+else -- plus, since ADR-0029, ``challenge_selector`` and ``submit_selector``:
+the platform's own real markup for a verification challenge and the
+clickable submit action. ``BrowserApplicator`` used to hardcode
+``#verification-challenge``/``#submit_app`` (Greenhouse's own fixture
+markers) directly; those are now declared per platform, because a real,
+live Lever posting confirmed real hCaptcha markup (``div#h-captcha``, a
+hidden submit button) that the old hardcoded values would never have
+matched at all.
+
+``known_field_selectors`` entries are arbitrary CSS selectors, not assumed
+to be ``#id`` shapes -- the same real Lever posting confirmed its identity
+fields have no ``id`` attribute at all, only ``name`` (e.g. ``name="email"``,
+selectable as ``[name='email']``). ``BrowserApplicator``'s
+``_unhandled_required_fields`` derives a field's real selector from
+whichever attribute it actually has (``id`` first, then ``name``), so this
+declaration style works for both shapes.
 
 Only Greenhouse has a real, working implementation. **Lever's and Ashby's
 field-level DOM selectors could not be verified before this slice was
@@ -22,7 +34,14 @@ unverified static selector map more strongly than mere uncertainty would.
 raise :class:`FormFillerNotImplementedError` rather than fill anything --
 a real human needs to inspect a handful of real live postings on each
 platform and report back the actual field selectors before these can be
-built for real.
+built for real. Lever's resume field in particular is confirmed to need
+more than a selector: it's a collapsed ``<li class="application-question
+resume">`` with a ``resumeStorageId`` hidden field, strongly suggesting a
+JS-driven file-upload widget rather than Greenhouse's plain textarea --
+this project has no resume *file* artifact anywhere in its domain model
+(``SubmittableApplication`` only ever carries ``rendered_text``), so
+``LeverFormFiller`` stays a stub until that's confirmed one way or the
+other, not just until selectors are known.
 """
 
 from __future__ import annotations
@@ -52,11 +71,22 @@ class FormFiller(Protocol):
     ``known_field_selectors`` is what lets ``BrowserApplicator`` detect any
     *other* required field a real posting's form has and refuse rather than
     silently ignore or guess at it -- the declaration is the safety
-    mechanism, not just documentation.
+    mechanism, not just documentation. Entries are arbitrary CSS selectors
+    (``#id`` or ``[name='...']``), matching whichever attribute a given
+    platform's real form actually uses.
+
+    ``challenge_selector``/``submit_selector`` (ADR-0029) are this
+    platform's own real markup for a verification challenge and the
+    clickable submit action -- previously hardcoded directly in
+    ``BrowserApplicator`` to Greenhouse's own fixture markers, which would
+    never have matched a real platform's different markup (confirmed by a
+    real Lever posting's hCaptcha widget).
     """
 
     ats_kind: str
     known_field_selectors: frozenset[str]
+    challenge_selector: str
+    submit_selector: str
 
     async def fill_identity_and_resume(
         self, page: Page, application: SubmittableApplication
@@ -77,6 +107,8 @@ class GreenhouseFormFiller:
     known_field_selectors = frozenset(
         {"#first_name", "#last_name", "#email", "#resume_text"}
     )
+    challenge_selector = "#verification-challenge"
+    submit_selector = "#submit_app"
 
     async def fill_identity_and_resume(
         self, page: Page, application: SubmittableApplication
@@ -104,6 +136,13 @@ class LeverFormFiller:
 
     ats_kind = "lever"
     known_field_selectors = frozenset()
+    # Real Lever markup is confirmed (name/email use `[name='...']`, a
+    # hidden hCaptcha submit target) but this stub raises before either
+    # selector is ever used -- left empty rather than guessed, so a future
+    # code path that somehow reached them would fail loudly (an empty
+    # Playwright selector errors) instead of silently matching nothing.
+    challenge_selector = ""
+    submit_selector = ""
 
     async def fill_identity_and_resume(
         self, page: Page, application: SubmittableApplication
@@ -128,6 +167,9 @@ class AshbyFormFiller:
 
     ats_kind = "ashby"
     known_field_selectors = frozenset()
+    # Left empty rather than guessed -- see LeverFormFiller's comment.
+    challenge_selector = ""
+    submit_selector = ""
 
     async def fill_identity_and_resume(
         self, page: Page, application: SubmittableApplication

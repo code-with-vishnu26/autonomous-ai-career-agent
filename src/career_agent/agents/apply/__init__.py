@@ -84,11 +84,29 @@ drafting or "guess then confirm" -- that entire category of question is
 named, deferred future work requiring its own dedicated design pass, not
 folded into this dispatch mechanism (ADR-0028's Future revisit criteria).
 
+A real, human dev-tools inspection of a live Lever posting (Phase 8h,
+ADR-0029) -- the one verification path no automated tool in this codebase
+or session could reach -- found ``FormFiller``'s own shape needed to
+generalize further: real Lever identity fields have no ``id`` attribute at
+all, only ``name``, and the posting used real hCaptcha markup neither the
+old hardcoded ``#verification-challenge``/``#submit_app`` literals nor
+``_unhandled_required_fields``'s ``#id``-only selector derivation could
+ever have matched. ``FormFiller`` now declares
+``challenge_selector``/``submit_selector`` per platform (read by
+``BrowserApplicator`` instead of hardcoded values), and
+``_unhandled_required_fields`` derives a field's selector from whichever
+attribute it actually has. ``LeverFormFiller``/``AshbyFormFiller`` still
+stay stubs -- the resume field's real interaction shape (plain text vs. a
+JS-driven file-upload widget, with no resume-file artifact anywhere in
+this project's domain model) is a separate, still-unconfirmed unknown that
+real selectors alone don't resolve.
+
 Remaining future work: real per-question-type answering for custom/EEOC
-questions (its own dedicated ADR, not this one); real Lever/Ashby
-``FormFiller`` selectors (needs a human to inspect live postings -- two
-independent automated-verification attempts both hit real walls, see
-ADR-0028); multi-tier selection; and the real, OAuth-backed Gmail client.
+questions (its own dedicated ADR, not this one); resolving the resume-field
+interaction shape and confirming Lever's selectors generalize across more
+than one company before ``LeverFormFiller`` can move past a stub; Ashby's
+DOM remains fully uninspectable by every tool tried so far (a client-side
+React SPA); multi-tier selection; and the real, OAuth-backed Gmail client.
 A real, runnable `career-agent apply` command exists as of Phase 8e
 (ADR-0026).
 """
