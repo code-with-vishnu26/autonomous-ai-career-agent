@@ -380,14 +380,50 @@ assumed correct). Both the required-field guarantee and the real-data fix
 were verified by deliberately breaking each and confirming a test caught
 it (the latter checked against a real, live Chromium page, not simulated).
 
+**8g — browser-tier per-ATS dispatch + unsupported-field refusal, merged.**
+Recorded in **ADR-0028**. Generalizes `BrowserApplicator`'s *dispatch* past
+Greenhouse-only: which ATS's form to fill is resolved via
+`resolve_ats_kind` (the same pattern-match ADR-0019 built for Tier 1),
+dispatching to a per-`ats_kind` `FormFiller` (`form_fillers.py`, new).
+Real Lever/Ashby form selectors could not be verified before building
+them: two independent verification attempts, from two different vantage
+points, both hit real walls -- this sandbox's Playwright cannot reach any
+live internet host at all, and a separate attempt with real web access
+could reach Lever's own documentation (confirming the form is genuinely
+organization-configurable, and that its `apply` questions API requires
+the same employer-issued credential that already killed Tier 1) but not
+rendered page DOM. `LeverFormFiller`/`AshbyFormFiller` are therefore
+explicit, registered stubs that raise a clear "not yet verified" error
+rather than guess at selectors. Before ever clicking submit,
+`BrowserApplicator` now also refuses (`UnsupportedFormFieldsError`) any
+*required* form field the active `FormFiller` doesn't declare knowing how
+to fill -- checked generically against the live page's real form
+elements, not a fixed per-platform list, so it works the same way
+regardless of which ATS's form is loaded; an optional unanswered field is
+left alone. Verified against a real, live Chromium page with a second
+fixture carrying one extra required field, and verified to actually bite
+by deliberately breaking both the refusal check and the dispatch-failure
+check and confirming each broke a test.
+
+The custom-questions/EEOC-answering problem this generalization reopens
+is explicitly **not** solved here -- named, deferred to its own dedicated
+ADR, with one absolute stated now rather than left implicit: EEOC/
+demographic self-identification fields must never be auto-filled or
+guess-then-confirmed, only left blank (where the form permits) or
+answered directly by a human with zero suggested default. This is a
+different kind of guardrail than anything built so far in this project --
+not "verify harder," but "don't build the capability at all, on
+principle," because the field isn't asking for a fact to verify, it's
+asking the person to exercise a legally protected choice about disclosure
+itself.
+
 **Remaining (named, not blocking Phase 8's own criterion below):** real
-multi-tier selection across the three `Applicator` implementations;
-generalizing `BrowserApplicator` beyond Greenhouse's one form (which
-reopens the custom-questions/EEOC problem that killed Tier 1, now as a
-truthfulness-adjacent design question for freeform application answers);
-the real, OAuth-backed `GmailDraftSink`. Tier 1 direct-API submission for
-arbitrary companies is no longer on this list -- confirmed dead, not
-merely deferred (ADR-0027).
+multi-tier selection across the three `Applicator` implementations; the
+custom-questions/EEOC-answering design itself (its own ADR, per 8g);
+real Lever/Ashby `FormFiller` selectors (needs a human to inspect live
+postings); the real, OAuth-backed `GmailDraftSink`. Tier 1 direct-API
+submission for arbitrary companies is no longer on this list -- confirmed
+dead, not merely deferred (ADR-0027).
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored
 work entry. ✅

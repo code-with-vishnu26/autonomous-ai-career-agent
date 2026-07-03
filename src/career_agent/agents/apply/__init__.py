@@ -57,18 +57,38 @@ is therefore the only tier that can carry real submission weight for this
 project's use case -- it drives the same public apply form a human uses,
 requiring no company cooperation.
 
-``browser_applicator.py``'s ``_fill_form`` (Phase 8f, ADR-0027) now fills
+``browser_applicator.py``'s identity-filling (Phase 8f, ADR-0027) now fills
 real applicant identity read from ``Application.applicant`` (a required,
 frozen ``BasicsSection`` snapshot populated once in
 ``ResumeTailoringPipeline``, the same "was this true when submitted"
 discipline ``profile_version`` already applies to resume content) rather
 than the hardcoded placeholder strings this class filled with before that
-field existed. Its name-splitting heuristic is a documented,
-known-imprecise stopgap, not an assumed-correct split.
+field existed.
 
-Remaining future work: generalizing Tier 2 beyond Greenhouse's one form
-shape (which reopens the per-posting custom-questions/EEOC problem that
-killed Tier 1, now as its own truthfulness-adjacent design question);
-multi-tier selection; and the real, OAuth-backed Gmail client. A real,
-runnable `career-agent apply` command exists as of Phase 8e (ADR-0026).
+``form_fillers.py`` (Phase 8g, ADR-0028) generalizes Tier 2's dispatch past
+Greenhouse-only: which ATS's form to fill is resolved from
+``resolve_ats_kind`` (the same pattern-match ADR-0019 reuses), dispatching
+to a per-``ats_kind`` :class:`~career_agent.agents.apply.form_fillers.
+FormFiller`. Only ``GreenhouseFormFiller`` is real -- Lever's and Ashby's
+real field selectors could not be verified against a live posting from
+this codebase (see that module's docstring for why), so
+``LeverFormFiller``/``AshbyFormFiller`` are explicit stubs that raise
+rather than guess. ``BrowserApplicator`` also now refuses, before ever
+clicking submit, any *required* form field a ``FormFiller`` doesn't
+declare knowing how to fill (:class:`~career_agent.agents.apply.
+browser_applicator.UnsupportedFormFieldsError`) -- a platform-agnostic
+check against the live page's real form elements, not a per-platform
+guess-list. This deliberately does **not** attempt to answer custom
+questions or EEOC/demographic fields in any way, including via LLM
+drafting or "guess then confirm" -- that entire category of question is
+named, deferred future work requiring its own dedicated design pass, not
+folded into this dispatch mechanism (ADR-0028's Future revisit criteria).
+
+Remaining future work: real per-question-type answering for custom/EEOC
+questions (its own dedicated ADR, not this one); real Lever/Ashby
+``FormFiller`` selectors (needs a human to inspect live postings -- two
+independent automated-verification attempts both hit real walls, see
+ADR-0028); multi-tier selection; and the real, OAuth-backed Gmail client.
+A real, runnable `career-agent apply` command exists as of Phase 8e
+(ADR-0026).
 """

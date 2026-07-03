@@ -1,13 +1,23 @@
 """Phase 7b3 / ADR-0020: BrowserApplicator, driven against a real, local
 Chromium instance -- not a Python-level fake standing in for a browser.
 
-Loads ``tests/fixtures/greenhouse/apply_form.html`` via ``file://``, so
-nothing here touches the network. ``?challenge=1`` makes the fixture show a
-verification panel after the first submit click, exactly like a real
-mid-flow CAPTCHA/verification wall -- the load-bearing tests prove
-BrowserApplicator pauses instead of treating that as success, and that
-resume() genuinely never re-clicks submit until the challenge is actually
-gone from the live page.
+Generalized past Greenhouse-only in Phase 8g / ADR-0028: dispatch to a
+per-``ats_kind`` ``FormFiller`` resolved from ``resolve_ats_kind``, and the
+platform-agnostic "refuse rather than guess" check for any required form
+field no registered ``FormFiller`` knows how to fill.
+
+Tests navigate to real-looking ATS URLs (``boards.greenhouse.io``,
+``jobs.lever.co``, ``jobs.ashbyhq.com``) so ``resolve_ats_kind`` resolves
+the same ``ats_kind`` production code would -- a Playwright route,
+installed via ``on_context_ready``, redirects those requests to a local
+offline fixture. Nothing here ever makes a real network request.
+
+``?challenge=1`` (still read from ``window.location.search`` on whatever
+URL was actually navigated to) makes the fixture show a verification panel
+after the first submit click, exactly like a real mid-flow CAPTCHA/
+verification wall -- the load-bearing tests prove BrowserApplicator pauses
+instead of treating that as success, and that resume() genuinely never
+re-clicks submit until the challenge is actually gone from the live page.
 """
 
 from __future__ import annotations
@@ -15,13 +25,22 @@ from __future__ import annotations
 import glob
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from career_agent.agents.apply.browser_applicator import (
     BrowserApplicator,
     ChallengeStillPresentError,
+    NoApplicableFormFillerError,
     UnknownPauseTokenError,
+    UnsupportedFormFieldsError,
+    _unhandled_required_fields,
+)
+from career_agent.agents.apply.form_fillers import (
+    FormFillerNotImplementedError,
+    GreenhouseFormFiller,
+    default_form_fillers,
 )
 from career_agent.core.events import ApplicationSubmitted, HumanActionRequired
 from career_agent.domain.models import (
@@ -41,7 +60,26 @@ from career_agent.integrations.browser_session import EncryptedSessionStore
 from career_agent.storage.memory import InMemoryOpportunityRepository
 from tests._fakes import FakeKeyProvider
 
+if TYPE_CHECKING:
+    from playwright.async_api import BrowserContext
+
 _FIXTURE = Path(__file__).parent.parent / "fixtures" / "greenhouse" / "apply_form.html"
+_EXTRA_QUESTION_FIXTURE = (
+    Path(__file__).parent.parent
+    / "fixtures"
+    / "greenhouse"
+    / "apply_form_with_extra_question.html"
+)
+
+_GREENHOUSE_URL = "https://boards.greenhouse.io/acme/jobs/12345"
+_LEVER_URL = "https://jobs.lever.co/acme/12345"
+_ASHBY_URL = "https://jobs.ashbyhq.com/acme/12345"
+
+_ROUTE_PATTERNS = [
+    "https://boards.greenhouse.io/**",
+    "https://jobs.lever.co/**",
+    "https://jobs.ashbyhq.com/**",
+]
 
 
 def _chromium_executable() -> str | None:
@@ -66,16 +104,30 @@ def _fixture_url(*, challenge: bool = False) -> str:
     return f"file://{_FIXTURE}{suffix}"
 
 
-def _opportunity(opportunity_id: str, source_url: str) -> Opportunity:
+def _route_to(fixture_path: Path):
+    async def install(context: BrowserContext) -> None:
+        async def handler(route):
+            await route.fulfill(path=str(fixture_path))
+
+        for pattern in _ROUTE_PATTERNS:
+            await context.route(pattern, handler)
+
+    return install
+
+
+def _opportunity(
+    opportunity_id: str, source_url: str = _GREENHOUSE_URL, *, challenge: bool = False
+) -> Opportunity:
+    url = f"{source_url}?challenge=1" if challenge else source_url
     return Opportunity(
         id=opportunity_id,
         company_id="acme",
         canonical_company="acme.com",
         title="Software Engineer",
         source="ats_api",
-        source_url=source_url,
+        source_url=url,
         provenance=Provenance(
-            method="structured_api", reference=source_url, extraction_confidence=1.0
+            method="structured_api", reference=url, extraction_confidence=1.0
         ),
         description_raw="",
         discovered_at=datetime(2026, 1, 1, tzinfo=UTC),
@@ -126,12 +178,22 @@ def _ack(pause_token: str) -> PauseAcknowledgment:
     )
 
 
-async def _applicator(tmp_path: Path, opportunity: Opportunity) -> BrowserApplicator:
+async def _applicator(
+    tmp_path: Path,
+    opportunity: Opportunity,
+    *,
+    fixture_path: Path = _FIXTURE,
+    form_fillers: dict | None = None,
+) -> BrowserApplicator:
     repo = InMemoryOpportunityRepository()
     await repo.add(opportunity)
     session_store = EncryptedSessionStore(tmp_path, FakeKeyProvider())
     return BrowserApplicator(
-        session_store, repo, chromium_executable_path=_chromium_executable()
+        session_store,
+        repo,
+        form_fillers=form_fillers,
+        chromium_executable_path=_chromium_executable(),
+        on_context_ready=_route_to(fixture_path),
     )
 
 
@@ -141,7 +203,7 @@ async def _applicator(tmp_path: Path, opportunity: Opportunity) -> BrowserApplic
 
 
 async def test_submit_completes_when_no_challenge_appears(tmp_path: Path) -> None:
-    opportunity = _opportunity("opp-1", _fixture_url())
+    opportunity = _opportunity("opp-1")
     applicator = await _applicator(tmp_path, opportunity)
     app = _approved_application("opp-1")
     preview = await applicator.prepare(app)
@@ -154,14 +216,14 @@ async def test_submit_completes_when_no_challenge_appears(tmp_path: Path) -> Non
 # Real applicant data must actually land in the form (Phase 8f, ADR-0027):
 # _fill_form used to write hardcoded placeholder strings regardless of who
 # was applying -- proven wrong here against the real, live page, not just by
-# the flow completing.
+# the flow completing. Now lives on GreenhouseFormFiller (ADR-0028).
 # ---------------------------------------------------------------------------
 
 
 async def test_fill_form_writes_the_real_applicants_name_and_email(
     tmp_path: Path,
 ) -> None:
-    opportunity = _opportunity("opp-1", _fixture_url())
+    opportunity = _opportunity("opp-1")
     applicator = await _applicator(tmp_path, opportunity)
     app = _approved_application(
         "opp-1",
@@ -170,7 +232,7 @@ async def test_fill_form_writes_the_real_applicants_name_and_email(
 
     page, context, browser = await applicator._open_page("opp-1", _fixture_url())
     try:
-        await applicator._fill_form(page, app)
+        await GreenhouseFormFiller().fill_identity_and_resume(page, app)
         # rsplit(" ", 1): everything but the last token is first_name, the
         # documented, known-imprecise heuristic (ADR-0027) -- proven here
         # against a real multi-part name, not assumed correct.
@@ -184,7 +246,7 @@ async def test_fill_form_writes_the_real_applicants_name_and_email(
 async def test_fill_form_single_token_name_falls_back_to_empty_last_name(
     tmp_path: Path,
 ) -> None:
-    opportunity = _opportunity("opp-1", _fixture_url())
+    opportunity = _opportunity("opp-1")
     applicator = await _applicator(tmp_path, opportunity)
     app = _approved_application(
         "opp-1", applicant=BasicsSection(name="Cher", email="cher@example.com")
@@ -192,11 +254,114 @@ async def test_fill_form_single_token_name_falls_back_to_empty_last_name(
 
     page, context, browser = await applicator._open_page("opp-1", _fixture_url())
     try:
-        await applicator._fill_form(page, app)
+        await GreenhouseFormFiller().fill_identity_and_resume(page, app)
         assert await page.input_value("#first_name") == "Cher"
         assert await page.input_value("#last_name") == ""
     finally:
         await browser.close()
+
+
+# ---------------------------------------------------------------------------
+# Dispatch (Phase 8g, ADR-0028): resolve_ats_kind picks the FormFiller, and
+# refuses cleanly for a URL/ats_kind nothing is registered for.
+# ---------------------------------------------------------------------------
+
+
+async def test_prepare_raises_for_an_unresolvable_source_url(tmp_path: Path) -> None:
+    opportunity = _opportunity("opp-1", source_url="https://acme.com/careers/eng-1")
+    applicator = await _applicator(tmp_path, opportunity)
+    with pytest.raises(NoApplicableFormFillerError, match="ats_kind=None"):
+        await applicator.prepare(_approved_application("opp-1"))
+
+
+async def test_prepare_raises_when_no_form_filler_is_registered_for_the_ats_kind(
+    tmp_path: Path,
+) -> None:
+    opportunity = _opportunity("opp-1", source_url=_GREENHOUSE_URL)
+    applicator = await _applicator(tmp_path, opportunity, form_fillers={})
+    with pytest.raises(NoApplicableFormFillerError, match="greenhouse"):
+        await applicator.prepare(_approved_application("opp-1"))
+
+
+async def test_submit_raises_form_filler_not_implemented_for_lever(
+    tmp_path: Path,
+) -> None:
+    """Lever's real selectors are unverified (ADR-0028) -- proven here: the
+    stub is genuinely reached through the real prepare()/submit() flow and
+    genuinely raises, not just present as an unused class."""
+    opportunity = _opportunity("opp-1", source_url=_LEVER_URL)
+    applicator = await _applicator(
+        tmp_path, opportunity, form_fillers=default_form_fillers()
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    with pytest.raises(FormFillerNotImplementedError, match="not been verified"):
+        await applicator.submit(preview, _confirmation(preview.preview_token))
+
+
+async def test_submit_raises_form_filler_not_implemented_for_ashby(
+    tmp_path: Path,
+) -> None:
+    opportunity = _opportunity("opp-1", source_url=_ASHBY_URL)
+    applicator = await _applicator(
+        tmp_path, opportunity, form_fillers=default_form_fillers()
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    with pytest.raises(FormFillerNotImplementedError, match="not been verified"):
+        await applicator.submit(preview, _confirmation(preview.preview_token))
+
+
+# ---------------------------------------------------------------------------
+# The refusal (Phase 8g, ADR-0028): a required field no FormFiller knows how
+# to fill must block submission before #submit_app is ever clicked -- proven
+# against a real live page's real form elements, not a fixed selector list.
+# ---------------------------------------------------------------------------
+
+
+async def test_unhandled_required_fields_is_empty_for_the_ordinary_fixture(
+    tmp_path: Path,
+) -> None:
+    applicator = await _applicator(tmp_path, _opportunity("opp-1"))
+    page, context, browser = await applicator._open_page("opp-1", _fixture_url())
+    try:
+        unhandled = await _unhandled_required_fields(
+            page, GreenhouseFormFiller.known_field_selectors
+        )
+        assert unhandled == []
+    finally:
+        await browser.close()
+
+
+async def test_unhandled_required_fields_finds_the_extra_question(
+    tmp_path: Path,
+) -> None:
+    applicator = await _applicator(
+        tmp_path, _opportunity("opp-1"), fixture_path=_EXTRA_QUESTION_FIXTURE
+    )
+    page, context, browser = await applicator._open_page(
+        "opp-1", f"file://{_EXTRA_QUESTION_FIXTURE}"
+    )
+    try:
+        unhandled = await _unhandled_required_fields(
+            page, GreenhouseFormFiller.known_field_selectors
+        )
+        assert unhandled == ["#why_us"]
+    finally:
+        await browser.close()
+
+
+async def test_submit_refuses_and_never_clicks_when_a_required_field_is_unknown(
+    tmp_path: Path,
+) -> None:
+    opportunity = _opportunity("opp-1")
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_EXTRA_QUESTION_FIXTURE
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    with pytest.raises(UnsupportedFormFieldsError, match="why_us"):
+        await applicator.submit(preview, _confirmation(preview.preview_token))
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +372,7 @@ async def test_fill_form_single_token_name_falls_back_to_empty_last_name(
 async def test_submit_pauses_instead_of_completing_when_a_challenge_appears(
     tmp_path: Path,
 ) -> None:
-    opportunity = _opportunity("opp-1", _fixture_url(challenge=True))
+    opportunity = _opportunity("opp-1", challenge=True)
     applicator = await _applicator(tmp_path, opportunity)
     app = _approved_application("opp-1")
     preview = await applicator.prepare(app)
@@ -227,10 +392,6 @@ async def test_resume_with_mismatched_token_never_touches_the_page() -> None:
     """A pause_token/ack mismatch must be refused before any page interaction
     -- proven by asserting on _paused's untouched state, the browser-tier
     analogue of asserting adapter.calls == [] in 7a."""
-    from career_agent.agents.apply.browser_applicator import BrowserApplicator
-
-    # No real applicator setup needed: the mismatch check happens before any
-    # lookup, so this is a pure logic assertion -- construct the minimum.
     applicator = BrowserApplicator.__new__(BrowserApplicator)
     applicator._paused = {}
     with pytest.raises(ValueError, match="acknowledgment names"):
@@ -238,7 +399,7 @@ async def test_resume_with_mismatched_token_never_touches_the_page() -> None:
 
 
 async def test_resume_with_unknown_pause_token_is_refused(tmp_path: Path) -> None:
-    opportunity = _opportunity("opp-1", _fixture_url())
+    opportunity = _opportunity("opp-1")
     applicator = await _applicator(tmp_path, opportunity)
     with pytest.raises(UnknownPauseTokenError):
         await applicator.resume("never-issued", _ack("never-issued"))
@@ -251,7 +412,7 @@ async def test_resume_refuses_and_never_reclicks_while_challenge_still_visible(
     cleared the challenge, resume() must not click submit again -- checked
     against the live page's real DOM state, not the caller's say-so. The
     success marker must never appear."""
-    opportunity = _opportunity("opp-1", _fixture_url(challenge=True))
+    opportunity = _opportunity("opp-1", challenge=True)
     applicator = await _applicator(tmp_path, opportunity)
     app = _approved_application("opp-1")
     preview = await applicator.prepare(app)
@@ -276,7 +437,7 @@ async def test_resume_completes_once_the_challenge_is_actually_cleared(
     """The positive case: once the fixture's challenge panel is actually
     hidden (simulating the human clearing it), resume() completes the real
     submission and the session is persisted."""
-    opportunity = _opportunity("opp-1", _fixture_url(challenge=True))
+    opportunity = _opportunity("opp-1", challenge=True)
     applicator = await _applicator(tmp_path, opportunity)
     app = _approved_application("opp-1")
     preview = await applicator.prepare(app)
