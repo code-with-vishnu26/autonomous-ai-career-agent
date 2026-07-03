@@ -250,7 +250,36 @@ def test_application_requires_status() -> None:
         ),
     )
     app = Application(
-        id="app-1", opportunity_id="opp-1", resume=resume, status="pending"
+        id="app-1",
+        opportunity_id="opp-1",
+        resume=resume,
+        applicant=BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+        status="pending",
     )
     assert app.status == "pending"
     assert app.tier_used is None
+
+
+def test_application_requires_an_applicant_snapshot() -> None:
+    """applicant is required, not optional-with-a-default (ADR-0027) -- the
+    same "impossible to construct otherwise" discipline as canonical_company/
+    provenance elsewhere. Nothing should be able to build a real Application
+    with no identity and have that go unnoticed until a real form tries to
+    fill blank fields."""
+    profile = _profile()
+    resume = TailoredResume(
+        id="resume-1",
+        opportunity_id="opp-1",
+        profile_version=profile.version,
+        content=TailoredContent(summary="Engineer"),
+        truthfulness=TruthfulnessResult(
+            profile_version=profile.version,
+            approved=True,
+            statements=[],
+            prompt_version="test-v1",
+        ),
+    )
+    with pytest.raises(ValidationError, match="applicant"):
+        Application(
+            id="app-1", opportunity_id="opp-1", resume=resume, status="pending"
+        )

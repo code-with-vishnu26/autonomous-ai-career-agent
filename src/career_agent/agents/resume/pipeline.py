@@ -25,6 +25,11 @@ draft's ``rendered_text`` stays ``None``: rendering could itself raise
 ``source_entry_id``, the same discipline the gate already applied), and a
 rejected resume was never going to be submitted, so there is nothing to
 render it for.
+
+``Application.applicant`` (ADR-0027) is likewise snapshotted here from
+``profile.basics``, frozen at construction time rather than resolved live
+by a submission tier later -- the same drift this pipeline already prevents
+for resume content (``profile_version``), now extended to identity.
 """
 
 from __future__ import annotations
@@ -103,6 +108,7 @@ class ResumeTailoringPipeline:
             id=str(uuid.uuid4()),
             opportunity_id=opportunity.id,
             resume=resume,
+            applicant=profile.basics,
             status="pending" if truthfulness.approved else "rejected",
         )
 

@@ -18,6 +18,7 @@ from career_agent.agents.apply.applicator import (
 from career_agent.core.events import ApplicationFailed, ApplicationSubmitted
 from career_agent.domain.models import (
     Application,
+    BasicsSection,
     HumanConfirmation,
     Opportunity,
     Provenance,
@@ -73,7 +74,11 @@ def _approved_application(
         ),
     )
     app = Application(
-        id=app_id, opportunity_id=opportunity_id, resume=resume, status="pending"
+        id=app_id,
+        opportunity_id=opportunity_id,
+        resume=resume,
+        applicant=BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+        status="pending",
     )
     return SubmittableApplication(application=app)
 

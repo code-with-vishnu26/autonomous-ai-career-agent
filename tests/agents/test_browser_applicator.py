@@ -26,6 +26,7 @@ from career_agent.agents.apply.browser_applicator import (
 from career_agent.core.events import ApplicationSubmitted, HumanActionRequired
 from career_agent.domain.models import (
     Application,
+    BasicsSection,
     HumanConfirmation,
     Opportunity,
     PauseAcknowledgment,
@@ -81,7 +82,9 @@ def _opportunity(opportunity_id: str, source_url: str) -> Opportunity:
     )
 
 
-def _approved_application(opportunity_id: str) -> SubmittableApplication:
+def _approved_application(
+    opportunity_id: str, *, applicant: BasicsSection | None = None
+) -> SubmittableApplication:
     resume = TailoredResume(
         id="resume-1",
         opportunity_id=opportunity_id,
@@ -97,7 +100,12 @@ def _approved_application(opportunity_id: str) -> SubmittableApplication:
         ),
     )
     app = Application(
-        id="app-1", opportunity_id=opportunity_id, resume=resume, status="pending"
+        id="app-1",
+        opportunity_id=opportunity_id,
+        resume=resume,
+        applicant=applicant
+        or BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+        status="pending",
     )
     return SubmittableApplication(application=app)
 
@@ -140,6 +148,55 @@ async def test_submit_completes_when_no_challenge_appears(tmp_path: Path) -> Non
     event = await applicator.submit(preview, _confirmation(preview.preview_token))
     assert isinstance(event, ApplicationSubmitted)
     assert event.tier_used == "browser"
+
+
+# ---------------------------------------------------------------------------
+# Real applicant data must actually land in the form (Phase 8f, ADR-0027):
+# _fill_form used to write hardcoded placeholder strings regardless of who
+# was applying -- proven wrong here against the real, live page, not just by
+# the flow completing.
+# ---------------------------------------------------------------------------
+
+
+async def test_fill_form_writes_the_real_applicants_name_and_email(
+    tmp_path: Path,
+) -> None:
+    opportunity = _opportunity("opp-1", _fixture_url())
+    applicator = await _applicator(tmp_path, opportunity)
+    app = _approved_application(
+        "opp-1",
+        applicant=BasicsSection(name="Grace Beatrice Hopper", email="grace@navy.mil"),
+    )
+
+    page, context, browser = await applicator._open_page("opp-1", _fixture_url())
+    try:
+        await applicator._fill_form(page, app)
+        # rsplit(" ", 1): everything but the last token is first_name, the
+        # documented, known-imprecise heuristic (ADR-0027) -- proven here
+        # against a real multi-part name, not assumed correct.
+        assert await page.input_value("#first_name") == "Grace Beatrice"
+        assert await page.input_value("#last_name") == "Hopper"
+        assert await page.input_value("#email") == "grace@navy.mil"
+    finally:
+        await browser.close()
+
+
+async def test_fill_form_single_token_name_falls_back_to_empty_last_name(
+    tmp_path: Path,
+) -> None:
+    opportunity = _opportunity("opp-1", _fixture_url())
+    applicator = await _applicator(tmp_path, opportunity)
+    app = _approved_application(
+        "opp-1", applicant=BasicsSection(name="Cher", email="cher@example.com")
+    )
+
+    page, context, browser = await applicator._open_page("opp-1", _fixture_url())
+    try:
+        await applicator._fill_form(page, app)
+        assert await page.input_value("#first_name") == "Cher"
+        assert await page.input_value("#last_name") == ""
+    finally:
+        await browser.close()
 
 
 # ---------------------------------------------------------------------------

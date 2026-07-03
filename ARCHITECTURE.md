@@ -192,6 +192,7 @@ pull request is checked against.
 | [0024](docs/adr/0024-real-confirmation-and-submission-wiring.md) | Real human confirmation (cli.confirm_submission, verified no default-to-yes) drives a real, single-tier SubmissionPipeline for the first time; multi-tier selection confirmed never built, named as deferred work |
 | [0025](docs/adr/0025-resume-renderer.md) | Resume renderer; computed once where content+profile are both in scope (ResumeTailoringPipeline, no Applicator changes needed), raises loudly on an unresolvable entry rather than silently dropping it (verified to catch a regression) |
 | [0026](docs/adr/0026-real-apply-command-and-promptfoo-enforcement.md) | Real `career-agent apply` command; --opportunity-file JSON handoff (no premature storage design), promptfoo pass positively verified against a results artifact keyed to the exact prompt version (never a claimed flag) before AnthropicClaimVerifier is constructed, stops cleanly at confirmation since no real ATSAdapter exists yet |
+| [0027](docs/adr/0027-applicant-identity-snapshot.md) | Applicant identity snapshot; Application.applicant is a required, frozen BasicsSection preventing prepare/submit identity drift, BrowserApplicator._fill_form now uses real profile data with a documented known-imprecise name split, and Tier 1 direct-API submission is confirmed dead (employer-issued credentials required) across Greenhouse/Lever/Ashby |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.

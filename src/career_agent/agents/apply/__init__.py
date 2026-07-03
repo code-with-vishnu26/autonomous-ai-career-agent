@@ -48,7 +48,27 @@ across the three ``Applicator`` implementations above remains real,
 confirmed, unbuilt work (ADR-0010's "tier selection is internal" describes
 a component that was never actually built).
 
-Remaining Tier 1 adapters, generalizing Tier 2 beyond Greenhouse's form
-shape, the real Gmail client, multi-tier selection, and a real
-`career-agent apply` command are still future work.
+Real Tier 1 (``ATSAdapter``) submission for arbitrary companies is
+**confirmed dead, not merely deferred** (Phase 8f, ADR-0027): Greenhouse's,
+Lever's, and Ashby's submit-side endpoints each require an employer-issued
+API credential a generic applicant tool has no path to obtaining, verified
+against each platform's own current API docs. Tier 2 (``BrowserApplicator``)
+is therefore the only tier that can carry real submission weight for this
+project's use case -- it drives the same public apply form a human uses,
+requiring no company cooperation.
+
+``browser_applicator.py``'s ``_fill_form`` (Phase 8f, ADR-0027) now fills
+real applicant identity read from ``Application.applicant`` (a required,
+frozen ``BasicsSection`` snapshot populated once in
+``ResumeTailoringPipeline``, the same "was this true when submitted"
+discipline ``profile_version`` already applies to resume content) rather
+than the hardcoded placeholder strings this class filled with before that
+field existed. Its name-splitting heuristic is a documented,
+known-imprecise stopgap, not an assumed-correct split.
+
+Remaining future work: generalizing Tier 2 beyond Greenhouse's one form
+shape (which reopens the per-posting custom-questions/EEOC problem that
+killed Tier 1, now as its own truthfulness-adjacent design question);
+multi-tier selection; and the real, OAuth-backed Gmail client. A real,
+runnable `career-agent apply` command exists as of Phase 8e (ADR-0026).
 """
