@@ -22,6 +22,13 @@ pattern-match ADR-0019 reuses for Tier 1), dispatching to a per-``ats_kind``
 verified against a live posting from this codebase (see that module's
 docstring), so they are explicit, clearly-labeled stubs, not guessed at.
 
+The challenge-detection and submit-click selectors are also resolved
+per-``FormFiller`` (``challenge_selector``/``submit_selector``, ADR-0029)
+rather than hardcoded here -- a real, live Lever posting confirmed real
+hCaptcha markup (``div#h-captcha``, a hidden submit target) that the
+previously hardcoded Greenhouse-fixture-shaped literals would never have
+matched.
+
 **Before clicking submit, this class refuses rather than guesses** at any
 *required* form field a ``FormFiller`` doesn't declare knowing how to fill
 (:class:`UnsupportedFormFieldsError`) -- a custom question, an EEOC/
@@ -104,6 +111,7 @@ class _PausedSession(NamedTuple):
     context: BrowserContext
     browser: Browser
     application: SubmittableApplication
+    filler: FormFiller
 
 
 class BrowserApplicator:
@@ -236,12 +244,12 @@ class BrowserApplicator:
             await browser.close()
             raise
 
-        await page.click("#submit_app")
+        await page.click(filler.submit_selector)
 
-        if await page.is_visible("#verification-challenge"):
+        if await page.is_visible(filler.challenge_selector):
             pause_token = str(uuid.uuid4())
             self._paused[pause_token] = _PausedSession(
-                session_id, page, context, browser, application
+                session_id, page, context, browser, application, filler
             )
             return HumanActionRequired(
                 correlation_id=application.application.opportunity_id,
@@ -268,13 +276,13 @@ class BrowserApplicator:
             raise UnknownPauseTokenError(
                 f"unknown or already-consumed pause_token {pause_token!r}"
             )
-        if await paused.page.is_visible("#verification-challenge"):
+        if await paused.page.is_visible(paused.filler.challenge_selector):
             raise ChallengeStillPresentError(
                 f"challenge is still present for pause_token {pause_token!r} "
                 f"-- not attempting to complete the submission"
             )
         del self._paused[pause_token]
-        await paused.page.click("#submit_app")
+        await paused.page.click(paused.filler.submit_selector)
         return await self._finish(
             paused.session_id,
             paused.page,
@@ -332,6 +340,13 @@ async def _unhandled_required_fields(
     are never data fields, so they are excluded; a field with no
     ``required`` attribute is left alone -- an optional field left blank is
     honest, only an unanswerable *required* field blocks submission.
+
+    Each element's own real selector is derived from whichever attribute it
+    actually has -- ``#id`` first, then ``[name='...']`` (ADR-0029): a real
+    Lever posting confirmed identity fields with no ``id`` at all, only
+    ``name``, so ``known_field_selectors`` must be compared against
+    whichever shape the live page actually uses, not assumed to always be
+    ``#id``.
     """
     elements = await page.query_selector_all("form input, form textarea, form select")
     unhandled: list[str] = []
@@ -342,12 +357,14 @@ async def _unhandled_required_fields(
         if await element.get_attribute("required") is None:
             continue
         element_id = await element.get_attribute("id")
-        selector = f"#{element_id}" if element_id else None
+        name = await element.get_attribute("name")
+        if element_id:
+            selector = f"#{element_id}"
+        elif name:
+            selector = f"[name='{name}']"
+        else:
+            selector = None
         if selector is not None and selector in known_field_selectors:
             continue
-        if selector is not None:
-            unhandled.append(selector)
-        else:
-            name = await element.get_attribute("name")
-            unhandled.append(f"(no id; name={name!r})")
+        unhandled.append(selector if selector is not None else "(no id or name)")
     return unhandled

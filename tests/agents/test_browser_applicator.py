@@ -70,6 +70,9 @@ _EXTRA_QUESTION_FIXTURE = (
     / "greenhouse"
     / "apply_form_with_extra_question.html"
 )
+_LEVER_SHAPED_FIXTURE = (
+    Path(__file__).parent.parent / "fixtures" / "lever" / "apply_form.html"
+)
 
 _GREENHOUSE_URL = "https://boards.greenhouse.io/acme/jobs/12345"
 _LEVER_URL = "https://jobs.lever.co/acme/12345"
@@ -176,6 +179,29 @@ def _ack(pause_token: str) -> PauseAcknowledgment:
         confirmed_by="test-user",
         confirmed_at=datetime.now(UTC),
     )
+
+
+class _AltSelectorFormFiller:
+    """A test-only FormFiller shaped like the real, confirmed Lever DOM
+    (ADR-0029): identity fields have no ``id``, only ``name``, and the
+    challenge/submit markers use different ids than Greenhouse's fixture --
+    proves BrowserApplicator genuinely reads ``challenge_selector``/
+    ``submit_selector`` from the active FormFiller, rather than a
+    hardcoded, Greenhouse-shaped literal."""
+
+    ats_kind = "alt"
+    known_field_selectors = frozenset(
+        {"[name='name']", "[name='email']", "[name='resume_text']"}
+    )
+    challenge_selector = "#extra_check"
+    submit_selector = "#go_button"
+
+    async def fill_identity_and_resume(self, page, application) -> None:
+        applicant = application.application.applicant
+        summary = application.application.resume.content.summary
+        await page.fill("[name='name']", applicant.name)
+        await page.fill("[name='email']", applicant.email)
+        await page.fill("[name='resume_text']", summary)
 
 
 async def _applicator(
@@ -431,6 +457,80 @@ async def test_submit_closes_the_browser_after_refusing_an_unsupported_field(
     browser = captured["browser"]
     assert browser is not None
     assert browser.is_connected() is False
+
+
+# ---------------------------------------------------------------------------
+# Per-FormFiller selectors (Phase 8h, ADR-0029): name-based known_field_
+# selectors, and challenge_selector/submit_selector genuinely read from the
+# active FormFiller rather than hardcoded to Greenhouse's own markers --
+# proven against a fixture shaped like the real, confirmed Lever DOM.
+# ---------------------------------------------------------------------------
+
+
+async def test_unhandled_required_fields_matches_name_based_selectors(
+    tmp_path: Path,
+) -> None:
+    """A field with no id, only name -- the real shape a live Lever posting
+    confirmed -- must be matched by a [name='...'] known_field_selectors
+    entry, proven against the real live page's actual DOM."""
+    applicator = await _applicator(
+        tmp_path, _opportunity("opp-1"), fixture_path=_LEVER_SHAPED_FIXTURE
+    )
+    page, context, browser = await applicator._open_page(
+        "opp-1", f"file://{_LEVER_SHAPED_FIXTURE}"
+    )
+    try:
+        unhandled = await _unhandled_required_fields(
+            page, _AltSelectorFormFiller.known_field_selectors
+        )
+        assert unhandled == []
+    finally:
+        await browser.close()
+
+
+async def test_submit_uses_the_active_fillers_declared_selectors(
+    tmp_path: Path,
+) -> None:
+    """submit() must click the active FormFiller's own submit_selector, not
+    a hardcoded Greenhouse-shaped literal -- proven end to end against a
+    fixture whose real submit button has a different id entirely."""
+    opportunity = _opportunity("opp-1", source_url=_LEVER_URL)
+    applicator = await _applicator(
+        tmp_path,
+        opportunity,
+        fixture_path=_LEVER_SHAPED_FIXTURE,
+        form_fillers={"lever": _AltSelectorFormFiller()},
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    event = await applicator.submit(preview, _confirmation(preview.preview_token))
+    assert isinstance(event, ApplicationSubmitted)
+
+
+async def test_resume_uses_the_active_fillers_declared_selectors_through_a_challenge(
+    tmp_path: Path,
+) -> None:
+    """Both submit()'s challenge detection and resume()'s re-check/re-click
+    must use the active FormFiller's own selectors -- proven through a full
+    pause/resume cycle against the alt-selector fixture."""
+    opportunity = _opportunity("opp-1", source_url=_LEVER_URL, challenge=True)
+    applicator = await _applicator(
+        tmp_path,
+        opportunity,
+        fixture_path=_LEVER_SHAPED_FIXTURE,
+        form_fillers={"lever": _AltSelectorFormFiller()},
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    pause_event = await applicator.submit(preview, _confirmation(preview.preview_token))
+    assert isinstance(pause_event, HumanActionRequired)
+
+    pause_token = next(iter(applicator._paused))
+    paused_page = applicator._paused[pause_token].page
+    await paused_page.evaluate("window.__clearChallenge()")
+
+    event = await applicator.resume(pause_token, _ack(pause_token))
+    assert isinstance(event, ApplicationSubmitted)
 
 
 # ---------------------------------------------------------------------------

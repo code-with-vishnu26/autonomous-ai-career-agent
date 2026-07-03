@@ -417,13 +417,50 @@ principle," because the field isn't asking for a fact to verify, it's
 asking the person to exercise a legally protected choice about disclosure
 itself.
 
+**8h — per-FormFiller challenge/submit selectors + name-based field matching,
+merged.** Recorded in **ADR-0029**. The user personally inspected a real,
+live Lever posting via browser dev tools -- the one verification path
+neither this codebase's sandbox nor any automated tool in this session
+could reach (four independent attempts confirmed this: no live network
+access at all, `WebFetch` 403s, readable-text-only extraction, and
+Ashby's board turning out to be a client-side React SPA opaque to every
+static tool). That real inspection found two load-bearing gaps 8g's
+stub-only scope hadn't anticipated: Lever's identity fields have no `id`
+attribute at all, only `name` -- `_unhandled_required_fields` only ever
+built an `#id`-shaped selector and could never have matched a real Lever
+field; and the posting used real hCaptcha markup that
+`BrowserApplicator`'s hardcoded `#verification-challenge`/`#submit_app`
+literals (Greenhouse's own fixture markers) would never have matched.
+Both fixed: `_unhandled_required_fields` now derives a selector from
+whichever attribute an element actually has (`#id` first, then
+`[name='...']`); `FormFiller` gains declared
+`challenge_selector`/`submit_selector` fields, read by
+`BrowserApplicator` instead of hardcoded literals.
+`GreenhouseFormFiller`'s own values became declared, not hardcoded, with
+an explicit acceptance bar: the full pre-existing suite (ADR-0020's
+CAPTCHA-pause tests, ADR-0027's real-name-fill test) had to pass
+unchanged, proving pure generalization, not accidental behavior change to
+the one platform that already works for real -- confirmed. New coverage
+proves both mechanisms against a fixture deliberately shaped like the
+real, confirmed Lever DOM, not just Greenhouse's own shape, and all four
+new guarantees were verified by deliberate injection (two caught by
+assertion failures, two caught by real Playwright `TimeoutError`s waiting
+on selectors that don't exist on the alt fixture) before reverting.
+`LeverFormFiller`/`AshbyFormFiller` deliberately stay stubs: the resume
+field's real interaction shape (plain text vs. a JS-driven file-upload
+widget) is still unconfirmed, and this project has no resume-file
+artifact anywhere in its domain model -- selectors alone don't unblock a
+still-open unknown.
+
 **Remaining (named, not blocking Phase 8's own criterion below):** real
 multi-tier selection across the three `Applicator` implementations; the
 custom-questions/EEOC-answering design itself (its own ADR, per 8g);
-real Lever/Ashby `FormFiller` selectors (needs a human to inspect live
-postings); the real, OAuth-backed `GmailDraftSink`. Tier 1 direct-API
-submission for arbitrary companies is no longer on this list -- confirmed
-dead, not merely deferred (ADR-0027).
+resolving the resume-field interaction shape and confirming Lever's
+selectors generalize across more than one company before
+`LeverFormFiller` can move past a stub; Ashby's DOM remains fully
+uninspectable by every tool tried so far; the real, OAuth-backed
+`GmailDraftSink`. Tier 1 direct-API submission for arbitrary companies is
+no longer on this list -- confirmed dead, not merely deferred (ADR-0027).
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored
 work entry. ✅

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<!--
+  A local, offline stand-in for the *shape* confirmed on a real, live Lever
+  posting (ADR-0029) -- not real Lever markup, but the same load-bearing
+  properties a real inspection found: identity fields have no `id`
+  attribute at all, only `name`; the challenge/submit markers use different
+  ids than Greenhouse's fixture, to prove BrowserApplicator genuinely reads
+  them from the active FormFiller rather than a hardcoded Greenhouse-shaped
+  literal. Loaded via file://, no network involved.
+
+  Query params drive test scenarios, same convention as the Greenhouse
+  fixture:
+    ?challenge=1   shows the verification-challenge panel after submit is
+                   clicked, instead of completing.
+-->
+<html>
+<head><title>Apply - Acme (Lever-shaped fixture)</title></head>
+<body>
+  <form id="application-form">
+    <input name="name" type="text" required />
+    <input name="email" type="email" required />
+    <textarea name="resume_text"></textarea>
+    <button id="go_button" type="button">Submit Application</button>
+  </form>
+
+  <div id="extra_check" style="display:none;">
+    Please verify you are human before continuing.
+  </div>
+
+  <div id="application-success" style="display:none;">
+    Application submitted successfully.
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const challengeEnabled = params.get("challenge") === "1";
+
+    window.__clearChallenge = function () {
+      document.getElementById("extra_check").style.display = "none";
+    };
+
+    document.getElementById("go_button").addEventListener("click", function () {
+      const challengeVisible =
+        document.getElementById("extra_check").style.display !== "none";
+      if (challengeVisible) {
+        return;
+      }
+      if (challengeEnabled && !window.__challengeShown) {
+        window.__challengeShown = true;
+        document.getElementById("extra_check").style.display = "block";
+        return;
+      }
+      document.getElementById("application-success").style.display = "block";
+    });
+  </script>
+</body>
+</html>
