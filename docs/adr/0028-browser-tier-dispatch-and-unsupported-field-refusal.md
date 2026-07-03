@@ -105,11 +105,30 @@ fixture (`apply_form_with_extra_question.html`) adds one required field
 (`#why_us`) beyond Greenhouse's known set; `_unhandled_required_fields`
 is proven to return `[]` against the ordinary fixture and `["#why_us"]`
 against the extra-question one, and `submit()` is proven to raise
-`UnsupportedFormFieldsError` and never reach `#submit_app` for that
-posting. Verified to actually bite by deliberate injection: disabled the
-`if unhandled:` check, confirmed the refusal test failed; disabled the
-dispatch's `if filler is None:` check, confirmed the unresolvable-URL test
-failed; reverted both.
+`UnsupportedFormFieldsError` for that posting.
+
+**Post-merge correction, caught on a follow-up verification pass:** the
+originally merged test for this only checked the exception type/message,
+not that `#submit_app` was genuinely never clicked -- a materially weaker
+proof than the "the real action genuinely never fired" standard the
+7a token-binding (`adapter.calls == []`) and 7b3 CAPTCHA-pause
+(`page.is_visible("#application-success") is False`) tests already hold
+themselves to. There was also no test at all proving the browser is
+actually closed on the failure path (`except BaseException: await
+browser.close(); raise`), despite that being exactly the kind of resource
+leak this project has previously found and fixed by review (see
+`_apply_pipeline`'s `preview_token` fix in ADR-0026's history). Both gaps
+were closed in a same-day follow-up: a new test proves, against the real
+live page, that `#application-success` never became visible up to the
+exact point `_unhandled_required_fields` would trigger the refusal; and a
+new test captures the real `Browser` object via `on_context_ready` and
+asserts `is_connected() is False` after `submit()` raises. Verified to
+actually bite by deliberate injection: disabled the `if unhandled:` check,
+confirmed the refusal test failed; disabled the dispatch's `if filler is
+None:` check, confirmed the unresolvable-URL test failed; removed
+`browser.close()` from the failure path, confirmed the new leak test
+failed; broke the `required`-attribute check, confirmed the new DOM-proof
+test failed; reverted all four.
 
 ### Custom questions / EEOC fields: named and deferred, with an absolute stated now for the EEOC case specifically
 
@@ -210,6 +229,12 @@ distinction isn't lost or re-flattened into "just draft an answer" later:
   (test-only, lets tests route a real-looking ATS URL to a local fixture
   without any real network request).
 - `tests/fixtures/greenhouse/apply_form_with_extra_question.html` (new).
+- `tests/agents/test_browser_applicator.py` (post-merge follow-up):
+  `test_unhandled_field_is_detected_before_any_click_on_the_live_page`
+  (real-DOM proof the success marker never appears) and
+  `test_submit_closes_the_browser_after_refusing_an_unsupported_field`
+  (real `Browser.is_connected()` proof of no resource leak on the failure
+  path).
 - The next real ATS-form slice must decide the custom-questions/EEOC
   answering design in its own dedicated ADR before any required-field
   posting on any platform can actually be submitted through Tier 2.
