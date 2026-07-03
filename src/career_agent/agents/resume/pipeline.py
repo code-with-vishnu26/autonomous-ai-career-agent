@@ -30,6 +30,10 @@ render it for.
 ``profile.basics``, frozen at construction time rather than resolved live
 by a submission tier later -- the same drift this pipeline already prevents
 for resume content (``profile_version``), now extended to identity.
+``Application.legal_status`` (ADR-0032) is snapshotted here the same way,
+from ``profile.legal_status`` -- one field wider on the same precedent, so
+``BrowserApplicator`` can auto-answer a captured legal-status fact without
+ever depending on ``MasterProfile`` storage itself.
 """
 
 from __future__ import annotations
@@ -109,6 +113,7 @@ class ResumeTailoringPipeline:
             opportunity_id=opportunity.id,
             resume=resume,
             applicant=profile.basics,
+            legal_status=profile.legal_status,
             status="pending" if truthfulness.approved else "rejected",
         )
 

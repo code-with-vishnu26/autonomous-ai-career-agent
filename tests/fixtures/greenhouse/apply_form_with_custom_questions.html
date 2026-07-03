@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<!--
+  Same base shape as apply_form.html, plus three required custom fields
+  shaped like ADR-0030's real Greenhouse finding (Phase 8k, ADR-0032):
+
+    #work_auth   a <select> with real label text matching Category 2
+                 (factual/legal-status) -- auto-fillable when
+                 Application.legal_status has the fact captured.
+    #gender      a <select> with real label text matching Category 1
+                 (EEOC) -- must never be auto-filled by this project,
+                 only ever set by the human directly on this live page.
+    #culture_fit a <textarea> with real label text matching Category 3
+                 (subjective) -- always human-authored, never drafted.
+
+  Query params drive test scenarios, same convention as apply_form.html:
+    ?challenge=1   shows the verification-challenge panel after submit is
+                   clicked.
+
+  window.__clearChallenge() and window.__fillCustomFields() are exposed so
+  a test can simulate a human directly interacting with this live page --
+  the same "human fills it, our code never holds the value" design as the
+  EEOC/subjective/missing-fact-factual manifest (ADR-0032).
+-->
+<html>
+<head><title>Apply - Acme (Greenhouse fixture, custom questions)</title></head>
+<body>
+  <form id="application-form">
+    <input id="first_name" name="first_name" type="text" />
+    <input id="last_name" name="last_name" type="text" />
+    <input id="email" name="email" type="email" />
+    <textarea id="resume_text" name="resume_text"></textarea>
+
+    <label for="work_auth">Are you legally authorized to work in the United States?</label>
+    <select id="work_auth" name="work_auth" required>
+      <option value=""></option>
+      <option value="yes">Yes</option>
+      <option value="no">No</option>
+    </select>
+
+    <label for="gender">Gender</label>
+    <select id="gender" name="gender" required>
+      <option value=""></option>
+      <option value="female">Female</option>
+      <option value="male">Male</option>
+      <option value="decline">Decline to self-identify</option>
+    </select>
+
+    <label for="culture_fit">What makes you a good fit for our culture?</label>
+    <textarea id="culture_fit" name="culture_fit" required></textarea>
+
+    <button id="submit_app" type="button">Submit Application</button>
+  </form>
+
+  <div id="verification-challenge" style="display:none;">
+    Please verify you are human before continuing.
+  </div>
+
+  <div id="application-success" style="display:none;">
+    Application submitted successfully.
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const challengeEnabled = params.get("challenge") === "1";
+
+    window.__clearChallenge = function () {
+      document.getElementById("verification-challenge").style.display = "none";
+    };
+
+    window.__fillCustomFields = function (gender, cultureFit) {
+      document.getElementById("gender").value = gender;
+      document.getElementById("culture_fit").value = cultureFit;
+    };
+
+    document.getElementById("submit_app").addEventListener("click", function () {
+      const challengeVisible =
+        document.getElementById("verification-challenge").style.display !== "none";
+      if (challengeVisible) {
+        return;
+      }
+      if (challengeEnabled && !window.__challengeShown) {
+        window.__challengeShown = true;
+        document.getElementById("verification-challenge").style.display = "block";
+        return;
+      }
+      document.getElementById("application-success").style.display = "block";
+    });
+  </script>
+</body>
+</html>

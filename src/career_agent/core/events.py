@@ -84,11 +84,21 @@ class ApplicationTierSelected(Event):
 
 
 class HumanActionRequired(Event):
-    """A supervised pause point (ADR-0008): the human must act to continue."""
+    """A supervised pause point (ADR-0008): the human must act to continue.
+
+    ``"fields_need_human_input"`` (Phase 8k, ADR-0032) is BrowserApplicator's
+    Phase A pause -- one or more required fields (EEOC, subjective, a
+    missing legal-status fact, or anything else this slice doesn't
+    auto-resolve) need the human to fill them directly on the live page.
+    Distinct from ``"verification"`` (Phase B, a CAPTCHA/challenge wall
+    encountered *after* the submit click): Phase A always precedes Phase B.
+    """
 
     event_type: str = "HumanActionRequired"
     application_id: str
-    reason: Literal["captcha", "verification", "login", "confirmation"]
+    reason: Literal[
+        "captcha", "verification", "login", "confirmation", "fields_need_human_input"
+    ]
 
 
 class ApplicationSubmitted(Event):

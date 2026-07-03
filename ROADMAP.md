@@ -511,17 +511,60 @@ isolation first, wiring is its own separate, deferred step, the same
 sequencing 8c/8d used for `ResumeTailoringPipeline` before
 `SubmissionPipeline`.
 
-**Remaining (named, not blocking Phase 8's own criterion below):** wiring
-`QuestionAnswerer` into `BrowserApplicator.submit()`'s live pause/resume
-flow (own new pause semantics needed, beyond ADR-0020's single challenge
-pause); confirming the exact Greenhouse resume-field interaction
-sequence; real multi-tier selection across the three `Applicator`
-implementations; resolving the resume-field interaction shape and
-confirming Lever's selectors generalize across more than one company
-before `LeverFormFiller` can move past a stub; Ashby's DOM remains fully
-uninspectable by every tool tried so far; the real, OAuth-backed
-`GmailDraftSink`. Tier 1 direct-API submission for arbitrary companies is
-no longer on this list -- confirmed dead, not merely deferred (ADR-0027).
+**8k — QuestionAnswerer wired into BrowserApplicator's live pause/resume
+flow, merged.** Recorded in **ADR-0032**. `submit()` gains two sequential
+pause phases: Phase A (pre-click, `reason="fields_need_human_input"`)
+triages every required field `FormFiller` doesn't know via
+`QuestionAnswerer.classify_question` -- a Category 2 field with an
+already-captured `LegalStatusSection` fact auto-fills silently, everything
+else unresolved batches into **one** pause, not one per field; Phase B
+(post-click, `reason="verification"`) is ADR-0020's original CAPTCHA
+pause, unchanged. Phase B is structurally unreachable until Phase A's own
+`resume()` has re-verified its manifest and clicked submit -- sequential
+by construction, not convention. The load-bearing design choice: `resume()`
+reuses `PauseAcknowledgment`'s existing shape unchanged for both phases --
+the human fills every manifested field **directly on the visible live
+page**, never through a typed answer payload this code constructs and
+writes into the DOM. That means an EEOC response never becomes a Python
+value this process holds at any point, a categorically stronger guarantee
+than "received it and used it correctly." Verified at the wiring level,
+not just in isolation: a first injection attempt (auto-filling an
+EEOC-classified dropdown via the same matcher Category 2 uses) was
+correctly *not* caught, because `match_dropdown_option`'s own refusal
+logic declined to map "Yes" onto gender options -- real defense-in-depth,
+recorded rather than dismissed; a second, more direct injection
+(force-selecting any option on an EEOC field, bypassing matching
+entirely) was caught. `Application` gains `legal_status: LegalStatusSection`
+-- ADR-0027's `applicant` frozen-snapshot precedent applied one field
+wider, confirmed explicitly before implementation rather than assumed, so
+`BrowserApplicator` still has zero dependency on `MasterProfile` storage,
+recorded as a deliberate structural boundary. A captured legal-status
+answer is not persisted back to the profile this slice -- no `MasterProfile`
+writer exists anywhere in this codebase, named as separate future work
+rather than built silently alongside this wiring. `_PausedSession`'s
+`reason` discriminator was required to be provably load-bearing, not
+decorative, before merge -- proven by a dedicated test constructing one
+pause of each reason on the same live page, and by injection (forcing
+`resume()` to ignore `paused.reason` broke exactly the tests expected).
+Category 4 (dropdown auto-matching, e.g. Education) stays unwired this
+slice -- it would need its own new frozen profile snapshot never decided
+in the approved pre-brief, so those fields land in the manifest like
+anything else unresolved, a safe degradation not a broken guarantee.
+
+**Remaining (named, not blocking Phase 8's own criterion below):**
+persisting a captured legal-status fact back to the profile (needs a
+`MasterProfile` writer that doesn't exist yet); wiring Category 4 dropdown
+auto-matching (needs its own new frozen profile snapshot decision);
+widening Category 2 auto-fill past `<select>` elements if a real posting
+renders a boolean question as radio buttons; confirming the exact
+Greenhouse resume-field interaction sequence; real multi-tier selection
+across the three `Applicator` implementations; resolving the resume-field
+interaction shape and confirming Lever's selectors generalize across more
+than one company before `LeverFormFiller` can move past a stub; Ashby's
+DOM remains fully uninspectable by every tool tried so far; the real,
+OAuth-backed `GmailDraftSink`. Tier 1 direct-API submission for arbitrary
+companies is no longer on this list -- confirmed dead, not merely
+deferred (ADR-0027).
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored
 work entry. ✅

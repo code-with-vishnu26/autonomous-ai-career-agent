@@ -53,7 +53,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from career_agent.domain.models import MasterProfile
+from career_agent.domain.models import LegalStatusSection
 
 # ---------------------------------------------------------------------------
 # EEOC absolute (Category 1): known, legally-standardized boilerplate
@@ -139,7 +139,7 @@ class QuestionCategory(StrEnum):
 
 
 class MissingLegalStatusFactError(Exception):
-    """``MasterProfile.legal_status`` doesn't have this fact captured yet.
+    """The applicant's ``LegalStatusSection`` doesn't have this fact captured yet.
 
     Raised instead of defaulting or inferring -- the same "cannot proceed
     without this, ask the human explicitly" shape as
@@ -248,9 +248,18 @@ def answer_eeoc_question(question_text: str, response: bool | None) -> bool | No
 
 
 def answer_factual_question(
-    question_text: str, profile: MasterProfile
+    question_text: str, legal_status: LegalStatusSection
 ) -> bool:
     """Answer a Category 2 (profile-groundable factual) question.
+
+    Takes a :class:`LegalStatusSection` directly, not a full
+    :class:`~career_agent.domain.models.MasterProfile` (Phase 8k, ADR-0032)
+    -- this function only ever reads two boolean fields, so narrowing the
+    parameter to exactly the section that holds them is a strict
+    reduction in what it could possibly touch, the same minimization
+    instinct behind Case 1d's "no MasterProfile parameter at all" for
+    EEOC, one register down: Category 2 legitimately needs *some* profile
+    data, but never more than this one section.
 
     Raises :class:`AmbiguousQuestionError` on a compound question (Case
     2a: never confidently answer only half of a question asking about two
@@ -284,12 +293,12 @@ def answer_factual_question(
     if _WORK_AUTH_TEMPLATE.search(question_text) or _WORK_AUTH_NEGATED_TEMPLATE.search(
         question_text
     ):
-        fact = profile.legal_status.work_authorized_us
+        fact = legal_status.work_authorized_us
         field_name = "work_authorized_us"
     elif _SPONSORSHIP_TEMPLATE.search(
         question_text
     ) or _SPONSORSHIP_NEGATED_TEMPLATE.search(question_text):
-        fact = profile.legal_status.requires_sponsorship
+        fact = legal_status.requires_sponsorship
         field_name = "requires_sponsorship"
     else:
         raise AmbiguousQuestionError(
@@ -299,8 +308,8 @@ def answer_factual_question(
 
     if fact is None:
         raise MissingLegalStatusFactError(
-            f"MasterProfile.legal_status.{field_name} has not been "
-            f"captured yet -- ask the human directly before answering "
+            f"LegalStatusSection.{field_name} has not been captured yet "
+            f"-- ask the human directly before answering "
             f"{question_text!r}, never default or infer"
         )
 

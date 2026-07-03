@@ -13,6 +13,7 @@ from career_agent.domain.models import (
     BasicsSection,
     EvidenceRef,
     HeldCandidate,
+    LegalStatusSection,
     MasterProfile,
     Opportunity,
     Outcome,
@@ -254,6 +255,7 @@ def test_application_requires_status() -> None:
         opportunity_id="opp-1",
         resume=resume,
         applicant=BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+        legal_status=LegalStatusSection(),
         status="pending",
     )
     assert app.status == "pending"

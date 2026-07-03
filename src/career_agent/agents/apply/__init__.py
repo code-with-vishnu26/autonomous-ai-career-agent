@@ -143,20 +143,61 @@ from ``ClaimVerdict`` (a similarity judgment, not a truth judgment). Built
 against a 20-case adversarial matrix the user drafted personally; the four
 cases flagged as load-bearing were each independently verified by
 deliberately injecting the violation and confirming the test caught it
-before reverting. This module classifies and answers a question in
-isolation only -- wiring it into ``BrowserApplicator.submit()``'s live
-pause/resume flow is real, separate, deliberately deferred future work,
-the same isolated-mechanism-first sequencing this project used for
+before reverting. Built and proven in isolation first, then wired into
+``BrowserApplicator.submit()``'s live pause/resume flow as its own,
+separate next step (Phase 8k, ADR-0032, below) -- the same
+isolated-mechanism-first sequencing this project used for
 ``ResumeTailoringPipeline`` (ADR-0023) before ``SubmissionPipeline``
 (ADR-0024) wired a real ``Applicator`` in.
 
-Remaining future work: wiring ``QuestionAnswerer`` into
-``BrowserApplicator.submit()``'s live DOM flow; confirming the exact
-Greenhouse resume-field interaction sequence; resolving the resume-field
-interaction shape and confirming Lever's selectors generalize across more
-than one company before ``LeverFormFiller`` can move past a stub; Ashby's
-DOM remains fully uninspectable by every tool tried so far (a client-side
-React SPA); multi-tier selection; and the real, OAuth-backed Gmail client.
-A real, runnable `career-agent apply` command exists as of Phase 8e
-(ADR-0026).
+``browser_applicator.py`` (Phase 8k, ADR-0032) wires ``question_answerer.py``
+into ``submit()``'s live flow, adding a second, sequential pause phase.
+**Phase A** (pre-click, ``HumanActionRequired(reason="fields_need_human_
+input")``): every required field a ``FormFiller`` doesn't declare is
+triaged through ``classify_question`` -- a Category 2 field with an
+already-captured ``LegalStatusSection`` fact fills automatically, no
+pause; everything else unresolved batches into **one** pause naming every
+selector, not one pause per field. **Phase B** (post-click,
+``reason="verification"``) is ADR-0020's original challenge pause,
+unchanged, and is structurally unreachable until Phase A's own
+``resume()`` has re-verified its manifest and clicked submit.
+``resume()`` reuses ``PauseAcknowledgment``'s existing shape unchanged for
+both phases -- the human fills every manifested field **directly on the
+live, visible page**; no typed answer payload is ever constructed or
+written into the DOM by this code. This makes an EEOC response
+structurally incapable of ever becoming a Python value this process
+holds, a stronger guarantee than "received and used correctly," verified
+by an injection test targeting this wiring point specifically (a first,
+weaker injection attempt was correctly *not* caught -- ``match_dropdown_
+option``'s own refusal logic already blocked it, real defense-in-depth --
+before a second, more direct injection was caught and reverted).
+``Application`` gains ``legal_status: LegalStatusSection``, the same
+frozen-snapshot precedent ``applicant`` already established (ADR-0027)
+applied one field wider, confirmed explicitly before implementation --
+``BrowserApplicator`` therefore still has **zero dependency on
+``MasterProfile`` storage**, a deliberate structural boundary, not an
+incidental fact. A captured legal-status answer is not persisted back to
+the profile this slice -- no ``MasterProfile`` writer exists anywhere in
+this codebase; building one is named, separate, deferred future work.
+Category 4 (dropdown auto-matching, e.g. Education) stays unwired this
+slice -- it would need its own new frozen profile snapshot never decided
+in the approved pre-brief, so those fields land in the manifest like
+anything else this slice doesn't auto-resolve, a safe degradation.
+``_PausedSession``'s ``reason`` discriminator was required to be provably
+load-bearing before merge, not decorative -- proven by a dedicated test
+and by injection (forcing ``resume()`` to ignore ``paused.reason`` broke
+exactly the tests expected, confirmed reverted).
+
+Remaining future work: persisting a captured legal-status fact back to
+the profile (needs a ``MasterProfile`` writer that doesn't exist yet);
+wiring Category 4 dropdown auto-matching (needs its own new frozen
+profile snapshot decision); widening Category 2 auto-fill past
+``<select>`` elements if a real posting renders a boolean question as
+radio buttons; confirming the exact Greenhouse resume-field interaction
+sequence; resolving the resume-field interaction shape and confirming
+Lever's selectors generalize across more than one company before
+``LeverFormFiller`` can move past a stub; Ashby's DOM remains fully
+uninspectable by every tool tried so far (a client-side React SPA);
+multi-tier selection; and the real, OAuth-backed Gmail client. A real,
+runnable `career-agent apply` command exists as of Phase 8e (ADR-0026).
 """

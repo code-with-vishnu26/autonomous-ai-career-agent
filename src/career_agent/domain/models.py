@@ -442,12 +442,27 @@ class Application(BaseModel):
     codebase: nothing should be able to build a real ``Application`` with no
     identity and have that go unnoticed until a real external form tries to
     fill blank fields.
+
+    ``legal_status`` (Phase 8k, ADR-0032) is the same kind of frozen
+    snapshot as ``applicant`` -- ``MasterProfile.legal_status`` captured
+    once at pipeline-construction time, one field wider on the same
+    precedent, not a new decision. It exists so
+    :class:`~career_agent.agents.apply.browser_applicator.BrowserApplicator`
+    can auto-fill a Category 2 (:mod:`~career_agent.agents.apply.
+    question_answerer`) factual question it already has a captured fact
+    for, without ever gaining a dependency on ``MasterProfile`` storage
+    itself -- it only ever receives this pre-frozen section as data, the
+    same way it has always received ``applicant``. The section itself is
+    required (always present, even before any fact within it has been
+    captured); its own fields may individually be ``None`` per
+    :class:`LegalStatusSection`'s own "not yet captured" discipline.
     """
 
     id: str
     opportunity_id: str
     resume: TailoredResume
     applicant: BasicsSection
+    legal_status: LegalStatusSection
     tier_used: Literal["ats_api", "browser", "email"] | None = None
     status: Literal["pending", "paused_for_human", "submitted", "failed", "rejected"]
     submitted_at: datetime | None = None

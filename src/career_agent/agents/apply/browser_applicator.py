@@ -1,17 +1,52 @@
-"""Tier 2 (browser) Applicator (ADR-0020, generalized in ADR-0028).
+"""Tier 2 (browser) Applicator (ADR-0020, generalized in ADR-0028/ADR-0032).
 
 Same confirmation-token discipline as :class:`~career_agent.agents.apply.
 applicator.TieredApplicator` (ADR-0018) for ``prepare``/``submit``, plus a
 second, analogous token for the one thing Tier 1 never has to handle: a
-mid-submission pause. When the driven browser hits a CAPTCHA, verification,
-or login wall, ``submit`` does not wait, poll, or retry internally -- it
-returns ``HumanActionRequired`` (an event type defined since Phase 2 and
-unused until now) and the underlying page is held open, untouched, until a
-matching :class:`~career_agent.domain.models.PauseAcknowledgment` arrives via
-``resume()``. There is no timeout-based auto-continue and no way to advance
-the paused session with anything other than an exact, verified match --
+mid-submission pause. There are two distinct pause reasons, sequential by
+construction, not by convention (ADR-0032):
+
+**Phase A (pre-click, ``reason="fields_need_human_input"``).** After known
+identity/resume fields are filled, every remaining required field is
+classified via :mod:`~career_agent.agents.apply.question_answerer`. A
+Category 2 (factual) field with an already-captured
+:class:`~career_agent.domain.models.LegalStatusSection` fact is filled
+automatically -- same tier as an ordinary known field, no pause. Everything
+else unresolved (EEOC, subjective, a missing legal-status fact, or simply
+any field this slice doesn't attempt to auto-resolve) is batched into a
+**single** pause naming every unresolved selector. The human fills those
+fields **directly on the live, visible page** -- ``resume()`` never takes a
+typed answer payload and writes it into the DOM itself. This is deliberate,
+not an implementation shortcut: an EEOC response this way never becomes a
+Python value this process holds at any point, which is a categorically
+stronger guarantee than "received it and used it correctly" -- there is
+nothing here that could ever leak, log, or mis-route, because nothing is
+ever held. ``resume()`` re-verifies every manifested field is actually
+non-empty on the live page before proceeding -- never trusts the
+acknowledgment alone (:class:`RequiredFieldsStillUnresolvedError`).
+
+**Phase B (post-click, ``reason="challenge"``).** Unchanged from ADR-0020:
+click, check for a CAPTCHA/verification wall, pause if present.
 ``resume()`` re-checks the challenge is actually gone before ever touching
-the page again, rather than trusting the acknowledgment alone.
+the page again (:class:`ChallengeStillPresentError`).
+
+No pause carries data the caller supplies back through ``resume()`` other
+than the token match itself -- ``PauseAcknowledgment``'s shape (ADR-0020)
+is reused unchanged for both phases, not given a second, richer shape.
+Phase A cannot begin until Phase B is unreachable, and Phase B cannot begin
+until Phase A's own resume has already re-verified and completed -- there
+is no code path where a later pause skips an earlier one's check.
+
+``BrowserApplicator`` has **zero dependency on ``MasterProfile`` storage**,
+by deliberate structural choice, not because a writer happens not to exist
+yet (ADR-0032). ``Application.legal_status`` arrives as a pre-frozen
+snapshot (mirroring ``applicant``, ADR-0027) -- this class only ever reads
+data handed to it, never loads or saves a profile file. A captured
+legal-status answer is not persisted back to the profile for reuse by a
+future application in this slice; that requires a ``MasterProfile`` writer
+that does not exist anywhere in this codebase yet, and building one is
+named, explicit, deferred future work, not folded silently into this
+wiring.
 
 Which ATS's form to fill is resolved from the opportunity's ``source_url``
 via :func:`~career_agent.domain.ats_urls.resolve_ats_kind` (the same
@@ -29,10 +64,13 @@ hCaptcha markup (``div#h-captcha``, a hidden submit target) that the
 previously hardcoded Greenhouse-fixture-shaped literals would never have
 matched.
 
-**Before clicking submit, this class refuses rather than guesses** at any
-*required* form field a ``FormFiller`` doesn't declare knowing how to fill
-(:class:`UnsupportedFormFieldsError`) -- a custom question, an EEOC/
-demographic question, anything else. This is a platform-agnostic,
+**Before clicking submit, this class still refuses outright** at any
+*required* field it cannot even describe to a human -- no ``aria-label``,
+no associated ``<label>``, no ``placeholder`` found at all
+(:class:`UnsupportedFormFieldsError`). Handing a human a blank field with
+zero context is close enough to guessing that refusing beats manifesting
+it; every *describable* required field goes through Phase A's
+classify-then-manifest path instead. This is a platform-agnostic,
 live-DOM-verified check (queries the real page's actual form elements, not
 a fixed list of "known bad" selectors), so it works the same way regardless
 of which ATS's form is loaded. *Optional* fields with no unanswered
@@ -44,9 +82,17 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from career_agent.agents.apply.form_fillers import FormFiller, default_form_fillers
+from career_agent.agents.apply.question_answerer import (
+    AmbiguousQuestionError,
+    MissingLegalStatusFactError,
+    QuestionCategory,
+    answer_factual_question,
+    classify_question,
+    match_dropdown_option,
+)
 from career_agent.core.events import (
     ApplicationSubmitted,
     Event,
@@ -56,6 +102,7 @@ from career_agent.core.interfaces import OpportunityRepository
 from career_agent.domain.ats_urls import resolve_ats_kind
 from career_agent.domain.models import (
     HumanConfirmation,
+    LegalStatusSection,
     PauseAcknowledgment,
     SubmissionPreview,
     SubmittableApplication,
@@ -63,7 +110,7 @@ from career_agent.domain.models import (
 from career_agent.integrations.browser_session import EncryptedSessionStore
 
 if TYPE_CHECKING:
-    from playwright.async_api import Browser, BrowserContext, Page
+    from playwright.async_api import Browser, BrowserContext, ElementHandle, Page
 
 
 class NoApplicableFormFillerError(Exception):
@@ -79,15 +126,15 @@ class NoApplicableFormFillerError(Exception):
 
 
 class UnsupportedFormFieldsError(Exception):
-    """The live form has a required field this FormFiller can't safely fill.
+    """A required field has no describable text at all -- refused outright.
 
     Raised *before* ``#submit_app`` (or its platform equivalent) is ever
-    clicked -- a custom question, an EEOC/demographic question, or anything
-    else outside identity + resume is never guessed at, confirmed, or
-    left for a human to react to after the fact. The only acceptable
-    behaviors for a field this project cannot honestly answer are: it stays
-    unfilled because the form permits that, or a human answers it directly
-    -- never a system-originated guess (ADR-0028).
+    clicked, and only for a field this class cannot even show a human: no
+    ``aria-label``, associated ``<label>``, or ``placeholder`` found. Every
+    other required field this ``FormFiller`` doesn't already know goes
+    through Phase A's classify-then-manifest path instead (ADR-0032) --
+    this exception is now the narrower "cannot even describe it" case, not
+    "any unknown field" (ADR-0028's original, broader scope).
     """
 
 
@@ -105,6 +152,25 @@ class ChallengeStillPresentError(Exception):
     """
 
 
+class RequiredFieldsStillUnresolvedError(Exception):
+    """resume() was called, but a manifested Phase A field is still empty.
+
+    Distinct from :class:`ChallengeStillPresentError` on purpose (ADR-0032)
+    -- same "never trust the acknowledgment, check the live page" principle,
+    generalized from one condition (challenge gone) to another (these
+    specific fields non-empty), not blurred into one check. Raised without
+    ever clicking submit, exactly like its Phase B counterpart.
+    """
+
+
+class ManifestField(NamedTuple):
+    """One required field Phase A could not auto-resolve, for the human's reference."""
+
+    selector: str
+    category: str
+    question_text: str
+
+
 class _PausedSession(NamedTuple):
     session_id: str
     page: Page
@@ -112,6 +178,10 @@ class _PausedSession(NamedTuple):
     browser: Browser
     application: SubmittableApplication
     filler: FormFiller
+    reason: Literal["fields_need_human_input", "challenge"]
+    #: Selectors the human must fill directly on the live page before a
+    #: Phase A resume() will proceed. Always empty for a "challenge" pause.
+    manifest: tuple[str, ...] = ()
 
 
 class BrowserApplicator:
@@ -196,8 +266,9 @@ class BrowserApplicator:
     ) -> Event:
         """Fill and submit the form, only if ``confirmation`` names this exact preview.
 
-        Returns ``HumanActionRequired`` (not ``ApplicationSubmitted``) if a
-        challenge appears -- the caller must obtain a
+        Returns ``HumanActionRequired`` (not ``ApplicationSubmitted``) if
+        Phase A finds unresolved fields or a Phase B challenge appears --
+        the caller must obtain a
         :class:`~career_agent.domain.models.PauseAcknowledgment` and call
         ``resume()``; this method never waits for one itself.
 
@@ -230,41 +301,57 @@ class BrowserApplicator:
         page, context, browser = await self._open_page(session_id, preview.target)
         try:
             await filler.fill_identity_and_resume(page, application)
-            unhandled = await _unhandled_required_fields(
-                page, filler.known_field_selectors
+            hard_refuse, manifest = await _triage_unhandled_fields(
+                page, filler.known_field_selectors, application.application.legal_status
             )
-            if unhandled:
+            if hard_refuse:
                 raise UnsupportedFormFieldsError(
                     f"this posting's form has required field(s) "
-                    f"{unhandled} that {type(filler).__name__} does not "
-                    f"know how to safely fill -- refusing to submit "
-                    f"(ADR-0028)"
+                    f"{hard_refuse} with no describable label, aria-label, "
+                    f"or placeholder -- refusing to submit rather than "
+                    f"handing a human a blank, context-free field "
+                    f"(ADR-0032)"
                 )
         except BaseException:
             await browser.close()
             raise
 
-        await page.click(filler.submit_selector)
-
-        if await page.is_visible(filler.challenge_selector):
+        if manifest:
             pause_token = str(uuid.uuid4())
             self._paused[pause_token] = _PausedSession(
-                session_id, page, context, browser, application, filler
+                session_id,
+                page,
+                context,
+                browser,
+                application,
+                filler,
+                reason="fields_need_human_input",
+                manifest=tuple(field.selector for field in manifest),
             )
             return HumanActionRequired(
                 correlation_id=application.application.opportunity_id,
                 application_id=application.application.id,
-                reason="verification",
+                reason="fields_need_human_input",
             )
 
-        return await self._finish(session_id, page, context, browser, application)
+        return await self._click_submit_and_check_challenge(
+            session_id, page, context, browser, application, filler
+        )
 
     async def resume(self, pause_token: str, ack: PauseAcknowledgment) -> Event:
         """Continue a paused submission, only if ``ack`` names this exact pause.
 
-        Re-checks the challenge is actually gone on the live page before
-        clicking anything -- raises :class:`ChallengeStillPresentError`
-        without touching the page again if it's still visible.
+        Branches on the pause's own ``reason`` (ADR-0032) -- a
+        "fields_need_human_input" pause re-verifies every manifested field
+        is non-empty on the live page (:class:`RequiredFieldsStillUnresolvedError`
+        if not) and then performs the *first* submit click; a "challenge"
+        pause re-checks the challenge is actually gone
+        (:class:`ChallengeStillPresentError` if not) and re-clicks submit
+        after a click that was previously blocked. Different checks for
+        different reasons, not one generic re-verification -- the same
+        distinction ``UnsupportedFormFieldsError`` and
+        ``AmbiguousDropdownMatchError`` keep as separate types elsewhere in
+        this project.
         """
         if ack.pause_token != pause_token:
             raise ValueError(
@@ -276,20 +363,65 @@ class BrowserApplicator:
             raise UnknownPauseTokenError(
                 f"unknown or already-consumed pause_token {pause_token!r}"
             )
-        if await paused.page.is_visible(paused.filler.challenge_selector):
-            raise ChallengeStillPresentError(
-                f"challenge is still present for pause_token {pause_token!r} "
-                f"-- not attempting to complete the submission"
+
+        if paused.reason == "challenge":
+            if await paused.page.is_visible(paused.filler.challenge_selector):
+                raise ChallengeStillPresentError(
+                    f"challenge is still present for pause_token "
+                    f"{pause_token!r} -- not attempting to complete the "
+                    f"submission"
+                )
+            del self._paused[pause_token]
+            await paused.page.click(paused.filler.submit_selector)
+            return await self._finish(
+                paused.session_id,
+                paused.page,
+                paused.context,
+                paused.browser,
+                paused.application,
+            )
+
+        still_empty = await _fields_still_empty(paused.page, paused.manifest)
+        if still_empty:
+            raise RequiredFieldsStillUnresolvedError(
+                f"pause_token {pause_token!r}: field(s) {still_empty} are "
+                f"still empty on the live page -- not attempting to "
+                f"complete the submission"
             )
         del self._paused[pause_token]
-        await paused.page.click(paused.filler.submit_selector)
-        return await self._finish(
+        return await self._click_submit_and_check_challenge(
             paused.session_id,
             paused.page,
             paused.context,
             paused.browser,
             paused.application,
+            paused.filler,
         )
+
+    async def _click_submit_and_check_challenge(
+        self,
+        session_id: str,
+        page: Page,
+        context: BrowserContext,
+        browser: Browser,
+        application: SubmittableApplication,
+        filler: FormFiller,
+    ) -> Event:
+        await page.click(filler.submit_selector)
+
+        if await page.is_visible(filler.challenge_selector):
+            pause_token = str(uuid.uuid4())
+            self._paused[pause_token] = _PausedSession(
+                session_id, page, context, browser, application, filler,
+                reason="challenge",
+            )
+            return HumanActionRequired(
+                correlation_id=application.application.opportunity_id,
+                application_id=application.application.id,
+                reason="verification",
+            )
+
+        return await self._finish(session_id, page, context, browser, application)
 
     async def _open_page(
         self, session_id: str, target_url: str
@@ -328,6 +460,37 @@ class BrowserApplicator:
         )
 
 
+async def _required_unknown_elements(
+    page: Page, known_field_selectors: frozenset[str]
+) -> list[tuple[str | None, ElementHandle, str | None]]:
+    """Every required form element not a known submit-mechanic or FormFiller field.
+
+    Each triple is ``(selector, element, element_id)`` -- ``selector`` is
+    ``None`` only when the element has neither ``id`` nor ``name`` to
+    derive one from.
+    """
+    elements = await page.query_selector_all("form input, form textarea, form select")
+    result: list[tuple[str | None, ElementHandle, str | None]] = []
+    for element in elements:
+        input_type = (await element.get_attribute("type")) or ""
+        if input_type.lower() in {"submit", "button", "hidden"}:
+            continue
+        if await element.get_attribute("required") is None:
+            continue
+        element_id = await element.get_attribute("id")
+        name = await element.get_attribute("name")
+        if element_id:
+            selector = f"#{element_id}"
+        elif name:
+            selector = f"[name='{name}']"
+        else:
+            selector = None
+        if selector is not None and selector in known_field_selectors:
+            continue
+        result.append((selector, element, element_id))
+    return result
+
+
 async def _unhandled_required_fields(
     page: Page, known_field_selectors: frozenset[str]
 ) -> list[str]:
@@ -348,23 +511,141 @@ async def _unhandled_required_fields(
     whichever shape the live page actually uses, not assumed to always be
     ``#id``.
     """
-    elements = await page.query_selector_all("form input, form textarea, form select")
-    unhandled: list[str] = []
-    for element in elements:
-        input_type = (await element.get_attribute("type")) or ""
-        if input_type.lower() in {"submit", "button", "hidden"}:
+    fields = await _required_unknown_elements(page, known_field_selectors)
+    return [
+        selector if selector is not None else "(no id or name)"
+        for selector, _element, _element_id in fields
+    ]
+
+
+async def _field_question_text(
+    page: Page, element: ElementHandle, element_id: str | None
+) -> str:
+    """The best available human-readable text describing this field.
+
+    Tries ``aria-label``, then an associated ``<label for="...">``, then
+    ``placeholder``, in that order -- the same priority a screen reader
+    would use. An empty result means Phase A cannot even describe this
+    field to a human, which is what makes it eligible for outright refusal
+    rather than being manifested with no context (ADR-0032).
+    """
+    aria_label = await element.get_attribute("aria-label")
+    if aria_label and aria_label.strip():
+        return aria_label.strip()
+    if element_id:
+        label = await page.query_selector(f"label[for='{element_id}']")
+        if label is not None:
+            text = await label.inner_text()
+            if text and text.strip():
+                return text.strip()
+    placeholder = await element.get_attribute("placeholder")
+    if placeholder and placeholder.strip():
+        return placeholder.strip()
+    return ""
+
+
+async def _try_fill_boolean_select(element: ElementHandle, fact: bool) -> bool:
+    """Fill a ``<select>`` from a resolved boolean fact, if it confidently maps.
+
+    Deterministic, not a model call (the same "prove the cheap thing
+    first" discipline as Category 4's own matching) -- maps the fact to a
+    "Yes"/"No" candidate string and reuses
+    :func:`~career_agent.agents.apply.question_answerer.match_dropdown_option`
+    against the live, enumerated ``<option>`` text. Returns ``False``
+    (never guesses, never fills) when the element isn't a ``<select>`` at
+    all, or when nothing on the real page clears the match threshold --
+    "Authorized"/"Not Authorized" options, for instance, correctly refuse
+    here rather than being force-mapped to "Yes"/"No".
+    """
+    tag = await element.evaluate("el => el.tagName.toLowerCase()")
+    if tag != "select":
+        return False
+    option_elements = await element.query_selector_all("option")
+    options: list[str] = []
+    for option_element in option_elements:
+        text = (await option_element.inner_text()).strip()
+        if text:
+            options.append(text)
+    candidate = "Yes" if fact else "No"
+    result = match_dropdown_option(candidate, options)
+    if result.matched_option is None:
+        return False
+    await element.select_option(label=result.matched_option)
+    return True
+
+
+async def _triage_unhandled_fields(
+    page: Page,
+    known_field_selectors: frozenset[str],
+    legal_status: LegalStatusSection,
+) -> tuple[list[str], list[ManifestField]]:
+    """Classify every required-but-unknown field into auto-filled / manifest / refuse.
+
+    A Category 2 (factual) field with an already-captured fact is filled
+    automatically here and never appears in either returned list. Category
+    1 (EEOC) and Category 3 (subjective) fields always land in the
+    manifest -- the human fills them directly on the live page, never this
+    function. A Category 2 field with no captured fact, or a compound/
+    non-boolean question :func:`~career_agent.agents.apply.
+    question_answerer.answer_factual_question` refuses to answer, also
+    lands in the manifest rather than being force-classified further.
+    Category 4 (dropdown) auto-matching is deliberately not wired into
+    this triage this slice (ADR-0032) -- it requires its own new frozen
+    profile-data snapshot (e.g. education) that was never decided here;
+    those fields land in the manifest like anything else unresolved, which
+    is a safe degradation, not a broken guarantee.
+
+    A field with no describable question text at all (ADR-0032) is
+    returned in the first (hard-refuse) list instead of either the other
+    two -- handing a human a context-free blank field is close enough to
+    guessing that outright refusal is the honest response.
+    """
+    hard_refuse: list[str] = []
+    manifest: list[ManifestField] = []
+    fields = await _required_unknown_elements(page, known_field_selectors)
+    for selector, element, element_id in fields:
+        if selector is None:
+            hard_refuse.append("(no id or name)")
             continue
-        if await element.get_attribute("required") is None:
+        question_text = await _field_question_text(page, element, element_id)
+        if not question_text:
+            hard_refuse.append(selector)
             continue
-        element_id = await element.get_attribute("id")
-        name = await element.get_attribute("name")
-        if element_id:
-            selector = f"#{element_id}"
-        elif name:
-            selector = f"[name='{name}']"
-        else:
-            selector = None
-        if selector is not None and selector in known_field_selectors:
+
+        category = classify_question(question_text)
+        if category == QuestionCategory.FACTUAL:
+            try:
+                fact = answer_factual_question(question_text, legal_status)
+            except (AmbiguousQuestionError, MissingLegalStatusFactError):
+                manifest.append(
+                    ManifestField(selector, category.value, question_text)
+                )
+                continue
+            if await _try_fill_boolean_select(element, fact):
+                continue
+            manifest.append(ManifestField(selector, category.value, question_text))
             continue
-        unhandled.append(selector if selector is not None else "(no id or name)")
-    return unhandled
+
+        manifest.append(ManifestField(selector, category.value, question_text))
+
+    return hard_refuse, manifest
+
+
+async def _fields_still_empty(page: Page, selectors: tuple[str, ...]) -> list[str]:
+    """Which manifested selectors are still empty on the live page right now.
+
+    Never trusts the acknowledgment alone (ADR-0020's original discipline,
+    generalized here from "is the challenge gone" to "are these specific
+    fields filled") -- queried freshly against the real page each time
+    resume() is called, not cached from when the pause was created.
+    """
+    empty: list[str] = []
+    for selector in selectors:
+        element = await page.query_selector(selector)
+        if element is None:
+            empty.append(selector)
+            continue
+        value = await element.input_value()
+        if not value:
+            empty.append(selector)
+    return empty
