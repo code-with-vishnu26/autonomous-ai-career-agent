@@ -101,8 +101,28 @@ JS-driven file-upload widget, with no resume-file artifact anywhere in
 this project's domain model) is a separate, still-unconfirmed unknown that
 real selectors alone don't resolve.
 
+A real, human dev-tools inspection of a live Greenhouse posting (Phase 8i,
+ADR-0030) -- applied to the one platform this project had treated as its
+fully proven baseline -- confirmed ``resume_text`` is a real, visible
+"Enter manually" form option (not merely documented in Greenhouse's API),
+though the exact toggle interaction and revealed field's real selector
+remain unconfirmed. More consequentially, the same **ordinary** posting
+required Education, three legal work-authorization questions, a full
+Voluntary Self-Identification section, and Veteran Status -- none of which
+``GreenhouseFormFiller`` fills. ``_unhandled_required_fields`` correctly
+refuses on all of them, exactly as designed. **This corrects the record,
+not the code: "Tier 2 works for Greenhouse" has only ever meant "correctly
+refuses most real postings, completing only the minority with minimal
+custom fields," not "completes most real Greenhouse applications."** The
+deferred custom-questions/EEOC-answering design (named since Phase 8g) is
+therefore not a generalization nice-to-have -- it is the actual gate on
+this project's practical usefulness on the one platform it already
+supports.
+
 Remaining future work: real per-question-type answering for custom/EEOC
-questions (its own dedicated ADR, not this one); resolving the resume-field
+questions -- now understood as load-bearing for practical completion, not
+just thorough (its own dedicated ADR, not this one); confirming the exact
+Greenhouse resume-field interaction sequence; resolving the resume-field
 interaction shape and confirming Lever's selectors generalize across more
 than one company before ``LeverFormFiller`` can move past a stub; Ashby's
 DOM remains fully uninspectable by every tool tried so far (a client-side

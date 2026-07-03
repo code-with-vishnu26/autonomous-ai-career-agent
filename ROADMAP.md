@@ -452,12 +452,37 @@ widget) is still unconfirmed, and this project has no resume-file
 artifact anywhere in its domain model -- selectors alone don't unblock a
 still-open unknown.
 
-**Remaining (named, not blocking Phase 8's own criterion below):** real
-multi-tier selection across the three `Applicator` implementations; the
-custom-questions/EEOC-answering design itself (its own ADR, per 8g);
-resolving the resume-field interaction shape and confirming Lever's
-selectors generalize across more than one company before
-`LeverFormFiller` can move past a stub; Ashby's DOM remains fully
+**8i — Greenhouse coverage correction, recorded (no code change).** Recorded
+in **ADR-0030**. The user personally inspected a real, live Greenhouse
+posting -- the one platform this project had been treating as its fully
+proven baseline. `resume_text` was upgraded from "documented in
+Greenhouse's API, UI-unconfirmed" to **DOM-confirmed**: the real form has
+an explicit "Enter manually" option alongside Attach/Dropbox/Google Drive
+(the exact toggle interaction and revealed field's real selector remain
+unconfirmed, so `GreenhouseFormFiller`'s current unconditional
+`page.fill("#resume_text", ...)` is not yet proven correct against it).
+More consequentially: the same ordinary posting (not an unusual one)
+required Education, three legal work-authorization questions, a full
+Voluntary Self-Identification section, and a Veteran Status section --
+none of which `GreenhouseFormFiller` fills. `_unhandled_required_fields`
+correctly refuses on all of them, exactly as designed -- **nothing is
+broken.** But this corrects a real overstatement in this project's own
+record: **"Tier 2 works for Greenhouse" has only ever meant "correctly
+refuses most real postings, completing only the minority with minimal
+custom fields," not "completes most real Greenhouse applications."**
+The custom-questions/EEOC-answering design (deferred since 8g) is
+re-prioritized accordingly: it is not a generalization nice-to-have, it is
+the actual gate on this project's practical usefulness on the one
+platform it already supports.
+
+**Remaining (named, not blocking Phase 8's own criterion below):** the
+custom-questions/EEOC-answering design itself -- now understood as
+load-bearing for practical completion, not just thorough (its own ADR,
+per 8g/8i); confirming the exact Greenhouse resume-field interaction
+sequence; real multi-tier selection across the three `Applicator`
+implementations; resolving the resume-field interaction shape and
+confirming Lever's selectors generalize across more than one company
+before `LeverFormFiller` can move past a stub; Ashby's DOM remains fully
 uninspectable by every tool tried so far; the real, OAuth-backed
 `GmailDraftSink`. Tier 1 direct-API submission for arbitrary companies is
 no longer on this list -- confirmed dead, not merely deferred (ADR-0027).
