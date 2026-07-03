@@ -333,11 +333,30 @@ multi-entry profile render is asserted structurally complete (every work
 entry, real dates, highlights, skills, projects all present), not just
 "renders without crashing."
 
+**8e — the real, runnable `career-agent apply` command, merged.** Recorded in
+**ADR-0026**. The first slice where a real person can type a real command
+against real data: `apply --profile <path> --opportunity-file <path>` loads a
+real `MasterProfile` and `Opportunity` from disk, tailors and gates a real
+resume with the real, Claude-backed generator and verifier, renders it, and
+asks a real human to confirm it via `confirm_submission`. Stops there --
+prints plainly that nothing was actually sent rather than pretending to
+submit, since no real `ATSAdapter` exists yet. Opportunity input is a plain
+`--opportunity-file` JSON handoff, not a lookup against a persistent store
+that doesn't exist. The real `AnthropicClaimVerifier` is gated by a new,
+positive check (`llm/promptfoo_gate.py::verify_promptfoo_results`) against an
+actual promptfoo results artifact on disk, keyed to the exact prompt version
+by filename -- not a flag typed from memory -- closing the gap where ADR-0016's
+requirement was enforced only by written policy. `main()` now takes an
+explicit `argv` (dependency-injection, same pattern as `input_fn`), fixing a
+real regression a pre-existing scaffolding test caught. All three new
+structural guarantees in this slice (the promptfoo gate's pass/fail check,
+its ordering before real client construction, and the `argv` fix) were
+verified by deliberately breaking each, confirming a test caught it, then
+reverting.
+
 **Remaining (named, not blocking Phase 8's own criterion below):** real
-multi-tier selection across the three `Applicator` implementations; a real,
-argument-parsed `career-agent apply <id>` CLI command wiring
-`confirm_submission`/`SubmissionPipeline` together (today only the
-confirmation function exists, not the command); the real, OAuth-backed
+multi-tier selection across the three `Applicator` implementations; a real
+`ATSAdapter` for `apply` to actually submit through; the real, OAuth-backed
 `GmailDraftSink`; generalizing `BrowserApplicator` beyond Greenhouse's form.
 **Done when:** an application can be assembled, gated for truthfulness, and
 submitted under supervision, with real employment dates on every tailored

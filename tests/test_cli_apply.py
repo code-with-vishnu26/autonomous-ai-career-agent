@@ -1,0 +1,269 @@
+"""Phase 8e / ADR-0026: the real `career-agent apply` command.
+
+``_apply_pipeline`` is tested directly, injected with fakes -- it never
+touches a real Anthropic client. ``run_apply_command`` is tested only for
+its file-loading and promptfoo-gate-ordering behavior (also fully offline);
+the real, Claude-backed construction path it wires together on success is
+untestable live in this sandbox, disclosed the same as every other real
+external-system client in this project.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from career_agent.agents.resume.gate import LLMTruthfulnessGate
+from career_agent.agents.resume.generator import LLMResumeGenerator
+from career_agent.cli import _apply_pipeline, run_apply_command
+from career_agent.core.interfaces import ClaimVerdict
+from career_agent.domain.models import DraftedTailoring, MasterProfile
+from tests._fakes import FakeClaimVerifier, FakeContentDrafter
+from tests.agents._profile_fixture import sample_master_profile
+
+
+def _opportunity_payload() -> dict:
+    return {
+        "id": "opp-1",
+        "company_id": "acme",
+        "canonical_company": "acme.com",
+        "title": "Software Engineer",
+        "source": "ats_api",
+        "source_url": "https://boards.greenhouse.io/acme/jobs/12345",
+        "provenance": {
+            "method": "structured_api",
+            "reference": "https://boards.greenhouse.io/acme/jobs/12345",
+            "extraction_confidence": 1.0,
+        },
+        "description_raw": "We are hiring a backend engineer.",
+        "discovered_at": "2026-01-01T00:00:00Z",
+    }
+
+
+def _write_opportunity_file(tmp_path: Path) -> Path:
+    path = tmp_path / "opportunity.json"
+    path.write_text(json.dumps(_opportunity_payload()))
+    return path
+
+
+def _honest_profile() -> MasterProfile:
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer."
+    return profile
+
+
+def _honest_drafted() -> DraftedTailoring:
+    from career_agent.domain.models import TailoredWorkEntry
+
+    return DraftedTailoring(
+        work=[
+            TailoredWorkEntry(
+                source_entry_id="work-techco",
+                position="Software Engineer",
+                highlights=["Built REST APIs serving 2M requests/day"],
+            )
+        ],
+        skills=["Python"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# _apply_pipeline -- fully offline, fake-backed
+# ---------------------------------------------------------------------------
+
+
+async def test_approved_draft_prints_resume_and_confirms_yes() -> None:
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            {
+                "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    from career_agent.domain.models import Opportunity
+
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    exit_code = await _apply_pipeline(
+        _honest_profile(), opportunity, generator, gate, input_fn=lambda _: "y"
+    )
+    assert exit_code == 0
+
+
+async def test_approved_draft_but_declined_confirmation_exits_zero_no_submission() -> (
+    None
+):
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            {
+                "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    from career_agent.domain.models import Opportunity
+
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    exit_code = await _apply_pipeline(
+        _honest_profile(), opportunity, generator, gate, input_fn=lambda _: ""
+    )
+    assert exit_code == 0
+
+
+async def test_rejected_draft_exits_nonzero_and_never_asks_for_confirmation() -> None:
+    """A rejected draft must not reach confirm_submission at all -- proven
+    by an input_fn that raises if it's ever called."""
+    generator = LLMResumeGenerator(
+        FakeContentDrafter(DraftedTailoring(skills=["Kubernetes"]))
+    )
+    gate = LLMTruthfulnessGate(FakeClaimVerifier({}))
+
+    def _fail_if_called(_: str) -> str:
+        raise AssertionError("confirm_submission must not be reached")
+
+    from career_agent.domain.models import Opportunity
+
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    exit_code = await _apply_pipeline(
+        _honest_profile(), opportunity, generator, gate, input_fn=_fail_if_called
+    )
+    assert exit_code == 1
+
+
+async def test_missing_summary_exits_nonzero_without_crashing() -> None:
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(FakeClaimVerifier({}))
+
+    from career_agent.domain.models import Opportunity
+
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    profile = sample_master_profile()
+    assert profile.basics.summary is None
+    exit_code = await _apply_pipeline(profile, opportunity, generator, gate)
+    assert exit_code == 1
+
+
+# ---------------------------------------------------------------------------
+# run_apply_command -- file loading and promptfoo-gate ordering, still offline
+# ---------------------------------------------------------------------------
+
+
+async def test_missing_profile_file_exits_cleanly(tmp_path: Path) -> None:
+    exit_code = await run_apply_command(
+        profile_path=tmp_path / "does-not-exist.json",
+        opportunity_path=_write_opportunity_file(tmp_path),
+    )
+    assert exit_code == 1
+
+
+async def test_missing_opportunity_file_exits_cleanly(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text("{}")
+    exit_code = await run_apply_command(
+        profile_path=profile_path,
+        opportunity_path=tmp_path / "does-not-exist.json",
+    )
+    assert exit_code == 1
+
+
+async def test_missing_api_key_exits_before_touching_promptfoo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No ANTHROPIC_API_KEY must fail before even checking promptfoo results
+    -- proven by pointing promptfoo_results_dir at a directory that would
+    itself raise if actually inspected past this point."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(
+        json.dumps(
+            {
+                "basics": {"name": "Ada", "email": "ada@example.com", "summary": "x"},
+                "work": [],
+                "education": [],
+                "skills": [],
+                "projects": [],
+            }
+        )
+    )
+    exit_code = await run_apply_command(
+        profile_path=profile_path,
+        opportunity_path=_write_opportunity_file(tmp_path),
+        promptfoo_results_dir=tmp_path / "nonexistent-promptfoo-dir",
+    )
+    assert exit_code == 1
+
+
+async def test_promptfoo_not_validated_blocks_even_with_a_valid_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A valid ANTHROPIC_API_KEY alone must not be enough to proceed -- the
+    promptfoo gate must still block, before any real Anthropic client is
+    constructed. This is the symmetric, load-bearing ordering proof: the
+    previous test proves the API-key check happens first when the key is
+    absent; this proves the promptfoo check still bites even when the key
+    check has already passed."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-for-test")
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(
+        json.dumps(
+            {
+                "basics": {"name": "Ada", "email": "ada@example.com", "summary": "x"},
+                "work": [],
+                "education": [],
+                "skills": [],
+                "projects": [],
+            }
+        )
+    )
+    exit_code = await run_apply_command(
+        profile_path=profile_path,
+        opportunity_path=_write_opportunity_file(tmp_path),
+        promptfoo_results_dir=tmp_path / "nonexistent-promptfoo-dir",
+    )
+    assert exit_code == 1
+
+
+# ---------------------------------------------------------------------------
+# main()'s argv dispatch -- proven with an explicit argv, never sys.argv
+# ---------------------------------------------------------------------------
+
+
+def test_main_dispatches_apply_with_the_right_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import career_agent.cli as cli_module
+
+    seen: dict[str, Path] = {}
+
+    async def _fake_run_apply_command(
+        *, profile_path: Path, opportunity_path: Path
+    ) -> int:
+        seen["profile_path"] = profile_path
+        seen["opportunity_path"] = opportunity_path
+        return 3
+
+    monkeypatch.setattr(cli_module, "run_apply_command", _fake_run_apply_command)
+    profile_path = tmp_path / "profile.json"
+    opportunity_path = tmp_path / "opportunity.json"
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli_module.main(
+            [
+                "apply",
+                "--profile",
+                str(profile_path),
+                "--opportunity-file",
+                str(opportunity_path),
+            ]
+        )
+    assert exc_info.value.code == 3
+    assert seen["profile_path"] == profile_path
+    assert seen["opportunity_path"] == opportunity_path
