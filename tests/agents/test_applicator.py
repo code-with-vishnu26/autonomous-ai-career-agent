@@ -20,6 +20,7 @@ from career_agent.domain.models import (
     Application,
     BasicsSection,
     HumanConfirmation,
+    LegalStatusSection,
     Opportunity,
     Provenance,
     Statement,
@@ -78,6 +79,7 @@ def _approved_application(
         opportunity_id=opportunity_id,
         resume=resume,
         applicant=BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+        legal_status=LegalStatusSection(),
         status="pending",
     )
     return SubmittableApplication(application=app)

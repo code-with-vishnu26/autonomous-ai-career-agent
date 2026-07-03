@@ -122,7 +122,7 @@ def test_case_2a_compound_question_refuses_rather_than_answering_half() -> None:
     question = "Are you authorized to work in the US, and will you require sponsorship?"
     assert classify_question(question) == QuestionCategory.FACTUAL
     with pytest.raises(AmbiguousQuestionError, match="more than one fact"):
-        answer_factual_question(question, profile)
+        answer_factual_question(question, profile.legal_status)
 
 
 def test_case_2b_negated_polarity_question_correctly_inverted() -> None:
@@ -131,12 +131,14 @@ def test_case_2b_negated_polarity_question_correctly_inverted() -> None:
     opposite of what's true. Both directions verified."""
     requires_sponsorship_profile = _profile(requires_sponsorship=True)
     question = "Do you not require sponsorship to work in the US?"
+    requires_sponsorship_legal_status = requires_sponsorship_profile.legal_status
     # They DO require sponsorship, so "do you NOT require it" is False.
-    assert answer_factual_question(question, requires_sponsorship_profile) is False
+    assert answer_factual_question(question, requires_sponsorship_legal_status) is False
 
     no_sponsorship_profile = _profile(requires_sponsorship=False)
+    no_sponsorship_legal_status = no_sponsorship_profile.legal_status
     # They do NOT require sponsorship, so "do you NOT require it" is True.
-    assert answer_factual_question(question, no_sponsorship_profile) is True
+    assert answer_factual_question(question, no_sponsorship_legal_status) is True
 
 
 def test_case_2c_uncaptured_fact_raises_instead_of_silently_skipped() -> None:
@@ -146,7 +148,7 @@ def test_case_2c_uncaptured_fact_raises_instead_of_silently_skipped() -> None:
     question = "Are you legally authorized to work in the United States?"
     assert classify_question(question) == QuestionCategory.FACTUAL
     with pytest.raises(MissingLegalStatusFactError, match="work_authorized_us"):
-        answer_factual_question(question, profile)
+        answer_factual_question(question, profile.legal_status)
 
 
 def test_case_2d_non_boolean_legal_q_refuses_rather_than_inventing_a_number() -> None:
@@ -157,7 +159,7 @@ def test_case_2d_non_boolean_legal_q_refuses_rather_than_inventing_a_number() ->
     question = "How many years until your visa sponsorship would need renewal?"
     assert classify_question(question) == QuestionCategory.FACTUAL
     with pytest.raises(AmbiguousQuestionError, match="not a yes/no question"):
-        answer_factual_question(question, profile)
+        answer_factual_question(question, profile.legal_status)
 
 
 # ---------------------------------------------------------------------------

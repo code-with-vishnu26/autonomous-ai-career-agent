@@ -33,6 +33,7 @@ from career_agent.agents.apply.browser_applicator import (
     BrowserApplicator,
     ChallengeStillPresentError,
     NoApplicableFormFillerError,
+    RequiredFieldsStillUnresolvedError,
     UnknownPauseTokenError,
     UnsupportedFormFieldsError,
     _unhandled_required_fields,
@@ -47,6 +48,7 @@ from career_agent.domain.models import (
     Application,
     BasicsSection,
     HumanConfirmation,
+    LegalStatusSection,
     Opportunity,
     PauseAcknowledgment,
     Provenance,
@@ -138,7 +140,10 @@ def _opportunity(
 
 
 def _approved_application(
-    opportunity_id: str, *, applicant: BasicsSection | None = None
+    opportunity_id: str,
+    *,
+    applicant: BasicsSection | None = None,
+    legal_status: LegalStatusSection | None = None,
 ) -> SubmittableApplication:
     resume = TailoredResume(
         id="resume-1",
@@ -160,6 +165,7 @@ def _approved_application(
         resume=resume,
         applicant=applicant
         or BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+        legal_status=legal_status or LegalStatusSection(),
         status="pending",
     )
     return SubmittableApplication(application=app)
@@ -624,3 +630,275 @@ async def test_resume_completes_once_the_challenge_is_actually_cleared(
     # session was actually persisted for reuse (ADR-0020/ADR-0008)
     session = applicator._session_store.load("opp-1")
     assert session is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 8k / ADR-0032: QuestionAnswerer wired into BrowserApplicator.
+# Real, live-DOM tests against apply_form_with_custom_questions.html, whose
+# #work_auth/#gender/#culture_fit fields have real <label> text -- unlike
+# #why_us above (no label at all), which continues to hard-refuse.
+# ---------------------------------------------------------------------------
+
+_CUSTOM_QUESTIONS_FIXTURE = (
+    Path(__file__).parent.parent
+    / "fixtures"
+    / "greenhouse"
+    / "apply_form_with_custom_questions.html"
+)
+
+
+def _custom_questions_url(*, challenge: bool = False) -> str:
+    suffix = "?challenge=1" if challenge else ""
+    return f"file://{_CUSTOM_QUESTIONS_FIXTURE}{suffix}"
+
+
+async def test_factual_field_with_a_captured_fact_is_auto_filled_no_pause(
+    tmp_path: Path,
+) -> None:
+    """Category 2 auto-fill: #work_auth has real label text matching the
+    work-authorization template, and legal_status.work_authorized_us is
+    already captured -- it must be filled automatically, with zero pause
+    for it specifically."""
+    opportunity = _opportunity("opp-1")
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_CUSTOM_QUESTIONS_FIXTURE
+    )
+    app = _approved_application(
+        "opp-1", legal_status=LegalStatusSection(work_authorized_us=True)
+    )
+    preview = await applicator.prepare(app)
+    event = await applicator.submit(preview, _confirmation(preview.preview_token))
+
+    assert isinstance(event, HumanActionRequired)
+    assert event.reason == "fields_need_human_input"
+    pause_token = next(iter(applicator._paused))
+    paused = applicator._paused[pause_token]
+    # #work_auth was resolved automatically -- it is not in the manifest.
+    assert "#work_auth" not in paused.manifest
+    assert set(paused.manifest) == {"#gender", "#culture_fit"}
+    assert await paused.page.input_value("#work_auth") == "yes"
+
+
+async def test_eeoc_field_is_never_written_by_this_code_only_ever_by_the_human(
+    tmp_path: Path,
+) -> None:
+    """The load-bearing wiring-level proof of Case 1d's guarantee: after
+    Phase A's auto-fill pass, #gender -- a Category 1 (EEOC) field -- is
+    still at its blank default. This code never calls select_option on it
+    under any circumstance; only a human, acting directly on the live
+    page, ever sets it."""
+    opportunity = _opportunity("opp-1")
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_CUSTOM_QUESTIONS_FIXTURE
+    )
+    app = _approved_application(
+        "opp-1", legal_status=LegalStatusSection(work_authorized_us=True)
+    )
+    preview = await applicator.prepare(app)
+    event = await applicator.submit(preview, _confirmation(preview.preview_token))
+
+    assert isinstance(event, HumanActionRequired)
+    pause_token = next(iter(applicator._paused))
+    paused_page = applicator._paused[pause_token].page
+    assert await paused_page.input_value("#gender") == ""
+
+
+async def test_missing_legal_status_fact_and_subjective_field_both_go_to_manifest(
+    tmp_path: Path,
+) -> None:
+    """With no legal_status captured at all, #work_auth joins #gender and
+    #culture_fit in the single batched manifest -- one pause, not three."""
+    opportunity = _opportunity("opp-1")
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_CUSTOM_QUESTIONS_FIXTURE
+    )
+    app = _approved_application("opp-1")  # legal_status defaults to all-None
+    preview = await applicator.prepare(app)
+    event = await applicator.submit(preview, _confirmation(preview.preview_token))
+
+    assert isinstance(event, HumanActionRequired)
+    assert len(applicator._paused) == 1  # one batched pause, not per-field
+    pause_token = next(iter(applicator._paused))
+    paused = applicator._paused[pause_token]
+    assert paused.reason == "fields_need_human_input"
+    assert set(paused.manifest) == {"#work_auth", "#gender", "#culture_fit"}
+
+
+async def test_resume_refuses_while_a_manifested_field_is_still_empty(
+    tmp_path: Path,
+) -> None:
+    """The re-verify-the-live-page discipline, extended past challenges:
+    resume() must not proceed -- and must not click submit -- while any
+    manifested field is still empty, regardless of what the acknowledgment
+    claims."""
+    opportunity = _opportunity("opp-1")
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_CUSTOM_QUESTIONS_FIXTURE
+    )
+    app = _approved_application(
+        "opp-1", legal_status=LegalStatusSection(work_authorized_us=True)
+    )
+    preview = await applicator.prepare(app)
+    await applicator.submit(preview, _confirmation(preview.preview_token))
+    pause_token = next(iter(applicator._paused))
+    paused_page = applicator._paused[pause_token].page
+
+    # Human fills only #gender, leaves #culture_fit empty.
+    await paused_page.evaluate("window.__fillCustomFields('female', '')")
+
+    with pytest.raises(RequiredFieldsStillUnresolvedError, match="culture_fit"):
+        await applicator.resume(pause_token, _ack(pause_token))
+
+    assert await paused_page.is_visible("#application-success") is False
+    assert pause_token in applicator._paused
+
+
+async def test_resume_completes_once_the_human_fills_the_manifest_directly(
+    tmp_path: Path,
+) -> None:
+    """The positive case: once the human fills #gender/#culture_fit
+    directly on the live page (never through our data model -- this test
+    stands in for the human's own action, the same way
+    test_resume_completes_once_the_challenge_is_actually_cleared's
+    __clearChallenge() call does for a CAPTCHA), resume() completes the
+    real submission."""
+    opportunity = _opportunity("opp-1")
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_CUSTOM_QUESTIONS_FIXTURE
+    )
+    app = _approved_application(
+        "opp-1", legal_status=LegalStatusSection(work_authorized_us=True)
+    )
+    preview = await applicator.prepare(app)
+    await applicator.submit(preview, _confirmation(preview.preview_token))
+    pause_token = next(iter(applicator._paused))
+    paused_page = applicator._paused[pause_token].page
+
+    await paused_page.evaluate(
+        "window.__fillCustomFields('decline', 'I love shipping real things.')"
+    )
+
+    event = await applicator.resume(pause_token, _ack(pause_token))
+    assert isinstance(event, ApplicationSubmitted)
+    assert pause_token not in applicator._paused
+
+
+async def test_resume_from_field_manifest_can_then_pause_again_for_a_challenge(
+    tmp_path: Path,
+) -> None:
+    """Phase A -> Phase B sequencing by construction: resuming a
+    fields_need_human_input pause performs the *first* submit click, which
+    can itself surface a Phase B challenge -- proving the two phases are a
+    pipeline, not independent, and that Phase B only ever becomes reachable
+    after Phase A's own resume has completed its re-verification."""
+    opportunity = _opportunity("opp-1", challenge=True)
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_CUSTOM_QUESTIONS_FIXTURE
+    )
+    app = _approved_application(
+        "opp-1", legal_status=LegalStatusSection(work_authorized_us=True)
+    )
+    preview = await applicator.prepare(app)
+    first_pause = await applicator.submit(preview, _confirmation(preview.preview_token))
+    assert isinstance(first_pause, HumanActionRequired)
+    assert first_pause.reason == "fields_need_human_input"
+    field_pause_token = next(iter(applicator._paused))
+    paused_page = applicator._paused[field_pause_token].page
+    await paused_page.evaluate(
+        "window.__fillCustomFields('male', 'Great fit.')"
+    )
+
+    second_pause = await applicator.resume(field_pause_token, _ack(field_pause_token))
+    assert isinstance(second_pause, HumanActionRequired)
+    assert second_pause.reason == "verification"
+    assert field_pause_token not in applicator._paused  # phase A pause consumed
+    challenge_pause_token = next(iter(applicator._paused))
+    assert applicator._paused[challenge_pause_token].reason == "challenge"
+
+    await paused_page.evaluate("window.__clearChallenge()")
+    final_event = await applicator.resume(
+        challenge_pause_token, _ack(challenge_pause_token)
+    )
+    assert isinstance(final_event, ApplicationSubmitted)
+
+
+# ---------------------------------------------------------------------------
+# The reason discriminator on _PausedSession must be provably load-bearing
+# (user-required, not decorative): a "fields_need_human_input" pause must
+# use field-fill re-verification and must NOT be resumable by challenge
+# logic, and vice versa for a "challenge" pause. Constructed directly
+# against the applicator's internal state to isolate exactly this branch.
+# ---------------------------------------------------------------------------
+
+
+async def test_reason_discriminator_actually_selects_the_right_reverification(
+    tmp_path: Path,
+) -> None:
+    """Two real paused sessions, one of each reason, on the same live page.
+    Calling resume() on the field-manifest pause while fields are empty
+    must raise RequiredFieldsStillUnresolvedError, never
+    ChallengeStillPresentError; calling resume() on the challenge pause
+    while the challenge is visible must raise ChallengeStillPresentError,
+    never RequiredFieldsStillUnresolvedError. If the reason field were
+    decorative (resume() always ran one check regardless), one of these
+    two assertions would fail."""
+    opportunity = _opportunity("opp-1", challenge=True)
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_CUSTOM_QUESTIONS_FIXTURE
+    )
+    app = _approved_application(
+        "opp-1", legal_status=LegalStatusSection(work_authorized_us=True)
+    )
+    preview = await applicator.prepare(app)
+    field_pause_event = await applicator.submit(
+        preview, _confirmation(preview.preview_token)
+    )
+    assert isinstance(field_pause_event, HumanActionRequired)
+    field_pause_token = next(iter(applicator._paused))
+    # Nothing filled -- #gender/#culture_fit are still genuinely empty.
+    field_paused = applicator._paused[field_pause_token]
+    assert field_paused.reason == "fields_need_human_input"
+
+    with pytest.raises(RequiredFieldsStillUnresolvedError):
+        await applicator.resume(field_pause_token, _ack(field_pause_token))
+    # Proves the wrong check never ran: a real ChallengeStillPresentError
+    # would also have been a valid-looking exception type here if the
+    # discriminator were ignored and challenge logic ran instead -- it
+    # didn't, because the challenge selector is not even visible yet at
+    # this point (the first submit click hasn't happened).
+    assert field_pause_token in applicator._paused
+
+    # Now genuinely resolve the field pause and reach a real challenge pause.
+    paused_page = field_paused.page
+    await paused_page.evaluate("window.__fillCustomFields('male', 'Great fit.')")
+    second_pause = await applicator.resume(field_pause_token, _ack(field_pause_token))
+    assert isinstance(second_pause, HumanActionRequired)
+    challenge_pause_token = next(iter(applicator._paused))
+    challenge_paused = applicator._paused[challenge_pause_token]
+    assert challenge_paused.reason == "challenge"
+
+    with pytest.raises(ChallengeStillPresentError):
+        await applicator.resume(challenge_pause_token, _ack(challenge_pause_token))
+    # And RequiredFieldsStillUnresolvedError never fires for a challenge
+    # pause even though _fields_still_empty is never even consulted for it
+    # -- proven by the exception type itself, not an assumption.
+    assert challenge_pause_token in applicator._paused
+
+
+async def test_field_with_no_describable_label_still_hard_refuses(
+    tmp_path: Path,
+) -> None:
+    """Contrast case, against the original apply_form_with_extra_question.html
+    fixture: #why_us has no label/aria-label/placeholder at all, so it
+    must still hard-refuse via UnsupportedFormFieldsError rather than being
+    manifested with no context for the human -- the ADR-0032 boundary that
+    keeps this exception's narrower meaning real, not just documented."""
+    opportunity = _opportunity("opp-1")
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_EXTRA_QUESTION_FIXTURE
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    with pytest.raises(UnsupportedFormFieldsError, match="why_us"):
+        await applicator.submit(preview, _confirmation(preview.preview_token))
+    assert len(applicator._paused) == 0

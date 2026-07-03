@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from career_agent.domain.models import (
     Application,
     BasicsSection,
+    LegalStatusSection,
     RejectionReason,
     Statement,
     SubmittableApplication,
@@ -53,6 +54,7 @@ def _application(*, approved: bool) -> Application:
         opportunity_id="opp-1",
         resume=_resume(approved=approved),
         applicant=BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+        legal_status=LegalStatusSection(),
         status=status,
     )
 
