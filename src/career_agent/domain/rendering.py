@@ -27,7 +27,28 @@ from __future__ import annotations
 
 from datetime import date
 
-from .models import MasterProfile, TailoredContent, TailoredWorkEntry
+from .models import MasterProfile, TailoredContent, TailoredWorkEntry, WorkEntry
+
+
+def resolve_work_entry(entry: TailoredWorkEntry, profile: MasterProfile) -> WorkEntry:
+    """Return the real :class:`WorkEntry` a tailored work entry was built from.
+
+    Looked up by ``entry.source_entry_id`` against ``profile.work`` -- the
+    single place a renderer reaches profile-owned employment facts (company
+    name, real dates) the generator structurally cannot write. Raises
+    ``KeyError`` on an unresolvable reference rather than silently dropping
+    the entry -- same discipline as :func:`resolve_work_dates`, which now
+    delegates here (Phase 9, ADR-0033: the file renderer needs the company
+    name too, not just dates, and both must come from the same single
+    profile lookup).
+    """
+    for work in profile.work:
+        if work.id == entry.source_entry_id:
+            return work
+    raise KeyError(
+        f"no WorkEntry with id={entry.source_entry_id!r} in profile "
+        f"version={profile.version!r}"
+    )
 
 
 def resolve_work_dates(
@@ -42,13 +63,8 @@ def resolve_work_dates(
     profile as ``employer_mismatch``, so the ``KeyError`` below should never
     fire in practice; it is not silently tolerated here either.
     """
-    for work in profile.work:
-        if work.id == entry.source_entry_id:
-            return work.start_date, work.end_date
-    raise KeyError(
-        f"no WorkEntry with id={entry.source_entry_id!r} in profile "
-        f"version={profile.version!r}"
-    )
+    work = resolve_work_entry(entry, profile)
+    return work.start_date, work.end_date
 
 
 def _format_date_range(start: date, end: date | None) -> str:

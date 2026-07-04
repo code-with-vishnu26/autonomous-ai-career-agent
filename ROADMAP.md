@@ -569,20 +569,83 @@ deferred (ADR-0027).
 submitted under supervision, with real employment dates on every tailored
 work entry. ✅
 
-## ⬜ Phase 9 — Learning engine
-Learning Agent: capture outcomes and feed them back into scoring, targeting, and
-tailoring.
-**Done when:** outcomes are recorded and demonstrably influence prioritization.
+*The phases below were renumbered and expanded by the standing master brief
+(post-8k): the original "Phase 9 Learning engine / Phase 10 Dashboard /
+Phase 11 Deployment" plan is superseded by the concrete 9–18 sequence,
+which absorbs all three (Learn → Phase 15, Dashboard → Phase 16,
+scheduling/deployment → Phase 17).*
 
-## ⬜ Phase 10 — Dashboard
-Local visibility into the pipeline: status, decisions, and exports (SQLite +
-openpyxl spreadsheet).
-**Done when:** the user can see and audit what the agent is doing.
+## 🔄 Phase 9 — Resume file generation (DOCX + PDF)
+Recorded in **ADR-0033**. Real DOCX (python-docx) and text-based PDF
+(LibreOffice headless) from gated `TailoredContent` + read-only profile
+facts, per a locked ATS-safe layout spec. Education sourced read-only from
+`MasterProfile` (authoritative Option (a) decision) -- structurally
+impossible for generated content to carry, override, or fabricate. New
+`ResumeArtifact` domain model: content-hash-addressed filenames make
+silent overwrite impossible by construction; DOCX bytes are deterministic
+(zip-timestamp normalization -- raw python-docx is not, verified
+empirically); PDF is a derived, non-reproducible view whose absence
+(missing `libreoffice-writer`, a real failure mode this sandbox exhibited)
+is a typed error for direct callers and structurally visible in the
+pipeline's artifact list. Injection pass found and fixed two real gaps:
+the layout runtime check originally ran before content was added (moved to
+pre-save), and the determinism test could pass by luck inside ZIP's
+2-second timestamp granularity (sleep lengthened past the boundary).
+**Done when:** an approved resume produces traceable, deterministic,
+ATS-safe files a Playwright `set_input_files` call can attach.
 
-## ⬜ Phase 11 — Deployment
-Self-hosting story: configuration, secrets handling, scheduling, and docs to run
-it reliably on the user's own machine.
-**Done when:** a new user can stand the agent up from the README.
+## ⬜ Phase 10 — ATS score gate
+Deterministic keyword/completeness/format scoring as the hard gate
+(threshold 75, config-driven), LLM semantic layer advisory-only (can raise,
+never lower, quoted-phrase-verified), auto-retailor loop (max 2, every
+retailored draft re-gated for truthfulness in full), typed
+`AtsScoreBelowThresholdError` refusal with a ranked gap report,
+anti-stuffing guard. **Adversarial matrix is reviewer-drafted — request it
+at pre-brief, do not self-author.**
+
+## ⬜ Phase 11 — LeverFormFiller (real)
+Verified DOM evidence in hand (name-only selectors, single name field,
+file-upload-only resume → Phase 9 artifact via `set_input_files`, hCaptcha
+via the existing pause/resume). Depends on Phase 9.
+
+## ⬜ Phase 12 — Worldwide + regional discovery expansion
+Tier A free APIs as `OpportunitySource` plugins (Adzuna, Reed, USAJobs,
+Arbeitnow, The Muse, Remotive, RemoteOK, Jooble), Tier B (JSearch)
+cost-evaluated at pre-brief, Tier C (Naukri/Foundit/LinkedIn/Indeed/Seek)
+recorded as manual-only -- no permitted programmatic path, no scrapers.
+
+## ⬜ Phase 13 — Persistence + discover command + Excel
+SQLite `OpportunityRepository` (fidelity-tested), real `career-agent
+discover`, the first `MasterProfile` writer (explicit-confirmation
+LegalStatusSection capture, version-bump semantics consistent with frozen
+snapshots), openpyxl application-tracker export.
+
+## ⬜ Phase 14 — Decide layer
+Deterministic weighted scorer inside the Planner boundary (ADR-0007),
+reusing Phase 10's keyword machinery; config filters as hard excludes; no
+LLM calls in v1.
+
+## ⬜ Phase 15 — Learn pillar
+Outcome-recording CLI with full history and rejection stages; per-variant
+funnel counts keyed to prompt/profile versions + ATS score band; raw
+counts only at personal N -- no significance testing or bandit routing
+below N≈50 per variant, small-sample caveat on every report.
+
+## ⬜ Phase 16 — Notifications + dashboard
+Telegram bot (ntfy.sh fallback) for pause/failure/outcome alerts;
+local-only Streamlit dashboard over the SQLite metrics.
+
+## ⬜ Phase 17 — Scheduling (LAST, hard-gated)
+May not start until profile-staleness re-verification and email
+send-confirmation both close. Automates discovery + preparation +
+notification ONLY -- confirmation and submission stay human-gated forever.
+Absorbs the deferred 7-series items (multi-tier selection, real OAuth
+`GmailDraftSink`).
+
+## ⬜ Phase 18 — Ashby (whenever unblocked)
+Blocked on the user's dev-tools DOM inspection of a live Ashby posting --
+a client-rendered SPA invisible to every tool tried. Build nothing on
+assumption.
 
 ---
 
