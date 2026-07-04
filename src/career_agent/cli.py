@@ -118,6 +118,7 @@ async def _apply_pipeline(
     gate: TruthfulnessGate,
     *,
     input_fn: Callable[[str], str] = input,
+    artifacts_dir: Path | None = None,
 ) -> int:
     """Tailor, gate, render, and confirm -- injectable for testing.
 
@@ -126,9 +127,14 @@ async def _apply_pipeline(
     prints a clean message and returns non-zero/zero as appropriate instead.
     Deliberately does not call any ``Applicator``: no real ``ATSAdapter``
     exists yet, so there is nothing real to submit through (ADR-0026).
+
+    ``artifacts_dir`` (Phase 9, ADR-0033): where real DOCX/PDF files are
+    written for an approved resume; ``None`` skips file generation.
     """
     bus = EventBus()
-    pipeline = ResumeTailoringPipeline(generator, gate, bus)
+    pipeline = ResumeTailoringPipeline(
+        generator, gate, bus, artifacts_dir=artifacts_dir
+    )
     try:
         result = await pipeline.run(opportunity, profile)
     except MissingSummaryError as exc:
@@ -143,6 +149,8 @@ async def _apply_pipeline(
 
     rendered = result.application.resume.rendered_text or ""
     print(rendered)
+    for artifact in result.application.resume.artifacts:
+        print(f"Wrote {artifact.format.upper()}: {artifact.path}")
 
     preview = SubmissionPreview(
         application_id=result.application.id,
@@ -216,7 +224,12 @@ async def run_apply_command(
         AnthropicClaimVerifier(api_key=settings.anthropic_api_key)
     )
     return await _apply_pipeline(
-        profile, opportunity, generator, gate, input_fn=input_fn
+        profile,
+        opportunity,
+        generator,
+        gate,
+        input_fn=input_fn,
+        artifacts_dir=Path(settings.artifacts_dir),
     )
 
 

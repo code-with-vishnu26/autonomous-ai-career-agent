@@ -34,4 +34,6 @@ class Settings(BaseSettings):
     google_cse_api_key: str | None = None
     google_cse_id: str | None = None
     database_path: str = "data/career_agent.db"
+    #: Where generated resume files (DOCX/PDF, Phase 9/ADR-0033) are written.
+    artifacts_dir: str = "data/artifacts"
     log_level: str = "INFO"

@@ -368,6 +368,27 @@ class TailoredResumeDraft(BaseModel):
     content: TailoredContent
 
 
+class ResumeArtifact(BaseModel):
+    """A generated resume file on disk, traceable to the content it renders.
+
+    The first non-text artifact in this project (Phase 9, ADR-0033): a
+    binary file is opaque, so its link back to the gated content that
+    produced it must be carried as data, not inferred. ``resume_id`` +
+    ``profile_version`` name the exact :class:`TailoredResume` snapshot;
+    ``content_hash`` (sha256 of the file bytes) is embedded in the
+    filename, so a regenerated file after any content change gets a new
+    name by construction -- an existing artifact is never silently
+    overwritten, the same never-mutate-in-place discipline as
+    ``MasterProfile.version``.
+    """
+
+    resume_id: str
+    profile_version: str
+    format: Literal["docx", "pdf"]
+    path: str
+    content_hash: str
+
+
 class TailoredResume(BaseModel):
     """A tailored resume together with the gate's verdict on it.
 
@@ -376,6 +397,12 @@ class TailoredResume(BaseModel):
     for audit/explainability. Callers that submit applications (ADR-0010)
     must check ``truthfulness.approved`` themselves; this model does not
     enforce it.
+
+    ``artifacts`` (Phase 9, ADR-0033) is a derived cache with the same
+    status as ``rendered_text``: populated by ``ResumeTailoringPipeline``
+    for approved drafts only, never the source of truth (the gated
+    ``content`` is), and how a downstream applicator reaches a real file
+    path without gaining any profile or renderer dependency of its own.
     """
 
     id: str
@@ -383,6 +410,7 @@ class TailoredResume(BaseModel):
     profile_version: str
     content: TailoredContent
     rendered_text: str | None = None  # derived cache; never the source of truth
+    artifacts: list[ResumeArtifact] = Field(default_factory=list)  # same status
     truthfulness: TruthfulnessResult
 
 

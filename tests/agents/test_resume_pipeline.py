@@ -210,3 +210,82 @@ def test_pipeline_imports_no_applicator_type() -> None:
             imported_names.update(alias.name for alias in node.names)
     assert "Applicator" not in imported_names
     assert "ATSAdapter" not in imported_names
+
+
+async def test_artifacts_generated_for_approved_drafts_when_dir_set(
+    tmp_path,
+) -> None:
+    """Phase 9 / ADR-0033: file artifacts are a derived cache computed here
+    (same placement as rendered_text, ADR-0025), for approved drafts only,
+    and only when the composition root opted in via artifacts_dir."""
+    from pathlib import Path
+
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer."
+    bus = EventBus()
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            {
+                "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    pipeline = ResumeTailoringPipeline(
+        generator, gate, bus, artifacts_dir=tmp_path
+    )
+    result = await pipeline.run(_opportunity(), profile)
+
+    artifacts = result.application.resume.artifacts
+    formats = {a.format for a in artifacts}
+    assert "docx" in formats  # always produced for an approved draft
+    for artifact in artifacts:
+        assert Path(artifact.path).exists()
+        assert artifact.resume_id == result.application.resume.id
+        assert artifact.profile_version == profile.version
+
+
+async def test_no_artifacts_for_rejected_drafts_even_with_dir_set(
+    tmp_path,
+) -> None:
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer."
+    bus = EventBus()
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            {
+                "Software Engineer": ClaimVerdict(verified=False, confidence=0.9),
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=False, confidence=0.9
+                ),
+            }
+        )
+    )
+    pipeline = ResumeTailoringPipeline(
+        generator, gate, bus, artifacts_dir=tmp_path
+    )
+    result = await pipeline.run(_opportunity(), profile)
+    assert result.application.resume.artifacts == []
+    assert list(tmp_path.iterdir()) == []  # nothing written at all
+
+
+async def test_no_artifacts_when_dir_not_set_backward_compatible() -> None:
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer."
+    bus = EventBus()
+    pipeline = _pipeline(
+        _honest_drafted(),
+        {
+            "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
+            "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                verified=True, confidence=0.95
+            ),
+        },
+        bus,
+    )
+    result = await pipeline.run(_opportunity(), profile)
+    assert result.application.resume.artifacts == []

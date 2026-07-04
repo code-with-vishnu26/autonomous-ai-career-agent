@@ -34,4 +34,21 @@ For an approved draft, ``ResumeTailoringPipeline.run()`` also computes
 ADR-0025) -- the one place ``draft.content`` and ``profile`` are both
 already in scope, so no ``Applicator`` needs a profile dependency just to
 render a preview.
+
+``file_renderer.py`` (Phase 9, ADR-0033) renders the real files a company
+receives: a deterministic, ATS-safe DOCX (python-docx, zip-timestamp-
+normalized -- raw python-docx output is not cross-second deterministic,
+verified empirically) and a derived PDF via LibreOffice headless, whose
+runtime availability is checked, never assumed
+(``PdfConversionUnavailableError`` -- this sandbox shipped ``soffice``
+without ``libreoffice-writer``, a real failure mode). Education is
+sourced read-only from ``MasterProfile`` and is structurally absent from
+every generated type -- the generator cannot override, reorder, or
+fabricate it because nothing it produces can carry it (the same shape as
+``TailoredWorkEntry`` having no date field). ``ResumeArtifact`` records
+(content-hash-addressed filenames: silent overwrite impossible by
+construction) land on ``TailoredResume.artifacts`` -- a derived cache
+with exactly ``rendered_text``'s status, populated by the pipeline for
+approved drafts only, opted into at the composition root via
+``artifacts_dir``.
 """
