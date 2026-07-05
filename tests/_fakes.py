@@ -169,24 +169,40 @@ class FakeContentDrafter:
     Deterministic, fixture-driven, the same pattern as ``FakeClaimVerifier``:
     ``result`` is the canned :class:`DraftedTailoring` returned on every
     call (or an ``Exception`` to simulate drafter failure). Records every
-    call so a test can assert whether the drafter was ever reached at all.
+    call -- including the ``gap_report`` it was shown (Phase 10, ADR-0034),
+    which is how tests prove structurally what the drafter was and was NOT
+    ever told (matrix case B1: no GENUINE gap in any recorded gap_report,
+    across every retry).
+
+    ``results`` (optional) supplies a per-call sequence for retailor-loop
+    tests: call N returns ``results[N]``, and calls past the end repeat the
+    final entry.
     """
 
     def __init__(
         self,
-        result: DraftedTailoring | Exception,
+        result: DraftedTailoring | Exception | None = None,
         *,
+        results: list[DraftedTailoring | Exception] | None = None,
         prompt_version: str = "fake-draft-v1",
     ) -> None:
-        self._result = result
+        if (result is None) == (results is None):
+            raise ValueError("pass exactly one of result= or results=")
+        self._results = results if results is not None else [result]
         self.prompt_version = prompt_version
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, object]] = []
 
-    async def draft(self, opportunity: object, profile: object) -> DraftedTailoring:
-        self.calls.append((opportunity.id, profile.version))  # type: ignore[attr-defined]
-        if isinstance(self._result, Exception):
-            raise self._result
-        return self._result
+    async def draft(
+        self, opportunity: object, profile: object, *, gap_report: object = None
+    ) -> DraftedTailoring:
+        index = min(len(self.calls), len(self._results) - 1)
+        self.calls.append(
+            (opportunity.id, profile.version, gap_report)  # type: ignore[attr-defined]
+        )
+        outcome = self._results[index]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 class FakeKeyProvider:

@@ -19,8 +19,13 @@ import json
 import anthropic
 
 from career_agent.core.interfaces import DraftedTailoring
+from career_agent.domain.ats_scoring import AtsGapReport
 from career_agent.domain.models import MasterProfile, Opportunity
-from career_agent.llm.prompts import RESUME_DRAFT_PROMPT, RESUME_DRAFT_PROMPT_VERSION
+from career_agent.llm.prompts import (
+    RESUME_DRAFT_GAP_SECTION,
+    RESUME_DRAFT_PROMPT,
+    RESUME_DRAFT_PROMPT_VERSION,
+)
 
 _MODEL = "claude-opus-4-8"
 
@@ -41,7 +46,11 @@ class AnthropicContentDrafter:
         self._model = model
 
     async def draft(
-        self, opportunity: Opportunity, profile: MasterProfile
+        self,
+        opportunity: Opportunity,
+        profile: MasterProfile,
+        *,
+        gap_report: AtsGapReport | None = None,
     ) -> DraftedTailoring:
         """Draft work/skill/project selections via a single Claude call.
 
@@ -50,9 +59,23 @@ class AnthropicContentDrafter:
         including one that tries to include a ``summary`` key, which the
         model is never asked for) rather than returning a fabricated draft.
         """
+        gap_section = ""
+        if gap_report is not None and gap_report.surfaceable:
+            # AtsGapReport structurally carries only SURFACEABLE keywords
+            # (ADR-0034, matrix case B1) -- nothing interpolated here can
+            # name a skill the profile has no evidence for.
+            surfaceable_lines = "\n".join(
+                f"- {item.keyword}: supported by profile text "
+                f"{item.profile_evidence!r}"
+                for item in gap_report.surfaceable
+            )
+            gap_section = RESUME_DRAFT_GAP_SECTION.format(
+                surfaceable_lines=surfaceable_lines
+            )
         prompt = RESUME_DRAFT_PROMPT.format(
             opportunity_description=opportunity.description_raw,
             profile_json=profile.model_dump_json(),
+            gap_section=gap_section,
         )
         response = await self._client.messages.create(
             model=self._model,

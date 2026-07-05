@@ -61,7 +61,7 @@ CLAIM:
 {statement}
 """
 
-RESUME_DRAFT_PROMPT_VERSION = "resume-draft-v1"
+RESUME_DRAFT_PROMPT_VERSION = "resume-draft-v2"
 
 RESUME_DRAFT_PROMPT = """\
 You are tailoring a candidate's resume content for one specific job opportunity. \
@@ -101,4 +101,53 @@ OPPORTUNITY:
 
 CANDIDATE PROFILE:
 {profile_json}
+{gap_section}"""
+
+# Appended to RESUME_DRAFT_PROMPT only on an ATS-gate retailor attempt
+# (Phase 10, ADR-0034). The keyword list interpolated here comes from an
+# AtsGapReport, a type that structurally can only carry keywords the
+# candidate's profile actually evidences (SURFACEABLE) -- a keyword with no
+# profile support can never appear below, so this instruction can never
+# name a fabrication target.
+RESUME_DRAFT_GAP_SECTION = """
+RETAILORING FOCUS -- the previous draft under-surfaced these skills, each of
+which IS genuinely present in the candidate's profile (supporting evidence
+shown). Surface each one ONLY where the profile genuinely supports it --
+never invent, never exaggerate, never add a skill beyond what the evidence
+states:
+{surfaceable_lines}
+"""
+
+SEMANTIC_KEYWORD_PROMPT_VERSION = "semantic-keyword-v1"
+
+# The ATS gate's advisory semantic layer (Phase 10, ADR-0034). The model's
+# answer is never trusted directly: every quoted_phrase is re-verified as a
+# literal substring of the resume text by verified_semantic_keywords()
+# before it prunes anything, and nothing it produces can reach the gate's
+# pass/fail decision (matrix cases A1/A3).
+SEMANTIC_KEYWORD_PROMPT = """\
+A resume is being checked against a job description's required keywords. \
+For each keyword listed below that is NOT literally present in the resume, \
+decide whether the SAME CONCEPT is genuinely present under different wording.
+
+Rules:
+- Only claim a match when the resume genuinely demonstrates the concept -- \
+plausible association is not enough ("containerization" alone does NOT \
+demonstrate "Kubernetes"; a generic "cloud" mention does NOT demonstrate \
+"AWS").
+- For every match you claim, quote the EXACT phrase from the resume that \
+demonstrates it, verbatim, character-for-character. Claims whose quoted \
+phrase does not appear literally in the resume are discarded automatically.
+- If no keyword is genuinely present under different wording, return an \
+empty list. That is a normal, expected answer.
+
+Respond with ONLY a JSON array, no other text:
+[{{"keyword": "<keyword from the list>", "quoted_phrase": "<verbatim phrase \
+from the resume>"}}]
+
+MISSING KEYWORDS:
+{missing_keywords}
+
+RESUME TEXT:
+{resume_text}
 """

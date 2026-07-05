@@ -51,7 +51,12 @@ from career_agent.agents.resume.generator import LLMResumeGenerator, MissingSumm
 from career_agent.agents.resume.pipeline import ResumeTailoringPipeline
 from career_agent.core.bus import EventBus
 from career_agent.core.config import Settings
-from career_agent.core.interfaces import ResumeGenerator, TruthfulnessGate
+from career_agent.core.interfaces import (
+    ResumeGenerator,
+    SemanticKeywordMatcher,
+    TruthfulnessGate,
+)
+from career_agent.domain.ats_scoring import AtsScoreBelowThresholdError
 from career_agent.domain.models import (
     HumanConfirmation,
     MasterProfile,
@@ -65,6 +70,7 @@ from career_agent.llm.promptfoo_gate import (
     verify_promptfoo_results,
 )
 from career_agent.llm.prompts import TRUTHFULNESS_GATE_PROMPT_VERSION
+from career_agent.llm.semantic_matcher import AnthropicSemanticKeywordMatcher
 from career_agent.storage.profile import ProfileValidationError, load_master_profile
 
 _YES = {"y", "yes"}
@@ -119,6 +125,8 @@ async def _apply_pipeline(
     *,
     input_fn: Callable[[str], str] = input,
     artifacts_dir: Path | None = None,
+    ats_threshold: float | None = None,
+    semantic_matcher: SemanticKeywordMatcher | None = None,
 ) -> int:
     """Tailor, gate, render, and confirm -- injectable for testing.
 
@@ -133,12 +141,21 @@ async def _apply_pipeline(
     """
     bus = EventBus()
     pipeline = ResumeTailoringPipeline(
-        generator, gate, bus, artifacts_dir=artifacts_dir
+        generator,
+        gate,
+        bus,
+        artifacts_dir=artifacts_dir,
+        ats_threshold=ats_threshold,
+        semantic_matcher=semantic_matcher,
     )
     try:
         result = await pipeline.run(opportunity, profile)
     except MissingSummaryError as exc:
         print(f"Cannot tailor a resume: {exc}")
+        return 1
+    except AtsScoreBelowThresholdError as exc:
+        print("The ATS score gate refused this application:")
+        print(str(exc))
         return 1
 
     if result.submittable is None:
@@ -223,6 +240,9 @@ async def run_apply_command(
     gate = LLMTruthfulnessGate(
         AnthropicClaimVerifier(api_key=settings.anthropic_api_key)
     )
+    semantic_matcher = AnthropicSemanticKeywordMatcher(
+        api_key=settings.anthropic_api_key
+    )
     return await _apply_pipeline(
         profile,
         opportunity,
@@ -230,6 +250,8 @@ async def run_apply_command(
         gate,
         input_fn=input_fn,
         artifacts_dir=Path(settings.artifacts_dir),
+        ats_threshold=settings.ats_threshold,
+        semantic_matcher=semantic_matcher,
     )
 
 

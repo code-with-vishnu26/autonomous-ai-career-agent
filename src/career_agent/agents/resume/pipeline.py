@@ -50,7 +50,19 @@ from career_agent.agents.resume.file_renderer import (
 )
 from career_agent.core.bus import EventBus
 from career_agent.core.events import ResumeTailored, TruthfulnessRejected
-from career_agent.core.interfaces import ResumeGenerator, TruthfulnessGate
+from career_agent.core.interfaces import (
+    ResumeGenerator,
+    SemanticKeywordMatcher,
+    TruthfulnessGate,
+)
+from career_agent.domain.ats_scoring import (
+    AtsGapReport,
+    AtsScoreBelowThresholdError,
+    AtsScoreReport,
+    classify_missing_keywords,
+    score_resume,
+    verified_semantic_keywords,
+)
 from career_agent.domain.models import (
     Application,
     MasterProfile,
@@ -59,11 +71,15 @@ from career_agent.domain.models import (
     SubmittableApplication,
     TailoredContent,
     TailoredResume,
+    TailoredResumeDraft,
+    TruthfulnessResult,
     to_submittable,
 )
 from career_agent.domain.rendering import render_tailored_resume
 
 logger = logging.getLogger(__name__)
+
+_MAX_ATS_RETRIES = 2
 
 
 class ResumeTailoringResult(NamedTuple):
@@ -87,6 +103,8 @@ class ResumeTailoringPipeline:
         bus: EventBus,
         *,
         artifacts_dir: Path | None = None,
+        ats_threshold: float | None = None,
+        semantic_matcher: SemanticKeywordMatcher | None = None,
     ) -> None:
         """Configure the pipeline with a generator, a gate, and the event bus.
 
@@ -100,11 +118,25 @@ class ResumeTailoringPipeline:
         (``cli.py`` passes ``Settings.artifacts_dir``), so callers that only
         need the in-memory result (most tests, any future scoring-only
         flow) never touch the filesystem.
+
+        ``ats_threshold`` (Phase 10, ADR-0034): enables the deterministic
+        ATS score gate + auto-retailor loop for truthfulness-approved
+        drafts. ``None`` disables it (composition-root opt-in, same shape
+        as ``artifacts_dir``); ``cli.py`` passes ``Settings.ats_threshold``
+        -- read here at evaluation time, never compiled in (matrix D3).
+
+        ``semantic_matcher`` (ADR-0034): the advisory LLM layer. Only ever
+        prunes false-missing keywords from the retailor gap report, and
+        only with a quoted phrase deterministically verified verbatim
+        against the resume text -- it cannot touch the gate decision
+        (matrix A1/A3).
         """
         self._generator = generator
         self._gate = gate
         self._bus = bus
         self._artifacts_dir = artifacts_dir
+        self._ats_threshold = ats_threshold
+        self._semantic_matcher = semantic_matcher
 
     async def run(
         self, opportunity: Opportunity, profile: MasterProfile
@@ -114,16 +146,25 @@ class ResumeTailoringPipeline:
         Raises whatever the generator or gate raise (e.g.
         ``MissingSummaryError`` from an incomplete profile) -- this is
         composition, not a resilience layer; it does not swallow or paper
-        over a precondition failure the human needs to fix.
+        over a precondition failure the human needs to fix. With the ATS
+        gate enabled, raises :class:`~career_agent.domain.ats_scoring.
+        AtsScoreBelowThresholdError` when retries are exhausted (or
+        retailoring converges) below threshold (ADR-0034).
         """
         draft = await self._generator.tailor(opportunity, profile)
         truthfulness = await self._gate.verify(draft, profile)
 
-        rendered_text = (
-            render_tailored_resume(draft.content, profile)
-            if truthfulness.approved
-            else None
-        )
+        rendered_text: str | None = None
+        if truthfulness.approved:
+            # One render, one truth (ADR-0034): the exact string scored by
+            # the ATS gate is the exact string stored as the human-facing
+            # preview -- a single render_tailored_resume call per accepted
+            # draft, never two calls that happen to agree today.
+            rendered_text = render_tailored_resume(draft.content, profile)
+            if self._ats_threshold is not None:
+                draft, truthfulness, rendered_text = await self._ats_gate_loop(
+                    opportunity, profile, draft, truthfulness, rendered_text
+                )
         resume_id = str(uuid.uuid4())
         artifacts = (
             self._render_artifacts(resume_id, draft.content, profile)
@@ -168,6 +209,125 @@ class ResumeTailoringPipeline:
             )
         )
         return ResumeTailoringResult(application=application, submittable=None)
+
+    async def _ats_gate_loop(
+        self,
+        opportunity: Opportunity,
+        profile: MasterProfile,
+        draft: TailoredResumeDraft,
+        truthfulness: TruthfulnessResult,
+        rendered_text: str,
+    ) -> tuple[TailoredResumeDraft, TruthfulnessResult, str]:
+        """Score, retailor up to ``_MAX_ATS_RETRIES`` times, or refuse (ADR-0034).
+
+        The ordering constraint is absolute (matrix B3): every retailored
+        draft goes through the FULL truthfulness gate *before* it is ever
+        ATS-scored -- a truthfulness-rejected retry is never scored at all;
+        it consumes the retry and the loop continues. A high ATS number has
+        no path around the truthfulness gate because the score for an
+        unapproved draft never exists.
+
+        Convergence (matrix B5): a retry whose content is identical to the
+        previous attempt proves retailoring has nothing further to honestly
+        surface -- stop early and say so, rather than burning the remaining
+        retry on an identical draft and reporting it as a real attempt.
+        """
+        assert self._ats_threshold is not None  # guarded by caller
+        report = self._score(draft.content, profile, opportunity, rendered_text)
+        trajectory = [report]
+        if report.passed:
+            return draft, truthfulness, rendered_text
+
+        previous_content = draft.content
+        converged = False
+        for _ in range(_MAX_ATS_RETRIES):
+            gap_report = await self._build_gap_report(
+                report, profile, rendered_text
+            )
+            retry_draft = await self._generator.tailor(
+                opportunity, profile, gap_report=gap_report
+            )
+            if retry_draft.content == previous_content:
+                converged = True
+                break
+            previous_content = retry_draft.content
+
+            # FULL truthfulness gate, before any scoring, every retry (B3).
+            retry_truthfulness = await self._gate.verify(retry_draft, profile)
+            if not retry_truthfulness.approved:
+                # Rejected drafts are never ATS-scored -- the retry is
+                # consumed and the loop continues from the last honest
+                # report (B3: a high ATS score never exists for an
+                # unapproved draft, so it cannot bypass anything).
+                continue
+
+            retry_rendered = render_tailored_resume(retry_draft.content, profile)
+            report = self._score(
+                retry_draft.content, profile, opportunity, retry_rendered
+            )
+            trajectory.append(report)
+            if report.passed:
+                return retry_draft, retry_truthfulness, retry_rendered
+            draft = retry_draft
+            truthfulness = retry_truthfulness
+            rendered_text = retry_rendered
+
+        surfaceable, genuine = classify_missing_keywords(
+            trajectory[-1].missing_keywords, profile
+        )
+        raise AtsScoreBelowThresholdError(
+            trajectory=trajectory,
+            genuine_gaps=genuine,
+            surfaceable_remaining=[item.keyword for item in surfaceable],
+            converged_early=converged,
+        )
+
+    def _score(
+        self,
+        content: TailoredContent,
+        profile: MasterProfile,
+        opportunity: Opportunity,
+        rendered_text: str,
+    ) -> AtsScoreReport:
+        assert self._ats_threshold is not None  # guarded by caller
+        return score_resume(
+            rendered_text,
+            content,
+            profile,
+            opportunity_title=opportunity.title,
+            jd_text=opportunity.description_raw,
+            threshold=self._ats_threshold,
+        )
+
+    async def _build_gap_report(
+        self,
+        report: AtsScoreReport,
+        profile: MasterProfile,
+        rendered_text: str,
+    ) -> AtsGapReport:
+        """SURFACEABLE-only gap report for the retailor prompt (matrix B1).
+
+        The semantic layer (if configured) runs first, pruning keywords
+        already present under different wording -- each pruning verified
+        verbatim against the resume text, deterministically, before it
+        counts (matrix A3). GENUINE gaps are then structurally excluded:
+        :class:`AtsGapReport` has no field that can carry them, so the
+        drafter is never shown a fabrication target. The gate decision was
+        already made before this method runs and is not revisited (A1).
+        """
+        missing = report.missing_keywords
+        if self._semantic_matcher is not None and missing:
+            claims = await self._semantic_matcher.propose_matches(
+                [keyword.keyword for keyword in missing], rendered_text
+            )
+            verified = set(
+                verified_semantic_keywords(claims, missing, rendered_text)
+            )
+            missing = [
+                keyword for keyword in missing if keyword.keyword not in verified
+            ]
+        surfaceable, _genuine = classify_missing_keywords(missing, profile)
+        return AtsGapReport(surfaceable=surfaceable)
 
     def _render_artifacts(
         self, resume_id: str, content: TailoredContent, profile: MasterProfile
