@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     )
 
     anthropic_api_key: str | None = None
+    #: Free-tier provider for the two LLM ports not exempt from cost
+    #: routing (ContentDrafter, SemanticKeywordMatcher) -- ADR-0042. Never
+    #: used for the truthfulness gate's ClaimVerifier.
+    groq_api_key: str | None = None
     exa_api_key: str | None = None
     google_cse_api_key: str | None = None
     google_cse_id: str | None = None

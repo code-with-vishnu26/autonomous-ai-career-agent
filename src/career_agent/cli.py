@@ -64,14 +64,17 @@ from career_agent.domain.models import (
     Opportunity,
     SubmissionPreview,
 )
-from career_agent.llm.claim_verifier import AnthropicClaimVerifier
-from career_agent.llm.content_drafter import AnthropicContentDrafter
 from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
     verify_promptfoo_results,
 )
 from career_agent.llm.prompts import TRUTHFULNESS_GATE_PROMPT_VERSION
-from career_agent.llm.semantic_matcher import AnthropicSemanticKeywordMatcher
+from career_agent.llm.providers import (
+    NoLLMProviderConfiguredError,
+    build_claim_verifier,
+    select_content_drafter,
+    select_semantic_matcher,
+)
 from career_agent.storage.excel import export_applications
 from career_agent.storage.profile import (
     ProfileValidationError,
@@ -253,8 +256,8 @@ async def run_apply_command(
     settings = Settings()
     if not settings.anthropic_api_key:
         print(
-            "ANTHROPIC_API_KEY is not set -- required to tailor and gate a "
-            "real resume."
+            "ANTHROPIC_API_KEY is not set -- required for the truthfulness "
+            "gate's verifier, which is never routed to a free provider."
         )
         return 1
 
@@ -265,15 +268,16 @@ async def run_apply_command(
         print(str(exc))
         return 1
 
-    generator = LLMResumeGenerator(
-        AnthropicContentDrafter(api_key=settings.anthropic_api_key)
-    )
-    gate = LLMTruthfulnessGate(
-        AnthropicClaimVerifier(api_key=settings.anthropic_api_key)
-    )
-    semantic_matcher = AnthropicSemanticKeywordMatcher(
-        api_key=settings.anthropic_api_key
-    )
+    try:
+        content_drafter = select_content_drafter(settings)
+        claim_verifier = build_claim_verifier(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
+        return 1
+
+    generator = LLMResumeGenerator(content_drafter)
+    gate = LLMTruthfulnessGate(claim_verifier)
+    semantic_matcher = select_semantic_matcher(settings)
     return await _apply_pipeline(
         profile,
         opportunity,

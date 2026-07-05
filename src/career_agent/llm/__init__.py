@@ -27,4 +27,13 @@ truthfulness-gate prompt version before ``cli.py`` constructs a real
 ``AnthropicClaimVerifier``. This is what makes ADR-0016's promptfoo
 requirement a structural check rather than a policy a future run could
 silently skip.
+
+``groq_client.py``/``groq_content_drafter.py``/``groq_semantic_matcher.py``
+(ADR-0042) are a second, free-tier implementation of exactly the two ports
+already documented above as cascade-non-exempt -- never of
+``ClaimVerifier``. ``providers.py`` is where a concrete provider is
+actually chosen (Groq preferred, Anthropic fallback, once per run, never
+per-call); it is the only place in this package that is allowed to grow a
+free-tier branch for future ports, and deliberately does not offer one for
+``ClaimVerifier``.
 """
