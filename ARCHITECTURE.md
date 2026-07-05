@@ -205,6 +205,7 @@ pull request is checked against.
 | [0037](docs/adr/0037-persistence-discover-and-first-profile-writer.md) | SQLite persistence behind the unchanged repository contract (fidelity suite incl. real close/reopen), append-only application audit trail + Excel tracker export, real `discover` command emitting the ADR-0026 handoff format, and the first MasterProfile writer with the no-default capture flow |
 | [0038](docs/adr/0038-decide-layer.md) | Decide layer: ADR-0007's swappable scoring step, first concrete implementation -- deterministic weighted rank reusing the ATS gate's keyword vocabulary unforked, hard-exclude config filters with named visible reasons, no LLM calls |
 | [0039](docs/adr/0039-learn-pillar.md) | Learn pillar: outcome CLI + per-variant raw-count funnels (full history, rejection stages separated), statistical honesty at personal N enforced by a mandatory, injection-verified caveat and a tested no-prescriptive-verdicts property |
+| [0040](docs/adr/0040-notifications-and-dashboard.md) | Telegram/ntfy notifications behind a tiny Notifier port, subscribed to bus events under the notify-never-gate rule (injection-verified); local-only Streamlit dashboard with pure tested metrics over the SQLite store |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.

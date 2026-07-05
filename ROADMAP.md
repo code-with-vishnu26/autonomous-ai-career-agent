@@ -689,9 +689,18 @@ routing, mandatory small-sample caveat on every report
 (injection-verified) and a tested absence of prescriptive verdict
 language. MIN_N_FOR_COMPARISON=50 recorded as visible data.
 
-## ⬜ Phase 16 — Notifications + dashboard
-Telegram bot (ntfy.sh fallback) for pause/failure/outcome alerts;
-local-only Streamlit dashboard over the SQLite metrics.
+## 🔄 Phase 16 — Notifications + dashboard
+Recorded in **ADR-0040**. Telegram Bot API notifier (token never logged,
+never stored, elided from error text -- tested) with ntfy.sh as the
+zero-setup fallback, both through the existing HttpClient port;
+NotifyingSubscriber turns HumanActionRequired/ApplicationFailed/
+OutcomeRecorded bus events into pushes under the notify-never-gate rule
+(injection-verified: a propagating delivery failure was caught). Local
+read-only Streamlit dashboard (optional extra): pure, tested
+dashboard_metrics -- discovery by source, truthfulness pass/block, ATS
+distribution, the ADR-0039 funnel with its caveat intact; SQLite read
+directly as a separate read model so the repository contract stays
+add/get.
 
 ## ⬜ Phase 17 — Scheduling (LAST, hard-gated)
 May not start until profile-staleness re-verification and email

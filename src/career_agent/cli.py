@@ -138,6 +138,7 @@ async def _apply_pipeline(
     ats_threshold: float | None = None,
     semantic_matcher: SemanticKeywordMatcher | None = None,
     application_store: SqliteApplicationStore | None = None,
+    notifier: object | None = None,
 ) -> int:
     """Tailor, gate, render, and confirm -- injectable for testing.
 
@@ -151,6 +152,17 @@ async def _apply_pipeline(
     written for an approved resume; ``None`` skips file generation.
     """
     bus = EventBus()
+    if notifier is not None:
+        from career_agent.core.events import (
+            ApplicationFailed,
+            HumanActionRequired,
+            OutcomeRecorded,
+        )
+        from career_agent.integrations.notifications import NotifyingSubscriber
+
+        subscriber = NotifyingSubscriber(notifier)  # notify, never gate
+        for event_type in (HumanActionRequired, ApplicationFailed, OutcomeRecorded):
+            bus.subscribe(event_type, subscriber)
     pipeline = ResumeTailoringPipeline(
         generator,
         gate,
@@ -272,6 +284,7 @@ async def run_apply_command(
         ats_threshold=settings.ats_threshold,
         semantic_matcher=semantic_matcher,
         application_store=SqliteApplicationStore(Path(settings.database_path)),
+        notifier=build_notifier(settings),
     )
 
 
@@ -516,6 +529,26 @@ def run_report_command(database_path: Path) -> int:
     report = build_funnel_report(store.all_rows(), store.outcome_rows())
     print(render_funnel_report(report))
     return 0
+
+
+
+def build_notifier(settings: Settings) -> object | None:
+    """Telegram when configured, else ntfy, else None (composition root)."""
+    from career_agent.integrations.http import HttpxClient
+    from career_agent.integrations.notifications import (
+        NtfyNotifier,
+        TelegramNotifier,
+    )
+
+    if settings.telegram_bot_token and settings.telegram_chat_id:
+        return TelegramNotifier(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+            client=HttpxClient(),
+        )
+    if settings.ntfy_topic:
+        return NtfyNotifier(topic=settings.ntfy_topic, client=HttpxClient())
+    return None
 
 
 def main(argv: list[str] | None = None) -> None:

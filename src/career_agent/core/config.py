@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     themuse_enabled: bool = True
     remotive_enabled: bool = True
     remoteok_enabled: bool = True
+    # Notifications (Phase 16/ADR-0040): Telegram primary, ntfy fallback.
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+    ntfy_topic: str | None = None
     # Decide-layer hard-exclude filters (Phase 14/ADR-0038); comma lists.
     decide_blacklist_companies: str = ""
     decide_allowed_locations: str = ""
