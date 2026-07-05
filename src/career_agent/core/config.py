@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     themuse_enabled: bool = True
     remotive_enabled: bool = True
     remoteok_enabled: bool = True
+    # Decide-layer hard-exclude filters (Phase 14/ADR-0038); comma lists.
+    decide_blacklist_companies: str = ""
+    decide_allowed_locations: str = ""
+    decide_remote_only: bool = False
     #: The ATS hard gate's pass bar (Phase 10/ADR-0034) -- the brief's
     #: ``ats.threshold``, flattened per this object's existing shape. Read
     #: at gate-evaluation time, never compiled in (matrix case D3).

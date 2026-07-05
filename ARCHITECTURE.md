@@ -203,6 +203,7 @@ pull request is checked against.
 | [0035](docs/adr/0035-real-lever-form-filler.md) | Real LeverFormFiller: recorded-evidence selectors (name-only fields, single unsplit full-name input, #h-captcha, #btn-submit), required resume upload satisfied by the application's own DOCX artifact via set_input_files with the attach proven against the live input's FileList, typed MissingResumeArtifactError when no file exists to upload |
 | [0036](docs/adr/0036-worldwide-job-board-sources.md) | Worldwide discovery: eight free Tier A job-board APIs as plugins behind the unchanged OpportunitySource contract, one shared normalization path, attribution and key-hygiene guarantees structural; Tier C boards recorded as manual-only (no permitted programmatic path, no scrapers ever) |
 | [0037](docs/adr/0037-persistence-discover-and-first-profile-writer.md) | SQLite persistence behind the unchanged repository contract (fidelity suite incl. real close/reopen), append-only application audit trail + Excel tracker export, real `discover` command emitting the ADR-0026 handoff format, and the first MasterProfile writer with the no-default capture flow |
+| [0038](docs/adr/0038-decide-layer.md) | Decide layer: ADR-0007's swappable scoring step, first concrete implementation -- deterministic weighted rank reusing the ATS gate's keyword vocabulary unforked, hard-exclude config filters with named visible reasons, no LLM calls |
 
 Every ADR ends with **Future revisit criteria**, so the architecture stays open
 to change instead of frozen forever.

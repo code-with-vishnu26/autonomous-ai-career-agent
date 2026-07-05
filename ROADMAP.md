@@ -666,10 +666,17 @@ unmodeled JSON Resume sections survive byte-identical, frozen snapshots
 on existing Applications never rewritten. `career-agent export`: the
 founding-brief openpyxl tracker (formatted, filterable).
 
-## ⬜ Phase 14 — Decide layer
-Deterministic weighted scorer inside the Planner boundary (ADR-0007),
-reusing Phase 10's keyword machinery; config filters as hard excludes; no
-LLM calls in v1.
+## 🔄 Phase 14 — Decide layer
+Recorded in **ADR-0038**. `DeterministicDecideScorer` inside the Planner
+boundary (ADR-0007's swappable step, first real implementation): profile
+match 50% via Phase 10's unforked keyword machinery (one vocabulary across
+Decide and the ATS gate), source reliability 20%, freshness 20%
+(unknown-date neutral 50), salary-transparency bonus 10% (presence check,
+never a parsed number -- floor filter named absent, no structured salary
+field exists). Config filters are hard excludes with named reasons,
+injection-verified against penalty-conversion; exclusions returned
+visibly (ADR-0013 discipline); ties break by id. `discover --profile`
+prints the ranked summary. Zero LLM calls.
 
 ## ⬜ Phase 15 — Learn pillar
 Outcome-recording CLI with full history and rejection stages; per-variant

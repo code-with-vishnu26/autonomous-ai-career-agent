@@ -281,6 +281,8 @@ async def run_discover_command(
     *,
     since: datetime,
     out_dir: Path,
+    profile: MasterProfile | None = None,
+    scorer: object | None = None,
 ) -> int:
     """Run every configured source, dedup via ``repo``, write handoff files.
 
@@ -294,6 +296,7 @@ async def run_discover_command(
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     new_count = 0
+    new_opportunities = []
     for name, source in sources:
         try:
             found = await source.fetch(since)  # type: ignore[attr-defined]
@@ -305,10 +308,24 @@ async def run_discover_command(
             if await repo.add(opportunity):  # type: ignore[attr-defined]
                 fresh += 1
                 new_count += 1
+                new_opportunities.append(opportunity)
                 handoff = out_dir / f"{opportunity.id}.json"
                 handoff.write_text(opportunity.model_dump_json(indent=2))
         print(f"[{name}] {len(found)} fetched, {fresh} new")
     print(f"{new_count} new opportunit{'y' if new_count == 1 else 'ies'} -> {out_dir}")
+    if profile is not None and scorer is not None and new_opportunities:
+        included, excluded = scorer.rank(new_opportunities, profile)  # type: ignore[attr-defined]
+        print("Ranked (Decide layer, ADR-0038):")
+        for opportunity, decision in included[:10]:
+            print(
+                f"  {decision.total:5.1f}  {opportunity.canonical_company}: "
+                f"{opportunity.title}  ({out_dir / (opportunity.id + '.json')})"
+            )
+        for decision in excluded:
+            print(
+                f"  EXCLUDED {decision.opportunity_id}: "
+                f"{'; '.join(decision.exclude_reasons)}"
+            )
     return 0
 
 
@@ -497,6 +514,12 @@ def main(argv: list[str] | None = None) -> None:
     discover_parser.add_argument(
         "--out-dir", type=Path, default=Path("data/opportunities")
     )
+    discover_parser.add_argument(
+        "--profile",
+        type=Path,
+        default=None,
+        help="Optional profile path: enables the ranked summary (ADR-0038).",
+    )
 
     capture_parser = subparsers.add_parser(
         "capture-legal-status",
@@ -515,14 +538,39 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "discover":
+        from career_agent.agents.planner.decide import (
+            DecideFilters,
+            DeterministicDecideScorer,
+        )
+
         settings = Settings()
         since = datetime.now(UTC) - timedelta(days=args.since_days)
+        profile = (
+            load_master_profile(args.profile) if args.profile is not None else None
+        )
+        scorer = DeterministicDecideScorer(
+            DecideFilters(
+                blacklist_companies=[
+                    c.strip()
+                    for c in settings.decide_blacklist_companies.split(",")
+                    if c.strip()
+                ],
+                allowed_locations=[
+                    c.strip()
+                    for c in settings.decide_allowed_locations.split(",")
+                    if c.strip()
+                ],
+                remote_only=settings.decide_remote_only,
+            )
+        )
         exit_code = asyncio.run(
             run_discover_command(
                 build_discovery_sources(settings),
                 SqliteOpportunityRepository(Path(settings.database_path)),
                 since=since,
                 out_dir=args.out_dir,
+                profile=profile,
+                scorer=scorer,
             )
         )
         raise SystemExit(exit_code)
