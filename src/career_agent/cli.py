@@ -471,6 +471,53 @@ def run_export_command(database_path: Path, xlsx_path: Path) -> int:
     return 0
 
 
+
+_OUTCOME_KINDS = {"viewed", "response", "interview", "offer", "rejection"}
+
+
+def run_outcome_command(
+    database_path: Path,
+    application_id: str,
+    kind: str,
+    stage: str | None,
+) -> int:
+    """Record one real-world outcome for a recorded application (ADR-0039).
+
+    Refuses an unknown application id (a typo must not create an orphan
+    outcome row) and an unknown kind -- typed inputs only, no free text
+    becoming data.
+    """
+    if kind not in _OUTCOME_KINDS:
+        print(f"Unknown outcome kind {kind!r}; expected one of "
+              f"{sorted(_OUTCOME_KINDS)}")
+        return 1
+    store = SqliteApplicationStore(database_path)
+    known_ids = {str(row["id"]) for row in store.all_rows()}
+    if application_id not in known_ids:
+        print(
+            f"No recorded application with id {application_id!r} -- outcomes "
+            f"attach only to real recorded attempts."
+        )
+        return 1
+    store.record_outcome(application_id, kind, stage)
+    print(f"Recorded {kind}" + (f" (stage: {stage})" if stage else "") +
+          f" for {application_id}")
+    return 0
+
+
+def run_report_command(database_path: Path) -> int:
+    """Print the per-variant raw-counts funnel report (ADR-0039)."""
+    from career_agent.agents.learning.funnel import (
+        build_funnel_report,
+        render_funnel_report,
+    )
+
+    store = SqliteApplicationStore(database_path)
+    report = build_funnel_report(store.all_rows(), store.outcome_rows())
+    print(render_funnel_report(report))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     """Parse CLI arguments and dispatch, or print the Phase 1 placeholder banner.
 
@@ -528,6 +575,19 @@ def main(argv: list[str] | None = None) -> None:
     )
     capture_parser.add_argument("--profile", type=Path, required=True)
 
+    outcome_parser = subparsers.add_parser(
+        "outcome", help="Record a real-world outcome for an application."
+    )
+    outcome_parser.add_argument("application_id")
+    outcome_parser.add_argument(
+        "kind", choices=sorted(_OUTCOME_KINDS)
+    )
+    outcome_parser.add_argument("--stage", default=None)
+
+    subparsers.add_parser(
+        "report", help="Per-variant funnel counts (raw counts, ADR-0039)."
+    )
+
     export_parser = subparsers.add_parser(
         "export", help="Export the application tracker to an Excel workbook."
     )
@@ -577,6 +637,21 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "capture-legal-status":
         raise SystemExit(run_capture_legal_status_command(args.profile))
+
+    if args.command == "outcome":
+        settings = Settings()
+        raise SystemExit(
+            run_outcome_command(
+                Path(settings.database_path),
+                args.application_id,
+                args.kind,
+                args.stage,
+            )
+        )
+
+    if args.command == "report":
+        settings = Settings()
+        raise SystemExit(run_report_command(Path(settings.database_path)))
 
     if args.command == "export":
         settings = Settings()
