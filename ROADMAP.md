@@ -639,11 +639,18 @@ pause/resume machinery unchanged. Live validation against a real posting
 on the user's machine remains the named final check before first real
 use.
 
-## ⬜ Phase 12 — Worldwide + regional discovery expansion
-Tier A free APIs as `OpportunitySource` plugins (Adzuna, Reed, USAJobs,
-Arbeitnow, The Muse, Remotive, RemoteOK, Jooble), Tier B (JSearch)
-cost-evaluated at pre-brief, Tier C (Naukri/Foundit/LinkedIn/Indeed/Seek)
-recorded as manual-only -- no permitted programmatic path, no scrapers.
+## 🔄 Phase 12 — Worldwide + regional discovery expansion
+Recorded in **ADR-0036**. Eight Tier A free APIs built as
+`OpportunitySource` plugins behind the unchanged Protocol (Adzuna incl.
+India, Reed UK via Basic auth, USAJobs header-auth, Arbeitnow, The Muse,
+Remotive, RemoteOK with its attribution obligation carried structurally
+in provenance, Jooble POST with the key never recorded into stored data
+-- injection-verified). `HttpClient.get_json` gained additive `headers`
+(the post_json 4c-slice-2 precedent) for the two header-authenticated
+APIs. Tier B (JSearch) evaluated and not built (paid, overlaps Adzuna);
+Tier C (Naukri/Foundit/LinkedIn/Indeed/Seek) recorded as manual-only --
+no permitted programmatic path exists, no scrapers ever (invariant 7);
+they work today through the source-agnostic opportunity-file handoff.
 
 ## ⬜ Phase 13 — Persistence + discover command + Excel
 SQLite `OpportunityRepository` (fidelity-tested), real `career-agent

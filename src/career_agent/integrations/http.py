@@ -29,7 +29,11 @@ class HttpxClient:
         self._headers = {"User-Agent": user_agent, "Accept": "application/json"}
 
     async def get_json(
-        self, url: str, *, params: dict[str, str] | None = None
+        self,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> object:
         """GET ``url`` (optionally with query ``params``) and return parsed JSON.
 
@@ -38,7 +42,7 @@ class HttpxClient:
         treating an error page as data.
         """
         async with httpx.AsyncClient(
-            timeout=self._timeout, headers=self._headers
+            timeout=self._timeout, headers={**self._headers, **(headers or {})}
         ) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()

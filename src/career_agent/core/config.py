@@ -36,6 +36,22 @@ class Settings(BaseSettings):
     database_path: str = "data/career_agent.db"
     #: Where generated resume files (DOCX/PDF, Phase 9/ADR-0033) are written.
     artifacts_dir: str = "data/artifacts"
+    # Worldwide job-board discovery (Phase 12/ADR-0036). A source is wired
+    # by the composition root only when its credentials are present; the
+    # keyless boards have explicit enabled flags.
+    adzuna_app_id: str | None = None
+    adzuna_app_key: str | None = None
+    adzuna_countries: str = "gb,in,us"  # comma-separated ISO codes
+    reed_api_key: str | None = None
+    usajobs_api_key: str | None = None
+    usajobs_user_agent: str | None = None  # the email registered with the key
+    jooble_api_key: str | None = None
+    jooble_location: str = ""
+    discovery_keywords: str = "software engineer"
+    arbeitnow_enabled: bool = True
+    themuse_enabled: bool = True
+    remotive_enabled: bool = True
+    remoteok_enabled: bool = True
     #: The ATS hard gate's pass bar (Phase 10/ADR-0034) -- the brief's
     #: ``ats.threshold``, flattened per this object's existing shape. Read
     #: at gate-evaluation time, never compiled in (matrix case D3).

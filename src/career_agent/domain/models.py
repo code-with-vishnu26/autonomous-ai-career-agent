@@ -256,7 +256,9 @@ class Opportunity(BaseModel):
     #: a source cannot emit an opportunity without declaring one.
     canonical_company: str
     title: str
-    source: Literal["ats_api", "yc", "hn", "career_page", "web_search"]
+    source: Literal[
+        "ats_api", "yc", "hn", "career_page", "web_search", "job_board"
+    ]
     source_url: str
     provenance: Provenance  # required (ADR-0012): every source must populate it
     ats_ref: str | None = None

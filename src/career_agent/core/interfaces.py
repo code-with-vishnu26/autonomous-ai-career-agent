@@ -161,9 +161,20 @@ class HttpClient(Protocol):
     """
 
     async def get_json(
-        self, url: str, *, params: dict[str, str] | None = None
+        self,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> object:
-        """GET ``url`` and return the parsed JSON body."""
+        """GET ``url`` and return the parsed JSON body.
+
+        ``headers`` was added in Phase 12 (additively -- existing callers
+        are unaffected), the exact precedent of ``post_json`` gaining
+        ``headers`` in 4c-slice-2: Reed authenticates GETs with Basic auth
+        and USAJobs with an ``Authorization-Key`` header, and a
+        headerless GET port could not honestly reach either real service.
+        """
         ...
 
     async def post_json(
