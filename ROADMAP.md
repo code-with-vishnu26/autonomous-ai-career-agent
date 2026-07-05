@@ -594,14 +594,36 @@ pre-save), and the determinism test could pass by luck inside ZIP's
 **Done when:** an approved resume produces traceable, deterministic,
 ATS-safe files a Playwright `set_input_files` call can attach.
 
-## ⬜ Phase 10 — ATS score gate
-Deterministic keyword/completeness/format scoring as the hard gate
-(threshold 75, config-driven), LLM semantic layer advisory-only (can raise,
-never lower, quoted-phrase-verified), auto-retailor loop (max 2, every
-retailored draft re-gated for truthfulness in full), typed
-`AtsScoreBelowThresholdError` refusal with a ranked gap report,
-anti-stuffing guard. **Adversarial matrix is reviewer-drafted — request it
-at pre-brief, do not self-author.**
+## 🔄 Phase 10 — ATS score gate
+Recorded in **ADR-0034**, built against the reviewer's 14-case adversarial
+matrix (A1–D3; four flagged load-bearing: A1, B1, B3, C1 — all four
+injection-verified). Deterministic curated-taxonomy scoring is the entire
+pass/fail authority: the pre-brief rejected spaCy's statistical model
+because artifact-dependent determinism is not determinism (same input must
+score identically on any machine, forever — D1/D2 demand exact boundary
+behavior), and resolved the brief's "raise but never lower" semantic-layer
+wording in favor of the matrix's stricter A1 (self-contradictory the
+moment a raise crosses the threshold). `passed` is computed in the report
+type itself — threshold comparison plus the A2 hard-format-failure
+override live in the type's derivation, not caller discipline. The
+advisory semantic layer only prunes false-missing keywords from the
+retailor gap report, each pruning verbatim-verified against the resume
+text (A3), and is deliberately NOT cost-cascade-exempt — it gates
+nothing; the exemption protects judgments that gate (reasoning recorded
+in the ADR, not just the decision). The retailor loop's backbone:
+GENUINE skill gaps (zero profile evidence) are structurally unreachable
+by the drafter — `AtsGapReport` has exactly one content field
+(`surfaceable`), so auto-retailor cannot become auto-fabricate because
+the fabrication targets are withheld from the component that writes
+prose (B1, the `answer_eeoc_question` channel-restriction pattern applied
+to a new risk category); the full truthfulness gate runs before every
+re-score, so a high ATS number never exists for an unapproved draft (B3);
+identical-retry convergence stops early and says so (B5); exhaustion
+raises a typed refusal carrying the score trajectory and the honest
+GENUINE-vs-surfaceable split (B4). One render per accepted draft, proven
+by an `is`-identity test: the scorer and the human preview consume the
+literal same string. Anti-stuffing: repetition beyond 3 earns nothing and
+flags; skills-list-only matches earn half credit and flag (C1/C2).
 
 ## ⬜ Phase 11 — LeverFormFiller (real)
 Verified DOM evidence in hand (name-only selectors, single name field,

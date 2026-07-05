@@ -14,6 +14,7 @@ from typing import Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, Field
 
 from career_agent.core.events import Event
+from career_agent.domain.ats_scoring import AtsGapReport, SemanticKeywordClaim
 from career_agent.domain.models import (
     Company,
     DraftedTailoring,
@@ -308,9 +309,19 @@ class ResumeGenerator(Protocol):
     """
 
     async def tailor(
-        self, opportunity: Opportunity, profile: MasterProfile
+        self,
+        opportunity: Opportunity,
+        profile: MasterProfile,
+        *,
+        gap_report: AtsGapReport | None = None,
     ) -> TailoredResumeDraft:
-        """Produce an unverified, structured draft for ``opportunity``."""
+        """Produce an unverified, structured draft for ``opportunity``.
+
+        ``gap_report`` (Phase 10, ADR-0034) carries the ATS retailor loop's
+        SURFACEABLE keywords only -- the type structurally cannot carry a
+        keyword the profile has no evidence for, so a retailor request can
+        never name a fabrication target (matrix case B1).
+        """
         ...
 
 
@@ -332,9 +343,45 @@ class ContentDrafter(Protocol):
     prompt_version: str
 
     async def draft(
-        self, opportunity: Opportunity, profile: MasterProfile
+        self,
+        opportunity: Opportunity,
+        profile: MasterProfile,
+        *,
+        gap_report: AtsGapReport | None = None,
     ) -> DraftedTailoring:
-        """Draft work/skill/project selections. Never asked for ``summary``."""
+        """Draft work/skill/project selections. Never asked for ``summary``.
+
+        ``gap_report`` (ADR-0034): SURFACEABLE-only retailor targets; see
+        :class:`ResumeGenerator.tailor`.
+        """
+        ...
+
+
+@runtime_checkable
+class SemanticKeywordMatcher(Protocol):
+    """Advisory LLM port for the ATS gate's semantic layer (Phase 10, ADR-0034).
+
+    Asked one question: "is this missing keyword genuinely present in the
+    resume under different wording -- and if so, quote the exact supporting
+    phrase?" Its claims are worthless until
+    :func:`~career_agent.domain.ats_scoring.verified_semantic_keywords`
+    confirms each quoted phrase exists verbatim in the resume text,
+    deterministically (matrix case A3) -- and even a verified claim only
+    prunes the retailor gap report; nothing this port produces can reach
+    the gate's pass/fail decision (matrix case A1).
+
+    Deliberately NOT cost-cascade-exempt, unlike ``ClaimVerifier``
+    (ADR-0016): that exemption exists to protect judgments that *gate*
+    something, where a cheaper model's false approval is unrecoverable.
+    This port gates nothing -- its output is deterministically re-verified,
+    and a wrong answer costs at most one wasted retailor suggestion --
+    so the exemption's purpose does not apply (ADR-0034).
+    """
+
+    async def propose_matches(
+        self, missing_keywords: list[str], resume_text: str
+    ) -> list[SemanticKeywordClaim]:
+        """Propose (keyword, quoted supporting phrase) pairs. May return []."""
         ...
 
 

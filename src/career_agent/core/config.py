@@ -36,4 +36,8 @@ class Settings(BaseSettings):
     database_path: str = "data/career_agent.db"
     #: Where generated resume files (DOCX/PDF, Phase 9/ADR-0033) are written.
     artifacts_dir: str = "data/artifacts"
+    #: The ATS hard gate's pass bar (Phase 10/ADR-0034) -- the brief's
+    #: ``ats.threshold``, flattened per this object's existing shape. Read
+    #: at gate-evaluation time, never compiled in (matrix case D3).
+    ats_threshold: float = 75.0
     log_level: str = "INFO"

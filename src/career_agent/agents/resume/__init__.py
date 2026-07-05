@@ -51,4 +51,19 @@ construction) land on ``TailoredResume.artifacts`` -- a derived cache
 with exactly ``rendered_text``'s status, populated by the pipeline for
 approved drafts only, opted into at the composition root via
 ``artifacts_dir``.
+
+The ATS score gate + auto-retailor loop (Phase 10, ADR-0034) also lives in
+``pipeline.py``, opt-in via ``ats_threshold``: tailor -> truthfulness gate
+-> deterministic ATS score (:mod:`career_agent.domain.ats_scoring`; the
+gate decision is the deterministic score alone, matrix case A1) -> on a
+below-threshold result, retailor with a SURFACEABLE-only
+``AtsGapReport`` -- a type with no field that could carry a GENUINE
+(zero-profile-evidence) gap, so the drafter is structurally never shown a
+fabrication target (case B1) -- through the FULL truthfulness gate again
+before any re-scoring, every retry, no exceptions (case B3), max 2
+retries with identical-draft convergence detection (case B5), ending in
+either a pass or the typed, trajectory-carrying
+``AtsScoreBelowThresholdError`` (case B4). One render per accepted draft:
+the scorer and the human preview consume the literal same
+``render_tailored_resume`` string, proven by an ``is``-identity test.
 """

@@ -34,6 +34,7 @@ Design commitments (ADR-0022):
 from __future__ import annotations
 
 from career_agent.core.interfaces import ContentDrafter
+from career_agent.domain.ats_scoring import AtsGapReport
 from career_agent.domain.models import (
     MasterProfile,
     Opportunity,
@@ -60,13 +61,22 @@ class LLMResumeGenerator:
         self._drafter = drafter
 
     async def tailor(
-        self, opportunity: Opportunity, profile: MasterProfile
+        self,
+        opportunity: Opportunity,
+        profile: MasterProfile,
+        *,
+        gap_report: AtsGapReport | None = None,
     ) -> TailoredResumeDraft:
         """Produce an unverified, structured draft for ``opportunity``.
 
         Raises :class:`MissingSummaryError` before calling the drafter if
         ``profile.basics.summary`` is empty -- never proceeds with a
         fallback the drafter or this class invented.
+
+        ``gap_report`` (Phase 10, ADR-0034) is passed through to the
+        drafter untouched: it can only ever carry SURFACEABLE keywords
+        (the type has no field for anything else), so this pass-through
+        cannot widen what the drafter is told.
         """
         summary = profile.basics.summary
         if not summary or not summary.strip():
@@ -77,7 +87,9 @@ class LLMResumeGenerator:
                 "produce an obviously templated, low-quality resume."
             )
 
-        drafted = await self._drafter.draft(opportunity, profile)
+        drafted = await self._drafter.draft(
+            opportunity, profile, gap_report=gap_report
+        )
         content = TailoredContent(
             summary=summary,
             work=drafted.work,
