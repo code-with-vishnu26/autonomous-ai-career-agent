@@ -36,6 +36,7 @@ from typing import Any
 from career_agent.domain.models import (
     BasicsSection,
     EducationEntry,
+    LegalStatusSection,
     MasterProfile,
     ProjectEntry,
     SkillEntry,
@@ -71,6 +72,10 @@ def load_master_profile(path: Path) -> MasterProfile:
         ],
         skills=[SkillEntry(**_map_skill(e)) for e in raw.get("skills", [])],
         projects=[ProjectEntry(**_map_project(e)) for e in raw.get("projects", [])],
+        # legal_status (Phase 8j/13): a this-project extension to JSON
+        # Resume, round-tripped by save_legal_status below. Absent keys
+        # stay None -- "never asked," never an implicit "no."
+        legal_status=LegalStatusSection(**raw.get("legal_status", {})),
     )
     return profile.model_copy(update={"version": _content_hash(profile)})
 
@@ -174,3 +179,22 @@ def _content_hash(profile: MasterProfile) -> str:
     canonical = json.dumps(grounding, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"sha256:{digest[:16]}"
+
+
+def save_legal_status(path: Path, legal_status: LegalStatusSection) -> None:
+    """Write ``legal_status`` into the profile file -- the first profile writer.
+
+    Phase 13 (ADR-0037): touches ONLY the ``legal_status`` key; every other
+    section -- including JSON Resume sections this loader does not model at
+    all (awards, publications, ...) -- is preserved byte-for-byte as parsed.
+    A ``None`` field is written as ``null`` (still "never asked"), never
+    coerced to ``false``. The profile's ``version`` is a content hash
+    recomputed at load time, so the next ``load_master_profile`` call
+    naturally yields a new version; nothing here (or anywhere) rewrites the
+    frozen ``profile_version``/``applicant``/``legal_status`` snapshots
+    already recorded on existing Applications -- a version bump never
+    retroactively alters history (ADR-0027/0032 discipline).
+    """
+    raw: dict[str, Any] = json.loads(path.read_text())
+    raw["legal_status"] = legal_status.model_dump(mode="json")
+    path.write_text(json.dumps(raw, indent=2) + "\n")

@@ -91,6 +91,10 @@ class ResumeTailoringResult(NamedTuple):
 
     application: Application
     submittable: SubmittableApplication | None
+    #: The final ATS report when the gate ran and passed (Phase 13 wiring:
+    #: recorded into the application audit trail). None when the gate was
+    #: disabled or the draft was truthfulness-rejected before scoring.
+    ats_report: AtsScoreReport | None = None
 
 
 class ResumeTailoringPipeline:
@@ -155,6 +159,7 @@ class ResumeTailoringPipeline:
         truthfulness = await self._gate.verify(draft, profile)
 
         rendered_text: str | None = None
+        ats_report: AtsScoreReport | None = None
         if truthfulness.approved:
             # One render, one truth (ADR-0034): the exact string scored by
             # the ATS gate is the exact string stored as the human-facing
@@ -162,8 +167,10 @@ class ResumeTailoringPipeline:
             # draft, never two calls that happen to agree today.
             rendered_text = render_tailored_resume(draft.content, profile)
             if self._ats_threshold is not None:
-                draft, truthfulness, rendered_text = await self._ats_gate_loop(
-                    opportunity, profile, draft, truthfulness, rendered_text
+                draft, truthfulness, rendered_text, ats_report = (
+                    await self._ats_gate_loop(
+                        opportunity, profile, draft, truthfulness, rendered_text
+                    )
                 )
         resume_id = str(uuid.uuid4())
         artifacts = (
@@ -198,7 +205,9 @@ class ResumeTailoringPipeline:
                 )
             )
             return ResumeTailoringResult(
-                application=application, submittable=to_submittable(application)
+                application=application,
+                submittable=to_submittable(application),
+                ats_report=ats_report,
             )
 
         await self._bus.publish(
@@ -217,7 +226,7 @@ class ResumeTailoringPipeline:
         draft: TailoredResumeDraft,
         truthfulness: TruthfulnessResult,
         rendered_text: str,
-    ) -> tuple[TailoredResumeDraft, TruthfulnessResult, str]:
+    ) -> tuple[TailoredResumeDraft, TruthfulnessResult, str, AtsScoreReport]:
         """Score, retailor up to ``_MAX_ATS_RETRIES`` times, or refuse (ADR-0034).
 
         The ordering constraint is absolute (matrix B3): every retailored
@@ -236,7 +245,7 @@ class ResumeTailoringPipeline:
         report = self._score(draft.content, profile, opportunity, rendered_text)
         trajectory = [report]
         if report.passed:
-            return draft, truthfulness, rendered_text
+            return draft, truthfulness, rendered_text, report
 
         previous_content = draft.content
         converged = False
@@ -267,7 +276,7 @@ class ResumeTailoringPipeline:
             )
             trajectory.append(report)
             if report.passed:
-                return retry_draft, retry_truthfulness, retry_rendered
+                return retry_draft, retry_truthfulness, retry_rendered, report
             draft = retry_draft
             truthfulness = retry_truthfulness
             rendered_text = retry_rendered

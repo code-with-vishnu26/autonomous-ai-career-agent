@@ -652,11 +652,19 @@ Tier C (Naukri/Foundit/LinkedIn/Indeed/Seek) recorded as manual-only --
 no permitted programmatic path exists, no scrapers ever (invariant 7);
 they work today through the source-agnostic opportunity-file handoff.
 
-## ⬜ Phase 13 — Persistence + discover command + Excel
-SQLite `OpportunityRepository` (fidelity-tested), real `career-agent
-discover`, the first `MasterProfile` writer (explicit-confirmation
-LegalStatusSection capture, version-bump semantics consistent with frozen
-snapshots), openpyxl application-tracker export.
+## 🔄 Phase 13 — Persistence + discover command + Excel
+Recorded in **ADR-0037**. `SqliteOpportunityRepository` -- exact-contract
+drop-in (same public-surface guard, same two-key dedup scenarios, plus
+real close/reopen round-trip). Append-only `SqliteApplicationStore` audit
+trail recorded from `apply` (with the real final ATS score via
+`ResumeTailoringResult.ats_report`, additive). Real `career-agent
+discover`: config-wired Tier A sources, per-source failure isolation,
+writes the exact ADR-0026 opportunity-file handoff. First `MasterProfile`
+writer: `capture-legal-status` accepts exactly yes/no/skip -- unrecognized
+input can never become an answer in either polarity (injection-verified),
+unmodeled JSON Resume sections survive byte-identical, frozen snapshots
+on existing Applications never rewritten. `career-agent export`: the
+founding-brief openpyxl tracker (formatted, filterable).
 
 ## ⬜ Phase 14 — Decide layer
 Deterministic weighted scorer inside the Planner boundary (ADR-0007),
