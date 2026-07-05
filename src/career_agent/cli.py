@@ -551,6 +551,85 @@ def build_notifier(settings: Settings) -> object | None:
     return None
 
 
+
+async def run_auto_command(
+    sources: list[tuple[str, object]],
+    repo: object,
+    profile: MasterProfile,
+    scorer: object,
+    generator: ResumeGenerator,
+    gate: TruthfulnessGate,
+    *,
+    since: datetime,
+    out_dir: Path,
+    top_n: int = 3,
+    ats_threshold: float | None = None,
+    artifacts_dir: Path | None = None,
+    application_store: SqliteApplicationStore | None = None,
+    notifier: object | None = None,
+) -> int:
+    """One scheduling-safe pass: discover -> rank -> tailor+gate -> notify.
+
+    **Structurally cannot confirm or submit** (Phase 17, ADR-0041): this
+    function takes no input function, constructs no ``HumanConfirmation``,
+    and calls no ``Applicator`` -- there is no code path from here to a
+    submission, which is what makes it safe to run from cron. Both gates
+    (truthfulness, ATS) run in full on every prepared application; every
+    outcome ends in a notification and a handoff file awaiting the
+    human's own ``career-agent apply`` confirmation.
+    """
+    await run_discover_command(
+        sources, repo, since=since, out_dir=out_dir
+    )
+    handoffs = sorted(out_dir.glob("*.json"))
+    opportunities = [
+        Opportunity.model_validate(json.loads(path.read_text()))
+        for path in handoffs
+    ]
+    included, _excluded = scorer.rank(opportunities, profile)  # type: ignore[attr-defined]
+    prepared = 0
+    for opportunity, decision in included[:top_n]:
+        bus = EventBus()
+        pipeline = ResumeTailoringPipeline(
+            generator,
+            gate,
+            bus,
+            artifacts_dir=artifacts_dir,
+            ats_threshold=ats_threshold,
+        )
+        try:
+            result = await pipeline.run(opportunity, profile)
+        except (MissingSummaryError, AtsScoreBelowThresholdError) as exc:
+            print(f"[{opportunity.id}] not prepared: {exc}")
+            continue
+        if application_store is not None:
+            application_store.record(
+                result.application,
+                company=opportunity.canonical_company,
+                source=opportunity.source,
+                ats_total=result.ats_report.total if result.ats_report else None,
+            )
+        if result.submittable is None:
+            print(f"[{opportunity.id}] truthfulness gate rejected the draft")
+            continue
+        prepared += 1
+        message = (
+            f"{opportunity.canonical_company}: {opportunity.title} "
+            f"(rank {decision.total:.1f}) is tailored, gated, and waiting "
+            f"for YOUR confirmation: career-agent apply --opportunity-file "
+            f"{out_dir / (opportunity.id + '.json')}"
+        )
+        print(message)
+        if notifier is not None:
+            try:
+                await notifier.notify("Application prepared", message)  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001 -- notify, never gate
+                print(f"(notification not delivered: {exc})")
+    print(f"{prepared} application(s) prepared; none submitted -- submission "
+          f"is always your explicit act.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     """Parse CLI arguments and dispatch, or print the Phase 1 placeholder banner.
 

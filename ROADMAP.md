@@ -702,12 +702,21 @@ distribution, the ADR-0039 funnel with its caveat intact; SQLite read
 directly as a separate read model so the repository contract stays
 add/get.
 
-## ⬜ Phase 17 — Scheduling (LAST, hard-gated)
-May not start until profile-staleness re-verification and email
-send-confirmation both close. Automates discovery + preparation +
-notification ONLY -- confirmation and submission stay human-gated forever.
-Absorbs the deferred 7-series items (multi-tier selection, real OAuth
-`GmailDraftSink`).
+## 🔄 Phase 17 — Scheduling (LAST, hard-gated)
+Recorded in **ADR-0041**. Both recorded gates closed first:
+profile-staleness re-verification (`StaleProfileError` before `prepare()`
+ever runs -- a stale application never produces a confirmable preview;
+injection-verified) and email send-confirmation (`SentMailChecker` port
+with no send capability + `confirm_email_sent`: positive SENT observation
+only, couldn't-check is a typed unknown, never a boolean; the real OAuth
+Gmail checker stays user-validated live work). Scheduling itself is
+`career-agent auto`: one bounded, cron-invokable pass (discover -> rank
+-> tailor+gate -> record -> notify) that **structurally cannot confirm or
+submit** -- no input function, no HumanConfirmation, no Applicator in its
+code, asserted at the co_names level. Confirmation and submission remain
+human-gated forever (ADR-0008) -- a permanent boundary, not a current
+limitation. Deferred: multi-tier selection; real OAuth GmailDraftSink +
+SentMailChecker (live, user-present).
 
 ## ⬜ Phase 18 — Ashby (whenever unblocked)
 Blocked on the user's dev-tools DOM inspection of a live Ashby posting --
