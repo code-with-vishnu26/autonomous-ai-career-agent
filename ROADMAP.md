@@ -625,10 +625,19 @@ by an `is`-identity test: the scorer and the human preview consume the
 literal same string. Anti-stuffing: repetition beyond 3 earns nothing and
 flags; skills-list-only matches earn half credit and flag (C1/C2).
 
-## ⬜ Phase 11 — LeverFormFiller (real)
-Verified DOM evidence in hand (name-only selectors, single name field,
-file-upload-only resume → Phase 9 artifact via `set_input_files`, hCaptcha
-via the existing pause/resume). Depends on Phase 9.
+## 🔄 Phase 11 — LeverFormFiller (real)
+Recorded in **ADR-0035**. Built from ADR-0029's recorded live-DOM evidence:
+single unsplit full-name field (`_split_name`'s known imprecision never
+applies on Lever), `[name='email']`, required file upload satisfied by
+attaching the application's own ADR-0033 DOCX artifact via
+`set_input_files` -- the attach proven against the live input's real
+FileList (injection-verified against a wrong-file swap), typed
+`MissingResumeArtifactError` when no artifact exists or the file is gone
+from disk (Lever has no manual-text path; nothing to upload means no
+honest submission), hCaptcha (`#h-captcha`) through ADR-0020's
+pause/resume machinery unchanged. Live validation against a real posting
+on the user's machine remains the named final check before first real
+use.
 
 ## ⬜ Phase 12 — Worldwide + regional discovery expansion
 Tier A free APIs as `OpportunitySource` plugins (Adzuna, Reed, USAJobs,

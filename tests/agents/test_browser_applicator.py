@@ -41,6 +41,8 @@ from career_agent.agents.apply.browser_applicator import (
 from career_agent.agents.apply.form_fillers import (
     FormFillerNotImplementedError,
     GreenhouseFormFiller,
+    LeverFormFiller,
+    MissingResumeArtifactError,
     default_form_fillers,
 )
 from career_agent.core.events import ApplicationSubmitted, HumanActionRequired
@@ -315,19 +317,21 @@ async def test_prepare_raises_when_no_form_filler_is_registered_for_the_ats_kind
         await applicator.prepare(_approved_application("opp-1"))
 
 
-async def test_submit_raises_form_filler_not_implemented_for_lever(
+async def test_submit_through_lever_without_a_resume_artifact_refuses(
     tmp_path: Path,
 ) -> None:
-    """Lever's real selectors are unverified (ADR-0028) -- proven here: the
-    stub is genuinely reached through the real prepare()/submit() flow and
-    genuinely raises, not just present as an unused class."""
+    """Phase 11 (ADR-0035): LeverFormFiller is real now, and its own
+    precondition refusal -- Lever's resume field is a required file upload,
+    so no DOCX artifact means no honest submission -- is genuinely reached
+    through the real prepare()/submit() flow, the same proof shape the old
+    stub test used for FormFillerNotImplementedError."""
     opportunity = _opportunity("opp-1", source_url=_LEVER_URL)
     applicator = await _applicator(
         tmp_path, opportunity, form_fillers=default_form_fillers()
     )
-    app = _approved_application("opp-1")
+    app = _approved_application("opp-1")  # carries no artifacts
     preview = await applicator.prepare(app)
-    with pytest.raises(FormFillerNotImplementedError, match="not been verified"):
+    with pytest.raises(MissingResumeArtifactError, match="no DOCX resume artifact"):
         await applicator.submit(preview, _confirmation(preview.preview_token))
 
 
@@ -902,3 +906,116 @@ async def test_field_with_no_describable_label_still_hard_refuses(
     with pytest.raises(UnsupportedFormFieldsError, match="why_us"):
         await applicator.submit(preview, _confirmation(preview.preview_token))
     assert len(applicator._paused) == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 11 / ADR-0035: the real LeverFormFiller against the real-shape
+# fixture (single full-name field, required file upload, hCaptcha markup).
+# ---------------------------------------------------------------------------
+
+_LEVER_REAL_FIXTURE = (
+    Path(__file__).parent.parent / "fixtures" / "lever" / "apply_form_real.html"
+)
+
+
+def _lever_application_with_artifact(tmp_path: Path) -> SubmittableApplication:
+    """An approved application carrying a real, on-disk DOCX artifact."""
+    from career_agent.agents.resume.file_renderer import render_resume_docx
+    from tests.agents._profile_fixture import sample_master_profile
+
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer."
+    submittable = _approved_application("opp-1")
+    docx = render_resume_docx(
+        submittable.application.resume.id,
+        submittable.application.resume.content,
+        profile,
+        tmp_path / "artifacts",
+    )
+    resume = submittable.application.resume.model_copy(update={"artifacts": [docx]})
+    app = submittable.application.model_copy(update={"resume": resume})
+    return SubmittableApplication(application=app)
+
+
+async def test_lever_fills_single_fullname_field_and_attaches_the_real_docx(
+    tmp_path: Path,
+) -> None:
+    """The name lands UNSPLIT in the single [name='name'] field (no
+    _split_name heuristic on Lever), and the genuinely attached file is
+    THE application's own DOCX artifact -- filename checked against the
+    live input's real FileList, not assumed from the call having happened."""
+    opportunity = _opportunity("opp-1", source_url=_LEVER_URL)
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_LEVER_REAL_FIXTURE
+    )
+    app = _lever_application_with_artifact(tmp_path)
+    docx_name = Path(app.application.resume.artifacts[0].path).name
+
+    page, context, browser = await applicator._open_page(
+        "opp-1", f"file://{_LEVER_REAL_FIXTURE}"
+    )
+    try:
+        await LeverFormFiller().fill_identity_and_resume(page, app)
+        assert await page.input_value("[name='name']") == "Ada Lovelace"
+        assert await page.input_value("[name='email']") == "ada@example.com"
+        attached = await page.evaluate(
+            "() => { const f = document.querySelector(\"[name='resume']\").files;"
+            " return f.length === 1 ? f[0].name : null; }"
+        )
+        assert attached == docx_name
+    finally:
+        await browser.close()
+
+
+async def test_lever_full_submit_flow_completes_with_artifact(
+    tmp_path: Path,
+) -> None:
+    opportunity = _opportunity("opp-1", source_url=_LEVER_URL)
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_LEVER_REAL_FIXTURE
+    )
+    app = _lever_application_with_artifact(tmp_path)
+    preview = await applicator.prepare(app)
+    event = await applicator.submit(preview, _confirmation(preview.preview_token))
+    assert isinstance(event, ApplicationSubmitted)
+
+
+async def test_lever_hcaptcha_pauses_and_resumes_through_existing_machinery(
+    tmp_path: Path,
+) -> None:
+    """Real hCaptcha markup (#h-captcha) flows through the exact ADR-0020
+    pause/resume machinery: pause on visibility, refuse to resume while
+    still visible, complete once the HUMAN clears it -- this project never
+    solves a challenge itself."""
+    opportunity = _opportunity("opp-1", source_url=_LEVER_URL, challenge=True)
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_LEVER_REAL_FIXTURE
+    )
+    app = _lever_application_with_artifact(tmp_path)
+    preview = await applicator.prepare(app)
+    pause_event = await applicator.submit(preview, _confirmation(preview.preview_token))
+    assert isinstance(pause_event, HumanActionRequired)
+    assert pause_event.reason == "verification"
+
+    pause_token = next(iter(applicator._paused))
+    paused_page = applicator._paused[pause_token].page
+    with pytest.raises(ChallengeStillPresentError):
+        await applicator.resume(pause_token, _ack(pause_token))
+
+    await paused_page.evaluate("window.__clearChallenge()")
+    event = await applicator.resume(pause_token, _ack(pause_token))
+    assert isinstance(event, ApplicationSubmitted)
+
+
+async def test_lever_refuses_when_recorded_artifact_file_is_gone_from_disk(
+    tmp_path: Path,
+) -> None:
+    opportunity = _opportunity("opp-1", source_url=_LEVER_URL)
+    applicator = await _applicator(
+        tmp_path, opportunity, fixture_path=_LEVER_REAL_FIXTURE
+    )
+    app = _lever_application_with_artifact(tmp_path)
+    Path(app.application.resume.artifacts[0].path).unlink()  # file vanishes
+    preview = await applicator.prepare(app)
+    with pytest.raises(MissingResumeArtifactError, match="no longer exists on disk"):
+        await applicator.submit(preview, _confirmation(preview.preview_token))
