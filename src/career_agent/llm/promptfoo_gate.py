@@ -1,6 +1,7 @@
-"""Positive verification that promptfoo has actually passed (ADR-0016, ADR-0026).
+"""Positive verification that promptfoo has actually passed.
 
-ADR-0016 requires the promptfoo suite to pass on live calls before
+ADR-0016, ADR-0026, ADR-0043. ADR-0016 requires the promptfoo suite to
+pass on live calls before
 ``AnthropicClaimVerifier`` is wired into any real apply path. That
 requirement was, until now, enforced only by written policy plus the
 import-linter contract keeping the concrete class out of ``agents``/
@@ -14,8 +15,17 @@ closes every other one: check the evidence, not the claimed verdict. A CLI
 flag someone types from memory ("I promise I ran it") is exactly the kind
 of unverified assertion the truthfulness gate itself refuses to accept from
 a claimed confidence score -- so this checks an actual results artifact on
-disk instead, tied to the exact prompt version it validated by filename, and
-verifies its recorded pass/fail counts, not merely that the file exists.
+disk instead, tied to the exact prompt version *and provider* it validated
+by filename, and verifies its recorded pass/fail counts, not merely that
+the file exists.
+
+ADR-0043 added the provider dimension: once a second real ``ClaimVerifier``
+(``GroqClaimVerifier``) existed, a prompt-version-only filename would let a
+promptfoo pass recorded for Anthropic silently authorize an entirely
+unvalidated Groq verifier, and vice versa -- the exact "unverified signal
+trusted as verified" failure mode this file exists to prevent, just moved
+one dimension over. ``provider_id`` is now a required keyword argument, not
+an optional refinement.
 """
 
 from __future__ import annotations
@@ -25,7 +35,7 @@ from pathlib import Path
 
 
 class PromptfooNotValidatedError(Exception):
-    """No passing promptfoo results artifact was found for this prompt version.
+    """No passing promptfoo results artifact was found for this prompt/provider.
 
     Raised instead of trusting an assertion -- the same "check the
     evidence, not the claimed verdict" discipline the truthfulness gate
@@ -34,25 +44,30 @@ class PromptfooNotValidatedError(Exception):
     """
 
 
-def verify_promptfoo_results(prompt_version: str, results_dir: Path) -> None:
-    """Raise unless ``results_dir / f"{prompt_version}.json"`` proves a pass.
+def verify_promptfoo_results(
+    prompt_version: str, results_dir: Path, *, provider_id: str
+) -> None:
+    """Raise unless a matching ``{prompt_version}--{provider_id}.json`` proves a pass.
 
     The filename convention ties a results artifact to the exact prompt
-    version it validated -- a stale pass from a since-changed prompt has a
-    different filename and will not be found here. Checks the file's
-    actual recorded pass/fail counts (``results.stats.successes``/
-    ``failures``, the shape ``promptfoo eval -o <file>`` writes), not
-    merely that the file exists or that it once existed.
+    version *and* provider it validated -- a stale pass from a
+    since-changed prompt, or a pass recorded for a different
+    ``ClaimVerifier`` implementation, has a different filename and will not
+    be found here. Checks the file's actual recorded pass/fail counts
+    (``results.stats.successes``/``failures``, the shape
+    ``promptfoo eval -o <file>`` writes), not merely that the file exists
+    or that it once existed.
     """
-    results_path = results_dir / f"{prompt_version}.json"
+    results_path = results_dir / f"{prompt_version}--{provider_id}.json"
     if not results_path.exists():
         raise PromptfooNotValidatedError(
             f"No promptfoo results found for prompt version {prompt_version!r} "
-            f"at {results_path}. Run the promptfoo suite on your own machine "
-            f"(real network + ANTHROPIC_API_KEY required -- see "
-            f"promptfoo/README.md) and write its output there:\n"
+            f"/ provider {provider_id!r} at {results_path}. Run the promptfoo "
+            f"suite for this provider on your own machine (real network + its "
+            f"API key required -- see promptfoo/README.md) and write its "
+            f"output there:\n"
             f"  npx promptfoo@latest eval --config "
-            f"promptfoo/promptfooconfig.yaml -o {results_path}"
+            f"promptfoo/promptfooconfig.{provider_id}.yaml -o {results_path}"
         )
     try:
         payload = json.loads(results_path.read_text())

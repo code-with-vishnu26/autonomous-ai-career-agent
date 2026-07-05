@@ -1,6 +1,9 @@
 # ADR-0042: Groq (free tier) as the default provider for the two LLM ports never exempted from cost routing
 
-- **Status:** Accepted
+- **Status:** Accepted, partially superseded by
+  [ADR-0043](0043-zero-cost-truthfulness-gate-provider.md) -- this ADR's
+  claim that `ClaimVerifier` "gains no Groq implementation and no selection
+  logic" no longer holds; everything else below stands.
 - **Date:** 2026-07-05
 - **References:** [ADR-0016](0016-truthfulness-gate-verification.md) (the
   `ClaimVerifier` cost-cascade exemption this decision explicitly does not

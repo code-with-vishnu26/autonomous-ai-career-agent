@@ -1,4 +1,7 @@
-"""ADR-0042: Groq free-tier provider selection, wiring, and failure modes.
+"""ADR-0042 / ADR-0043: Groq free-tier provider selection, wiring, and
+failure modes -- including the truthfulness gate's verifier, which ADR-0043
+moved from Anthropic-only to Groq-preferred on direct user instruction to
+run the whole project at zero ongoing cost.
 
 Every network call is mocked via ``httpx.MockTransport`` -- no real API
 credits are ever spent running this suite, the same offline discipline as
@@ -20,12 +23,13 @@ from career_agent.domain.models import BasicsSection, MasterProfile, Provenance
 from career_agent.llm import groq_client
 from career_agent.llm.claim_verifier import AnthropicClaimVerifier
 from career_agent.llm.content_drafter import AnthropicContentDrafter
+from career_agent.llm.groq_claim_verifier import GroqClaimVerifier
 from career_agent.llm.groq_client import GroqCallError, groq_chat_completion
 from career_agent.llm.groq_content_drafter import GroqContentDrafter
 from career_agent.llm.groq_semantic_matcher import GroqSemanticKeywordMatcher
 from career_agent.llm.providers import (
     NoLLMProviderConfiguredError,
-    build_claim_verifier,
+    select_claim_verifier,
     select_content_drafter,
     select_semantic_matcher,
 )
@@ -281,15 +285,94 @@ def test_select_semantic_matcher_is_none_with_neither_key():
     assert select_semantic_matcher(settings) is None
 
 
-def test_build_claim_verifier_is_anthropic_only_even_with_a_groq_key():
-    """The truthfulness gate's verifier is never routed to Groq, no matter
-    what other keys are configured -- ADR-0016's exemption has no opt-out."""
+def test_select_claim_verifier_prefers_groq_when_both_keys_set():
+    """ADR-0043: unlike ADR-0042's original design, the truthfulness gate's
+    verifier now prefers the free provider too -- compensated for by the
+    provider-keyed promptfoo gate (test_promptfoo_gate.py), not by refusing
+    to select Groq here."""
     settings = Settings(groq_api_key="g", anthropic_api_key="a")
-    verifier = build_claim_verifier(settings)
-    assert isinstance(verifier, AnthropicClaimVerifier)
+    assert isinstance(select_claim_verifier(settings), GroqClaimVerifier)
 
 
-def test_build_claim_verifier_raises_without_anthropic_key_even_with_groq():
-    settings = Settings(groq_api_key="g", anthropic_api_key=None)
-    with pytest.raises(NoLLMProviderConfiguredError, match="ANTHROPIC_API_KEY"):
-        build_claim_verifier(settings)
+def test_select_claim_verifier_falls_back_to_anthropic_when_no_groq_key():
+    settings = Settings(groq_api_key=None, anthropic_api_key="a")
+    assert isinstance(select_claim_verifier(settings), AnthropicClaimVerifier)
+
+
+def test_select_claim_verifier_raises_typed_error_with_neither_key():
+    settings = Settings(groq_api_key=None, anthropic_api_key=None)
+    with pytest.raises(NoLLMProviderConfiguredError, match="GROQ_API_KEY"):
+        select_claim_verifier(settings)
+
+
+def test_groq_and_anthropic_claim_verifiers_carry_distinct_provider_ids():
+    """The promptfoo gate keys results by this attribute -- if the two ever
+    collided, a pass for one would silently authorize the other."""
+    assert GroqClaimVerifier(api_key="k").provider_id == "groq"
+    assert AnthropicClaimVerifier(api_key="k").provider_id == "anthropic"
+    assert (
+        GroqClaimVerifier(api_key="k").provider_id
+        != AnthropicClaimVerifier(api_key="k").provider_id
+    )
+
+
+def test_groq_and_anthropic_claim_verifiers_share_the_same_prompt_version():
+    """Only the provider changed, not the prompt -- so no new prompt-version
+    baseline is needed, only a new (existing) provider-keyed promptfoo run."""
+    assert (
+        GroqClaimVerifier(api_key="k").prompt_version
+        == AnthropicClaimVerifier(api_key="k").prompt_version
+    )
+
+
+# --- GroqClaimVerifier: fail-closed, same contract as Anthropic's ----------
+
+
+async def test_groq_claim_verifier_parses_a_successful_verdict(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["model"] == "openai/gpt-oss-120b"
+        return _groq_response(
+            json.dumps(
+                {
+                    "verified": True,
+                    "confidence": 0.95,
+                    "category": None,
+                    "detail": "supported",
+                }
+            )
+        )
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    verifier = GroqClaimVerifier(api_key="k")
+    verdict = await verifier.verify_claim("I know Docker.", "Used Docker daily.")
+    assert verdict.verified is True
+    assert verdict.confidence == 0.95
+
+
+async def test_groq_claim_verifier_raises_on_malformed_json(monkeypatch):
+    """Fail-closed, never a fabricated verdict -- identical contract to
+    AnthropicClaimVerifier."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _groq_response("not json")
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    verifier = GroqClaimVerifier(api_key="k")
+    with pytest.raises(json.JSONDecodeError):
+        await verifier.verify_claim("claim", "evidence")
+
+
+async def test_groq_claim_verifier_raises_on_network_failure_no_fallback(
+    monkeypatch,
+):
+    """A Groq failure must propagate, never silently retry against a paid
+    Anthropic call -- there is no such fallback wired into this class."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    verifier = GroqClaimVerifier(api_key="k")
+    with pytest.raises(GroqCallError):
+        await verifier.verify_claim("claim", "evidence")

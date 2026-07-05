@@ -1,22 +1,33 @@
-"""Provider selection for the two non-cost-cascade-exempt LLM ports (ADR-0042).
+"""Provider selection for all three real LLM ports (ADR-0042, ADR-0043).
 
-``ClaimVerifier`` is deliberately absent from this module: it is
-permanently pinned to Anthropic's most capable tier (ADR-0016) and nothing
-here is allowed to change that. ``ContentDrafter`` and
-``SemanticKeywordMatcher`` were already documented as safe to route to a
-cheaper (or free) model, so this is where that choice actually happens --
-once, at composition time, from whichever API key is configured. There is
-no runtime fallback between providers: a provider is chosen once and used
-for the whole run, so a mid-run Groq failure never silently reroutes to a
-paid Anthropic call behind the user's back.
+ADR-0042 gave ``ContentDrafter`` and ``SemanticKeywordMatcher`` a free-tier
+Groq branch because their own ADRs (0022, 0034) already ruled a
+false-approve on either recoverable. ADR-0016 originally kept
+``ClaimVerifier`` out of this module entirely, on the reasoning that a
+false-approve there is not recoverable. ADR-0043 revisited that on direct
+user instruction to run the whole project at zero ongoing cost: the
+asymmetry is real, but it is now compensated for structurally instead --
+``GroqClaimVerifier`` exists as a distinct, separately promptfoo-gated
+class (``provider_id="groq"``), so a live-validated pass for Anthropic can
+never silently authorize it. See ``promptfoo_gate.py``.
+
+There is no runtime fallback between providers for any of the three ports:
+a provider is chosen once, at composition time, from whichever API key is
+configured, and used for the whole run -- a mid-run Groq failure never
+silently reroutes to a paid Anthropic call behind the user's back.
 """
 
 from __future__ import annotations
 
 from career_agent.core.config import Settings
-from career_agent.core.interfaces import ContentDrafter, SemanticKeywordMatcher
+from career_agent.core.interfaces import (
+    ClaimVerifier,
+    ContentDrafter,
+    SemanticKeywordMatcher,
+)
 from career_agent.llm.claim_verifier import AnthropicClaimVerifier
 from career_agent.llm.content_drafter import AnthropicContentDrafter
+from career_agent.llm.groq_claim_verifier import GroqClaimVerifier
 from career_agent.llm.groq_content_drafter import GroqContentDrafter
 from career_agent.llm.groq_semantic_matcher import GroqSemanticKeywordMatcher
 from career_agent.llm.semantic_matcher import AnthropicSemanticKeywordMatcher
@@ -58,17 +69,23 @@ def select_semantic_matcher(settings: Settings) -> SemanticKeywordMatcher | None
     return None
 
 
-def build_claim_verifier(settings: Settings) -> AnthropicClaimVerifier:
-    """The truthfulness gate's verifier: Anthropic only, never routed to Groq.
+def select_claim_verifier(settings: Settings) -> ClaimVerifier:
+    """Groq first (free), Anthropic second (paid) -- the truthfulness gate.
 
-    Not a "selection" at all -- present here only so callers have one place
-    to build every LLM-backed port, without ever being tempted to add a
-    free-tier branch to this specific function. ADR-0016's cost-cascade
-    exemption and its promptfoo gate apply to this port and no other.
+    Unlike the other two ports, swapping this one's provider is not a
+    "recoverable false-approve" call -- it changes what judges the single
+    highest-stakes decision in the system. ADR-0043's compensating control
+    lives downstream of this function, in ``cli.py``: whichever class this
+    returns, its ``prompt_version``/``provider_id`` must have a live
+    promptfoo pass on disk (``verify_promptfoo_results``) before it is ever
+    wired into a real submission path. This function only chooses which
+    class; it never decides that choice is safe to use yet.
     """
-    if not settings.anthropic_api_key:
-        raise NoLLMProviderConfiguredError(
-            "ANTHROPIC_API_KEY is not set -- required for the truthfulness "
-            "gate's verifier, which is never routed to a free provider."
-        )
-    return AnthropicClaimVerifier(api_key=settings.anthropic_api_key)
+    if settings.groq_api_key:
+        return GroqClaimVerifier(api_key=settings.groq_api_key)
+    if settings.anthropic_api_key:
+        return AnthropicClaimVerifier(api_key=settings.anthropic_api_key)
+    raise NoLLMProviderConfiguredError(
+        "Set GROQ_API_KEY (free) or ANTHROPIC_API_KEY (paid) for the "
+        "truthfulness gate's verifier."
+    )

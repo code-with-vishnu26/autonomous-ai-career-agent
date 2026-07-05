@@ -68,10 +68,9 @@ from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
     verify_promptfoo_results,
 )
-from career_agent.llm.prompts import TRUTHFULNESS_GATE_PROMPT_VERSION
 from career_agent.llm.providers import (
     NoLLMProviderConfiguredError,
-    build_claim_verifier,
+    select_claim_verifier,
     select_content_drafter,
     select_semantic_matcher,
 )
@@ -254,23 +253,25 @@ async def run_apply_command(
         return 1
 
     settings = Settings()
-    if not settings.anthropic_api_key:
-        print(
-            "ANTHROPIC_API_KEY is not set -- required for the truthfulness "
-            "gate's verifier, which is never routed to a free provider."
-        )
+    try:
+        claim_verifier = select_claim_verifier(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
         return 1
 
     results_dir = promptfoo_results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR
     try:
-        verify_promptfoo_results(TRUTHFULNESS_GATE_PROMPT_VERSION, results_dir)
+        verify_promptfoo_results(
+            claim_verifier.prompt_version,
+            results_dir,
+            provider_id=claim_verifier.provider_id,
+        )
     except PromptfooNotValidatedError as exc:
         print(str(exc))
         return 1
 
     try:
         content_drafter = select_content_drafter(settings)
-        claim_verifier = build_claim_verifier(settings)
     except NoLLMProviderConfiguredError as exc:
         print(str(exc))
         return 1

@@ -1,0 +1,31 @@
+# Truthfulness gate promptfoo eval, Groq provider (ADR-0043).
+#
+# Hard merge gate for the free-tier GroqClaimVerifier -- see README.md.
+# Requires GROQ_API_KEY and network access; not runnable in the sandbox
+# this project was built in. Run from your own machine, and write output
+# to a DIFFERENT results file than the Anthropic config -- promptfoo_gate.py
+# keys its check to provider_id="groq" specifically, so a pass recorded here
+# never satisfies (or is satisfied by) the Anthropic provider's results.
+
+description: "Truthfulness gate -- adversarial fabrication matrix (12 cases), Groq provider"
+
+prompts:
+  - file://prompt.txt
+
+providers:
+  # openai/gpt-oss-120b via Groq's OpenAI-compatible endpoint -- the
+  # strongest reasoning model on Groq's free tier, chosen for this port
+  # specifically because it is the single highest-stakes judgment in the
+  # system (see GroqClaimVerifier's docstring, ADR-0043).
+  - id: openai:chat:openai/gpt-oss-120b
+    config:
+      apiBaseUrl: https://api.groq.com/openai/v1
+      apiKeyEnvar: GROQ_API_KEY
+      temperature: 0
+      max_tokens: 300
+
+tests: file://tests.yaml
+
+defaultTest:
+  assert:
+    - type: is-json
