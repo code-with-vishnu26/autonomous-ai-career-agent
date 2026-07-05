@@ -625,44 +625,98 @@ by an `is`-identity test: the scorer and the human preview consume the
 literal same string. Anti-stuffing: repetition beyond 3 earns nothing and
 flags; skills-list-only matches earn half credit and flag (C1/C2).
 
-## ⬜ Phase 11 — LeverFormFiller (real)
-Verified DOM evidence in hand (name-only selectors, single name field,
-file-upload-only resume → Phase 9 artifact via `set_input_files`, hCaptcha
-via the existing pause/resume). Depends on Phase 9.
+## 🔄 Phase 11 — LeverFormFiller (real)
+Recorded in **ADR-0035**. Built from ADR-0029's recorded live-DOM evidence:
+single unsplit full-name field (`_split_name`'s known imprecision never
+applies on Lever), `[name='email']`, required file upload satisfied by
+attaching the application's own ADR-0033 DOCX artifact via
+`set_input_files` -- the attach proven against the live input's real
+FileList (injection-verified against a wrong-file swap), typed
+`MissingResumeArtifactError` when no artifact exists or the file is gone
+from disk (Lever has no manual-text path; nothing to upload means no
+honest submission), hCaptcha (`#h-captcha`) through ADR-0020's
+pause/resume machinery unchanged. Live validation against a real posting
+on the user's machine remains the named final check before first real
+use.
 
-## ⬜ Phase 12 — Worldwide + regional discovery expansion
-Tier A free APIs as `OpportunitySource` plugins (Adzuna, Reed, USAJobs,
-Arbeitnow, The Muse, Remotive, RemoteOK, Jooble), Tier B (JSearch)
-cost-evaluated at pre-brief, Tier C (Naukri/Foundit/LinkedIn/Indeed/Seek)
-recorded as manual-only -- no permitted programmatic path, no scrapers.
+## 🔄 Phase 12 — Worldwide + regional discovery expansion
+Recorded in **ADR-0036**. Eight Tier A free APIs built as
+`OpportunitySource` plugins behind the unchanged Protocol (Adzuna incl.
+India, Reed UK via Basic auth, USAJobs header-auth, Arbeitnow, The Muse,
+Remotive, RemoteOK with its attribution obligation carried structurally
+in provenance, Jooble POST with the key never recorded into stored data
+-- injection-verified). `HttpClient.get_json` gained additive `headers`
+(the post_json 4c-slice-2 precedent) for the two header-authenticated
+APIs. Tier B (JSearch) evaluated and not built (paid, overlaps Adzuna);
+Tier C (Naukri/Foundit/LinkedIn/Indeed/Seek) recorded as manual-only --
+no permitted programmatic path exists, no scrapers ever (invariant 7);
+they work today through the source-agnostic opportunity-file handoff.
 
-## ⬜ Phase 13 — Persistence + discover command + Excel
-SQLite `OpportunityRepository` (fidelity-tested), real `career-agent
-discover`, the first `MasterProfile` writer (explicit-confirmation
-LegalStatusSection capture, version-bump semantics consistent with frozen
-snapshots), openpyxl application-tracker export.
+## 🔄 Phase 13 — Persistence + discover command + Excel
+Recorded in **ADR-0037**. `SqliteOpportunityRepository` -- exact-contract
+drop-in (same public-surface guard, same two-key dedup scenarios, plus
+real close/reopen round-trip). Append-only `SqliteApplicationStore` audit
+trail recorded from `apply` (with the real final ATS score via
+`ResumeTailoringResult.ats_report`, additive). Real `career-agent
+discover`: config-wired Tier A sources, per-source failure isolation,
+writes the exact ADR-0026 opportunity-file handoff. First `MasterProfile`
+writer: `capture-legal-status` accepts exactly yes/no/skip -- unrecognized
+input can never become an answer in either polarity (injection-verified),
+unmodeled JSON Resume sections survive byte-identical, frozen snapshots
+on existing Applications never rewritten. `career-agent export`: the
+founding-brief openpyxl tracker (formatted, filterable).
 
-## ⬜ Phase 14 — Decide layer
-Deterministic weighted scorer inside the Planner boundary (ADR-0007),
-reusing Phase 10's keyword machinery; config filters as hard excludes; no
-LLM calls in v1.
+## 🔄 Phase 14 — Decide layer
+Recorded in **ADR-0038**. `DeterministicDecideScorer` inside the Planner
+boundary (ADR-0007's swappable step, first real implementation): profile
+match 50% via Phase 10's unforked keyword machinery (one vocabulary across
+Decide and the ATS gate), source reliability 20%, freshness 20%
+(unknown-date neutral 50), salary-transparency bonus 10% (presence check,
+never a parsed number -- floor filter named absent, no structured salary
+field exists). Config filters are hard excludes with named reasons,
+injection-verified against penalty-conversion; exclusions returned
+visibly (ADR-0013 discipline); ties break by id. `discover --profile`
+prints the ranked summary. Zero LLM calls.
 
-## ⬜ Phase 15 — Learn pillar
-Outcome-recording CLI with full history and rejection stages; per-variant
-funnel counts keyed to prompt/profile versions + ATS score band; raw
-counts only at personal N -- no significance testing or bandit routing
-below N≈50 per variant, small-sample caveat on every report.
+## 🔄 Phase 15 — Learn pillar
+Recorded in **ADR-0039**. `career-agent outcome` (typed kinds only,
+refuses unknown application ids -- no orphan rows) + `career-agent
+report`: per-variant funnels keyed to prompt/profile/ATS band, reading
+the FULL outcome history (an application counts at every stage reached;
+rejection stages are separated facts -- post-interview != at-screen).
+Raw counts only at personal N: no significance testing, no bandit
+routing, mandatory small-sample caveat on every report
+(injection-verified) and a tested absence of prescriptive verdict
+language. MIN_N_FOR_COMPARISON=50 recorded as visible data.
 
-## ⬜ Phase 16 — Notifications + dashboard
-Telegram bot (ntfy.sh fallback) for pause/failure/outcome alerts;
-local-only Streamlit dashboard over the SQLite metrics.
+## 🔄 Phase 16 — Notifications + dashboard
+Recorded in **ADR-0040**. Telegram Bot API notifier (token never logged,
+never stored, elided from error text -- tested) with ntfy.sh as the
+zero-setup fallback, both through the existing HttpClient port;
+NotifyingSubscriber turns HumanActionRequired/ApplicationFailed/
+OutcomeRecorded bus events into pushes under the notify-never-gate rule
+(injection-verified: a propagating delivery failure was caught). Local
+read-only Streamlit dashboard (optional extra): pure, tested
+dashboard_metrics -- discovery by source, truthfulness pass/block, ATS
+distribution, the ADR-0039 funnel with its caveat intact; SQLite read
+directly as a separate read model so the repository contract stays
+add/get.
 
-## ⬜ Phase 17 — Scheduling (LAST, hard-gated)
-May not start until profile-staleness re-verification and email
-send-confirmation both close. Automates discovery + preparation +
-notification ONLY -- confirmation and submission stay human-gated forever.
-Absorbs the deferred 7-series items (multi-tier selection, real OAuth
-`GmailDraftSink`).
+## 🔄 Phase 17 — Scheduling (LAST, hard-gated)
+Recorded in **ADR-0041**. Both recorded gates closed first:
+profile-staleness re-verification (`StaleProfileError` before `prepare()`
+ever runs -- a stale application never produces a confirmable preview;
+injection-verified) and email send-confirmation (`SentMailChecker` port
+with no send capability + `confirm_email_sent`: positive SENT observation
+only, couldn't-check is a typed unknown, never a boolean; the real OAuth
+Gmail checker stays user-validated live work). Scheduling itself is
+`career-agent auto`: one bounded, cron-invokable pass (discover -> rank
+-> tailor+gate -> record -> notify) that **structurally cannot confirm or
+submit** -- no input function, no HumanConfirmation, no Applicator in its
+code, asserted at the co_names level. Confirmation and submission remain
+human-gated forever (ADR-0008) -- a permanent boundary, not a current
+limitation. Deferred: multi-tier selection; real OAuth GmailDraftSink +
+SentMailChecker (live, user-present).
 
 ## ⬜ Phase 18 — Ashby (whenever unblocked)
 Blocked on the user's dev-tools DOM inspection of a live Ashby posting --

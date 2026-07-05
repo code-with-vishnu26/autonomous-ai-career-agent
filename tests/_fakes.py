@@ -39,12 +39,18 @@ class FakeHttpClient:
         self._responses = responses or {}
         self._default = default
         self.calls: list[tuple[str, dict[str, str] | None]] = []
+        self.get_headers: list[dict[str, str] | None] = []
         self.post_calls: list[tuple[str, dict[str, object]]] = []
 
     async def get_json(
-        self, url: str, *, params: dict[str, str] | None = None
+        self,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> object:
         self.calls.append((url, params))
+        self.get_headers.append(headers)
         return self._resolve(url)
 
     async def post_json(

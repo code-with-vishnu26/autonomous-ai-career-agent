@@ -40,7 +40,7 @@ import getpass
 import json
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -59,6 +59,7 @@ from career_agent.core.interfaces import (
 from career_agent.domain.ats_scoring import AtsScoreBelowThresholdError
 from career_agent.domain.models import (
     HumanConfirmation,
+    LegalStatusSection,
     MasterProfile,
     Opportunity,
     SubmissionPreview,
@@ -71,7 +72,16 @@ from career_agent.llm.promptfoo_gate import (
 )
 from career_agent.llm.prompts import TRUTHFULNESS_GATE_PROMPT_VERSION
 from career_agent.llm.semantic_matcher import AnthropicSemanticKeywordMatcher
-from career_agent.storage.profile import ProfileValidationError, load_master_profile
+from career_agent.storage.excel import export_applications
+from career_agent.storage.profile import (
+    ProfileValidationError,
+    load_master_profile,
+    save_legal_status,
+)
+from career_agent.storage.sqlite import (
+    SqliteApplicationStore,
+    SqliteOpportunityRepository,
+)
 
 _YES = {"y", "yes"}
 
@@ -127,6 +137,8 @@ async def _apply_pipeline(
     artifacts_dir: Path | None = None,
     ats_threshold: float | None = None,
     semantic_matcher: SemanticKeywordMatcher | None = None,
+    application_store: SqliteApplicationStore | None = None,
+    notifier: object | None = None,
 ) -> int:
     """Tailor, gate, render, and confirm -- injectable for testing.
 
@@ -140,6 +152,17 @@ async def _apply_pipeline(
     written for an approved resume; ``None`` skips file generation.
     """
     bus = EventBus()
+    if notifier is not None:
+        from career_agent.core.events import (
+            ApplicationFailed,
+            HumanActionRequired,
+            OutcomeRecorded,
+        )
+        from career_agent.integrations.notifications import NotifyingSubscriber
+
+        subscriber = NotifyingSubscriber(notifier)  # notify, never gate
+        for event_type in (HumanActionRequired, ApplicationFailed, OutcomeRecorded):
+            bus.subscribe(event_type, subscriber)
     pipeline = ResumeTailoringPipeline(
         generator,
         gate,
@@ -157,6 +180,14 @@ async def _apply_pipeline(
         print("The ATS score gate refused this application:")
         print(str(exc))
         return 1
+
+    if application_store is not None:
+        application_store.record(
+            result.application,
+            company=opportunity.canonical_company,
+            source=opportunity.source,
+            ats_total=result.ats_report.total if result.ats_report else None,
+        )
 
     if result.submittable is None:
         print("The truthfulness gate rejected this draft:")
@@ -252,7 +283,351 @@ async def run_apply_command(
         artifacts_dir=Path(settings.artifacts_dir),
         ats_threshold=settings.ats_threshold,
         semantic_matcher=semantic_matcher,
+        application_store=SqliteApplicationStore(Path(settings.database_path)),
+        notifier=build_notifier(settings),
     )
+
+
+async def run_discover_command(
+    sources: list[tuple[str, object]],
+    repo: object,
+    *,
+    since: datetime,
+    out_dir: Path,
+    profile: MasterProfile | None = None,
+    scorer: object | None = None,
+) -> int:
+    """Run every configured source, dedup via ``repo``, write handoff files.
+
+    Injectable (sources + repo) for tests; ``build_discovery_sources``
+    wires the real ones from Settings. Each genuinely-new opportunity is
+    written to ``out_dir`` as the exact JSON file format ``apply
+    --opportunity-file`` already consumes (ADR-0026's handoff, produced
+    for real for the first time). A failing source is reported and
+    skipped -- one broken API must not sink the whole run -- but is never
+    silently absent from the summary.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    new_count = 0
+    new_opportunities = []
+    for name, source in sources:
+        try:
+            found = await source.fetch(since)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001 -- per-source isolation
+            print(f"[{name}] FAILED: {exc}")
+            continue
+        fresh = 0
+        for opportunity in found:
+            if await repo.add(opportunity):  # type: ignore[attr-defined]
+                fresh += 1
+                new_count += 1
+                new_opportunities.append(opportunity)
+                handoff = out_dir / f"{opportunity.id}.json"
+                handoff.write_text(opportunity.model_dump_json(indent=2))
+        print(f"[{name}] {len(found)} fetched, {fresh} new")
+    print(f"{new_count} new opportunit{'y' if new_count == 1 else 'ies'} -> {out_dir}")
+    if profile is not None and scorer is not None and new_opportunities:
+        included, excluded = scorer.rank(new_opportunities, profile)  # type: ignore[attr-defined]
+        print("Ranked (Decide layer, ADR-0038):")
+        for opportunity, decision in included[:10]:
+            print(
+                f"  {decision.total:5.1f}  {opportunity.canonical_company}: "
+                f"{opportunity.title}  ({out_dir / (opportunity.id + '.json')})"
+            )
+        for decision in excluded:
+            print(
+                f"  EXCLUDED {decision.opportunity_id}: "
+                f"{'; '.join(decision.exclude_reasons)}"
+            )
+    return 0
+
+
+def build_discovery_sources(settings: Settings) -> list[tuple[str, object]]:
+    """Wire every source whose config is present (composition root)."""
+    from career_agent.integrations.http import HttpxClient
+    from career_agent.plugins.sources.job_boards import (
+        AdzunaSource,
+        ArbeitnowSource,
+        JoobleSource,
+        ReedSource,
+        RemoteOkSource,
+        RemotiveSource,
+        TheMuseSource,
+        UsaJobsSource,
+    )
+
+    client = HttpxClient()
+    keywords = settings.discovery_keywords
+    sources: list[tuple[str, object]] = []
+    if settings.adzuna_app_id and settings.adzuna_app_key:
+        countries = [
+            country.strip()
+            for country in settings.adzuna_countries.split(",")
+            if country.strip()
+        ]
+        sources.append(
+            (
+                "adzuna",
+                AdzunaSource(
+                    app_id=settings.adzuna_app_id,
+                    app_key=settings.adzuna_app_key,
+                    countries=countries,
+                    keywords=keywords,
+                    client=client,
+                ),
+            )
+        )
+    if settings.reed_api_key:
+        sources.append(
+            (
+                "reed",
+                ReedSource(
+                    api_key=settings.reed_api_key, keywords=keywords, client=client
+                ),
+            )
+        )
+    if settings.usajobs_api_key and settings.usajobs_user_agent:
+        sources.append(
+            (
+                "usajobs",
+                UsaJobsSource(
+                    api_key=settings.usajobs_api_key,
+                    user_agent=settings.usajobs_user_agent,
+                    keywords=keywords,
+                    client=client,
+                ),
+            )
+        )
+    if settings.jooble_api_key:
+        sources.append(
+            (
+                "jooble",
+                JoobleSource(
+                    api_key=settings.jooble_api_key,
+                    keywords=keywords,
+                    location=settings.jooble_location,
+                    client=client,
+                ),
+            )
+        )
+    if settings.arbeitnow_enabled:
+        sources.append(("arbeitnow", ArbeitnowSource(client=client)))
+    if settings.themuse_enabled:
+        sources.append(("themuse", TheMuseSource(client=client)))
+    if settings.remotive_enabled:
+        sources.append(("remotive", RemotiveSource(client=client)))
+    if settings.remoteok_enabled:
+        sources.append(("remoteok", RemoteOkSource(client=client)))
+    return sources
+
+
+_LEGAL_ANSWERS = {"yes": True, "no": False, "skip": None}
+
+
+def run_capture_legal_status_command(
+    profile_path: Path, *, input_fn: Callable[[str], str] = input
+) -> int:
+    """The first MasterProfile writer: explicit LegalStatusSection capture.
+
+    No defaults, no inference (ADR-0032's deferred capture flow, built in
+    Phase 13/ADR-0037): only the exact answers "yes"/"no"/"skip" are
+    accepted; anything else -- including empty input -- is treated as
+    "skip", which leaves the fact ``None`` ("never asked"). Unrecognized
+    input can never become an answer, in either polarity.
+    """
+    try:
+        profile = load_master_profile(profile_path)
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ProfileValidationError,
+        ValidationError,
+    ) as exc:
+        print(f"Could not load profile from {profile_path}: {exc}")
+        return 1
+
+    def ask(question: str, current: bool | None) -> bool | None:
+        shown = "not yet captured" if current is None else ("yes" if current else "no")
+        answer = input_fn(f"{question} (currently: {shown}) [yes/no/skip]: ")
+        normalized = answer.strip().lower()
+        if normalized not in _LEGAL_ANSWERS:
+            print(f"Unrecognized answer {answer!r} -- skipping (stays as-is).")
+            return current
+        result = _LEGAL_ANSWERS[normalized]
+        return current if result is None and normalized == "skip" else result
+
+    current = profile.legal_status
+    updated = LegalStatusSection(
+        work_authorized_us=ask(
+            "Are you legally authorized to work in the United States?",
+            current.work_authorized_us,
+        ),
+        requires_sponsorship=ask(
+            "Will you now or in the future require sponsorship?",
+            current.requires_sponsorship,
+        ),
+    )
+    save_legal_status(profile_path, updated)
+    print(
+        f"Saved legal status to {profile_path} "
+        f"(profile version will change on next load)."
+    )
+    return 0
+
+
+def run_export_command(database_path: Path, xlsx_path: Path) -> int:
+    """Export the application audit trail to a formatted Excel workbook."""
+    store = SqliteApplicationStore(database_path)
+    rows = store.all_rows()
+    written = export_applications(rows, xlsx_path)
+    print(f"Wrote {len(rows)} application(s) to {written}")
+    return 0
+
+
+
+_OUTCOME_KINDS = {"viewed", "response", "interview", "offer", "rejection"}
+
+
+def run_outcome_command(
+    database_path: Path,
+    application_id: str,
+    kind: str,
+    stage: str | None,
+) -> int:
+    """Record one real-world outcome for a recorded application (ADR-0039).
+
+    Refuses an unknown application id (a typo must not create an orphan
+    outcome row) and an unknown kind -- typed inputs only, no free text
+    becoming data.
+    """
+    if kind not in _OUTCOME_KINDS:
+        print(f"Unknown outcome kind {kind!r}; expected one of "
+              f"{sorted(_OUTCOME_KINDS)}")
+        return 1
+    store = SqliteApplicationStore(database_path)
+    known_ids = {str(row["id"]) for row in store.all_rows()}
+    if application_id not in known_ids:
+        print(
+            f"No recorded application with id {application_id!r} -- outcomes "
+            f"attach only to real recorded attempts."
+        )
+        return 1
+    store.record_outcome(application_id, kind, stage)
+    print(f"Recorded {kind}" + (f" (stage: {stage})" if stage else "") +
+          f" for {application_id}")
+    return 0
+
+
+def run_report_command(database_path: Path) -> int:
+    """Print the per-variant raw-counts funnel report (ADR-0039)."""
+    from career_agent.agents.learning.funnel import (
+        build_funnel_report,
+        render_funnel_report,
+    )
+
+    store = SqliteApplicationStore(database_path)
+    report = build_funnel_report(store.all_rows(), store.outcome_rows())
+    print(render_funnel_report(report))
+    return 0
+
+
+
+def build_notifier(settings: Settings) -> object | None:
+    """Telegram when configured, else ntfy, else None (composition root)."""
+    from career_agent.integrations.http import HttpxClient
+    from career_agent.integrations.notifications import (
+        NtfyNotifier,
+        TelegramNotifier,
+    )
+
+    if settings.telegram_bot_token and settings.telegram_chat_id:
+        return TelegramNotifier(
+            bot_token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+            client=HttpxClient(),
+        )
+    if settings.ntfy_topic:
+        return NtfyNotifier(topic=settings.ntfy_topic, client=HttpxClient())
+    return None
+
+
+
+async def run_auto_command(
+    sources: list[tuple[str, object]],
+    repo: object,
+    profile: MasterProfile,
+    scorer: object,
+    generator: ResumeGenerator,
+    gate: TruthfulnessGate,
+    *,
+    since: datetime,
+    out_dir: Path,
+    top_n: int = 3,
+    ats_threshold: float | None = None,
+    artifacts_dir: Path | None = None,
+    application_store: SqliteApplicationStore | None = None,
+    notifier: object | None = None,
+) -> int:
+    """One scheduling-safe pass: discover -> rank -> tailor+gate -> notify.
+
+    **Structurally cannot confirm or submit** (Phase 17, ADR-0041): this
+    function takes no input function, constructs no ``HumanConfirmation``,
+    and calls no ``Applicator`` -- there is no code path from here to a
+    submission, which is what makes it safe to run from cron. Both gates
+    (truthfulness, ATS) run in full on every prepared application; every
+    outcome ends in a notification and a handoff file awaiting the
+    human's own ``career-agent apply`` confirmation.
+    """
+    await run_discover_command(
+        sources, repo, since=since, out_dir=out_dir
+    )
+    handoffs = sorted(out_dir.glob("*.json"))
+    opportunities = [
+        Opportunity.model_validate(json.loads(path.read_text()))
+        for path in handoffs
+    ]
+    included, _excluded = scorer.rank(opportunities, profile)  # type: ignore[attr-defined]
+    prepared = 0
+    for opportunity, decision in included[:top_n]:
+        bus = EventBus()
+        pipeline = ResumeTailoringPipeline(
+            generator,
+            gate,
+            bus,
+            artifacts_dir=artifacts_dir,
+            ats_threshold=ats_threshold,
+        )
+        try:
+            result = await pipeline.run(opportunity, profile)
+        except (MissingSummaryError, AtsScoreBelowThresholdError) as exc:
+            print(f"[{opportunity.id}] not prepared: {exc}")
+            continue
+        if application_store is not None:
+            application_store.record(
+                result.application,
+                company=opportunity.canonical_company,
+                source=opportunity.source,
+                ats_total=result.ats_report.total if result.ats_report else None,
+            )
+        if result.submittable is None:
+            print(f"[{opportunity.id}] truthfulness gate rejected the draft")
+            continue
+        prepared += 1
+        message = (
+            f"{opportunity.canonical_company}: {opportunity.title} "
+            f"(rank {decision.total:.1f}) is tailored, gated, and waiting "
+            f"for YOUR confirmation: career-agent apply --opportunity-file "
+            f"{out_dir / (opportunity.id + '.json')}"
+        )
+        print(message)
+        if notifier is not None:
+            try:
+                await notifier.notify("Application prepared", message)  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001 -- notify, never gate
+                print(f"(notification not delivered: {exc})")
+    print(f"{prepared} application(s) prepared; none submitted -- submission "
+          f"is always your explicit act.")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -289,7 +664,112 @@ def main(argv: list[str] | None = None) -> None:
         help="Path to a JSON file describing the Opportunity to apply to.",
     )
 
+    discover_parser = subparsers.add_parser(
+        "discover",
+        help="Poll every configured source, dedup, persist, and write "
+        "opportunity-file handoffs apply can consume.",
+    )
+    discover_parser.add_argument("--since-days", type=int, default=7)
+    discover_parser.add_argument(
+        "--out-dir", type=Path, default=Path("data/opportunities")
+    )
+    discover_parser.add_argument(
+        "--profile",
+        type=Path,
+        default=None,
+        help="Optional profile path: enables the ranked summary (ADR-0038).",
+    )
+
+    capture_parser = subparsers.add_parser(
+        "capture-legal-status",
+        help="Explicitly capture work-authorization/sponsorship answers "
+        "into your profile (yes/no/skip -- skip leaves 'never asked').",
+    )
+    capture_parser.add_argument("--profile", type=Path, required=True)
+
+    outcome_parser = subparsers.add_parser(
+        "outcome", help="Record a real-world outcome for an application."
+    )
+    outcome_parser.add_argument("application_id")
+    outcome_parser.add_argument(
+        "kind", choices=sorted(_OUTCOME_KINDS)
+    )
+    outcome_parser.add_argument("--stage", default=None)
+
+    subparsers.add_parser(
+        "report", help="Per-variant funnel counts (raw counts, ADR-0039)."
+    )
+
+    export_parser = subparsers.add_parser(
+        "export", help="Export the application tracker to an Excel workbook."
+    )
+    export_parser.add_argument(
+        "--xlsx", type=Path, default=Path("data/applications.xlsx")
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "discover":
+        from career_agent.agents.planner.decide import (
+            DecideFilters,
+            DeterministicDecideScorer,
+        )
+
+        settings = Settings()
+        since = datetime.now(UTC) - timedelta(days=args.since_days)
+        profile = (
+            load_master_profile(args.profile) if args.profile is not None else None
+        )
+        scorer = DeterministicDecideScorer(
+            DecideFilters(
+                blacklist_companies=[
+                    c.strip()
+                    for c in settings.decide_blacklist_companies.split(",")
+                    if c.strip()
+                ],
+                allowed_locations=[
+                    c.strip()
+                    for c in settings.decide_allowed_locations.split(",")
+                    if c.strip()
+                ],
+                remote_only=settings.decide_remote_only,
+            )
+        )
+        exit_code = asyncio.run(
+            run_discover_command(
+                build_discovery_sources(settings),
+                SqliteOpportunityRepository(Path(settings.database_path)),
+                since=since,
+                out_dir=args.out_dir,
+                profile=profile,
+                scorer=scorer,
+            )
+        )
+        raise SystemExit(exit_code)
+
+    if args.command == "capture-legal-status":
+        raise SystemExit(run_capture_legal_status_command(args.profile))
+
+    if args.command == "outcome":
+        settings = Settings()
+        raise SystemExit(
+            run_outcome_command(
+                Path(settings.database_path),
+                args.application_id,
+                args.kind,
+                args.stage,
+            )
+        )
+
+    if args.command == "report":
+        settings = Settings()
+        raise SystemExit(run_report_command(Path(settings.database_path)))
+
+    if args.command == "export":
+        settings = Settings()
+        raise SystemExit(
+            run_export_command(Path(settings.database_path), args.xlsx)
+        )
 
     if args.command == "apply":
         exit_code = asyncio.run(

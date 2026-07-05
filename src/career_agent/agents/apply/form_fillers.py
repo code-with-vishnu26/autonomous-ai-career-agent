@@ -46,6 +46,7 @@ other, not just until selectors are known.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from career_agent.domain.models import SubmittableApplication
@@ -123,37 +124,81 @@ class GreenhouseFormFiller:
         await page.fill("#resume_text", summary)
 
 
-class LeverFormFiller:
-    """Stub -- Lever's real form selectors are not yet verified (ADR-0028).
+class MissingResumeArtifactError(Exception):
+    """Lever's resume field is a required file upload, and there is no file.
 
-    Lever's own documentation confirms "Full Name" and "Email" are the only
-    two fields guaranteed present; everything else (phone, location,
-    pronouns, resume, custom questions, EEO questions) is independently
-    configurable per company. Filling this in with guessed selectors would
-    be exactly the unverified assumption this project has repeatedly
-    refused to build on.
+    Raised before anything is filled (Phase 11, ADR-0035): Lever has no
+    manual-text path at all, so an application whose ``TailoredResume``
+    carries no DOCX :class:`~career_agent.domain.models.ResumeArtifact`
+    (or whose recorded artifact file no longer exists on disk) cannot be
+    submitted honestly through this platform. Typed and named -- the fix
+    is "generate the resume files (Phase 9's ``artifacts_dir``)", which
+    this message says plainly, never a silent skip of a required upload.
+    """
+
+
+class LeverFormFiller:
+    """The real Lever filler (Phase 11, ADR-0035), built on ADR-0029's evidence.
+
+    Every selector here comes from the recorded human dev-tools inspection
+    of a live jobs.lever.co posting (ADR-0029): identity fields have no
+    ``id``, only ``name``; the name field is a **single** full-name input
+    (never split -- the opposite of Greenhouse's first/last pair, and one
+    less place for the ``_split_name`` heuristic's known imprecision to
+    leak); the resume is a **required file upload** with no manual-text
+    alternative, satisfied by attaching Phase 9's canonical DOCX artifact
+    via Playwright ``set_input_files``; the challenge is real hCaptcha
+    markup (``#h-captcha``), handled by the existing pause/resume
+    machinery -- a human solves it, never this project (no solving
+    services, ever). Live validation against a real posting on the user's
+    machine remains the final check before a real submission, per the
+    standing offline-fixture-first discipline.
     """
 
     ats_kind = "lever"
-    known_field_selectors = frozenset()
-    # Real Lever markup is confirmed (name/email use `[name='...']`, a
-    # hidden hCaptcha submit target) but this stub raises before either
-    # selector is ever used -- left empty rather than guessed, so a future
-    # code path that somehow reached them would fail loudly (an empty
-    # Playwright selector errors) instead of silently matching nothing.
-    challenge_selector = ""
-    submit_selector = ""
+    known_field_selectors = frozenset(
+        {"[name='name']", "[name='email']", "[name='resume']"}
+    )
+    challenge_selector = "#h-captcha"
+    submit_selector = "#btn-submit"
 
     async def fill_identity_and_resume(
         self, page: Page, application: SubmittableApplication
     ) -> None:
-        """Always raises -- Lever's real selectors are not yet verified."""
-        raise FormFillerNotImplementedError(
-            "Lever's real form field selectors have not been verified "
-            "against a live posting -- see ADR-0028. Inspect a handful of "
-            "real jobs.lever.co postings and update this class before "
-            "using it for a real submission."
+        """Fill Lever's identity fields and attach the real resume file.
+
+        Raises :class:`MissingResumeArtifactError` before touching the page
+        if the application carries no DOCX artifact or the file is gone
+        from disk -- a required upload with nothing to upload is a
+        precondition failure the human must fix, not something to submit
+        around.
+        """
+        app = application.application
+        docx = next(
+            (
+                artifact
+                for artifact in app.resume.artifacts
+                if artifact.format == "docx"
+            ),
+            None,
         )
+        if docx is None:
+            raise MissingResumeArtifactError(
+                f"application {app.id!r} carries no DOCX resume artifact -- "
+                f"Lever's resume field is a required file upload with no "
+                f"manual-text path. Run the pipeline with artifacts_dir set "
+                f"(Phase 9, ADR-0033) so a real file exists to attach."
+            )
+        docx_path = Path(docx.path)
+        if not docx_path.exists():
+            raise MissingResumeArtifactError(
+                f"resume artifact {docx.path!r} (recorded for application "
+                f"{app.id!r}) no longer exists on disk -- regenerate the "
+                f"resume files before submitting through Lever."
+            )
+        await page.fill("[name='name']", app.applicant.name)
+        await page.fill("[name='email']", app.applicant.email)
+        await page.set_input_files("[name='resume']", str(docx_path))
 
 
 class AshbyFormFiller:
