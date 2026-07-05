@@ -678,11 +678,16 @@ injection-verified against penalty-conversion; exclusions returned
 visibly (ADR-0013 discipline); ties break by id. `discover --profile`
 prints the ranked summary. Zero LLM calls.
 
-## ⬜ Phase 15 — Learn pillar
-Outcome-recording CLI with full history and rejection stages; per-variant
-funnel counts keyed to prompt/profile versions + ATS score band; raw
-counts only at personal N -- no significance testing or bandit routing
-below N≈50 per variant, small-sample caveat on every report.
+## 🔄 Phase 15 — Learn pillar
+Recorded in **ADR-0039**. `career-agent outcome` (typed kinds only,
+refuses unknown application ids -- no orphan rows) + `career-agent
+report`: per-variant funnels keyed to prompt/profile/ATS band, reading
+the FULL outcome history (an application counts at every stage reached;
+rejection stages are separated facts -- post-interview != at-screen).
+Raw counts only at personal N: no significance testing, no bandit
+routing, mandatory small-sample caveat on every report
+(injection-verified) and a tested absence of prescriptive verdict
+language. MIN_N_FOR_COMPARISON=50 recorded as visible data.
 
 ## ⬜ Phase 16 — Notifications + dashboard
 Telegram bot (ntfy.sh fallback) for pause/failure/outcome alerts;
