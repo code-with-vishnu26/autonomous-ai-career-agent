@@ -329,3 +329,99 @@ async def test_full_rehearsal_prepares_without_ever_submitting(
     # co_names inspection; this test additionally proves no Applicator/
     # HumanConfirmation object was ever even constructed along the way.
     assert "submitted" not in " ".join(msg for _, msg in notifier.sent)
+
+
+async def test_opportunity_with_a_prior_recorded_attempt_is_skipped(
+    tmp_path: Path,
+) -> None:
+    """Phase 22 / ADR-0048: an unattended cron run never re-tailors an
+    opportunity it already prepared or submitted in a previous run."""
+    from career_agent.domain.models import (
+        Application,
+        BasicsSection,
+        LegalStatusSection,
+        Statement,
+        TailoredContent,
+        TailoredResume,
+        TruthfulnessResult,
+    )
+
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer with strong API experience."
+
+    sources = [("boardA", _FakeSource([_opportunity("opp-1"), _opportunity("opp-2")]))]
+    repo = SqliteOpportunityRepository(tmp_path / "db.sqlite")
+    out_dir = tmp_path / "opps"
+    scorer = DeterministicDecideScorer()
+
+    drafted = DraftedTailoring(
+        work=[
+            TailoredWorkEntry(
+                source_entry_id="work-techco",
+                position="Software Engineer",
+                highlights=["Built REST APIs serving 2M requests/day"],
+            )
+        ]
+    )
+    generator = LLMResumeGenerator(FakeContentDrafter(result=drafted))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            verdicts={
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    application_store = SqliteApplicationStore(tmp_path / "db.sqlite")
+    prior_resume = TailoredResume(
+        id="resume-prior",
+        opportunity_id="opp-1",
+        profile_version="profile-v1",
+        content=TailoredContent(summary="Engineer."),
+        truthfulness=TruthfulnessResult(
+            profile_version="profile-v1",
+            approved=True,
+            statements=[
+                Statement(text="x", evidence=None, confidence=1, verified=True)
+            ],
+            prompt_version="test-v1",
+        ),
+    )
+    application_store.record(
+        Application(
+            id="prior-app",
+            opportunity_id="opp-1",
+            resume=prior_resume,
+            applicant=BasicsSection(name="Ada", email="ada@example.com"),
+            legal_status=LegalStatusSection(),
+            status="submitted",
+        ),
+        company="acme",
+        source="ats_api",
+        ats_total=None,
+    )
+
+    exit_code = await run_auto_command(
+        sources,
+        repo,
+        profile,
+        scorer,
+        generator,
+        gate,
+        since=datetime(2026, 1, 1, tzinfo=UTC),
+        out_dir=out_dir,
+        top_n=3,
+        application_store=application_store,
+    )
+
+    assert exit_code == 0
+    recorded_opportunity_ids = {
+        row["opportunity_id"] for row in application_store.all_rows()
+    }
+    # opp-1 already had a recorded attempt and must not be re-tailored;
+    # only opp-2's fresh attempt is added.
+    assert recorded_opportunity_ids == {"opp-1", "opp-2"}
+    new_rows = [row for row in application_store.all_rows() if row["id"] != "prior-app"]
+    assert len(new_rows) == 1
+    assert new_rows[0]["opportunity_id"] == "opp-2"

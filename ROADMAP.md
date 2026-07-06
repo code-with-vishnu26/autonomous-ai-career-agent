@@ -800,6 +800,34 @@ gap analysis, and Groq truthfulness audit that produced this list.
 
 ---
 
+## Production reliability track (Phase 22, evidence-gated)
+
+A repository-reality audit for production reliability/recovery/
+resumability/observability found this project's actual architecture is
+single-process, single-user, at-most-once (the event bus, `core/bus.py`,
+says so explicitly), with no retry/backoff, checkpoint, transaction, or
+observability-framework concept anywhere -- and none of that is missing by
+oversight: no evidence in this repository (its real scale is "tens of
+applications, not thousands," ADR-0039) justifies adding any of it yet.
+
+- ✅ **Application-attempt idempotency guard -- ADR-0048.** The one concrete,
+  safety-relevant gap the audit found: nothing previously stopped
+  `career-agent apply`/`auto` from tailoring and (with two separate human
+  confirmations) submitting to the same opportunity twice across separate
+  invocations -- opportunity-level dedup (ADR-0014) never covered the
+  application-*attempt* layer, and `Application.id` is a fresh UUID every
+  pipeline run. `SqliteApplicationStore.prior_attempt_status()` plus a
+  refuse-outright guard in both commands closes this, skipping only
+  `"rejected"` (no-side-effect) priors, never auto-retrying.
+- **Formal execution state machine, automatic retry/backoff, a checkpoint/
+  resumability journal, a `SUBMISSION_UNCERTAIN` ambiguous state, a new
+  observability framework.** All explicitly evaluated and NOT built this
+  phase -- see ADR-0048's "What was deliberately not built" section for the
+  evidence behind each. Revisit only if a concrete, observed failure mode
+  (not a hypothetical one) shows one of these is actually needed.
+
+---
+
 ## Deferred work (named, not forgotten)
 
 Items explicitly scoped out of the numbered phases above, with a recorded reason

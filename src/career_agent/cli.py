@@ -165,7 +165,26 @@ async def _apply_pipeline(
 
     ``artifacts_dir`` (Phase 9, ADR-0033): where real DOCX/PDF files are
     written for an approved resume; ``None`` skips file generation.
+
+    ``application_store`` (Phase 22, ADR-0048), when given, is consulted
+    *before* tailoring even starts: an opportunity with an existing
+    non-``"rejected"`` application record is refused outright, since a
+    fresh attempt risks a duplicate real-world submission. This tool never
+    decides that risk is acceptable on the user's behalf -- resolving it
+    (or removing the stale record) is an explicit human act.
     """
+    if application_store is not None:
+        prior_status = application_store.prior_attempt_status(opportunity.id)
+        if prior_status is not None:
+            print(
+                f"Refusing to tailor: opportunity {opportunity.id!r} already "
+                f"has a recorded application attempt with status "
+                f"{prior_status!r}. Applying again could create a duplicate "
+                f"real-world submission -- this is never retried "
+                f"automatically. If the prior record is stale or wrong, "
+                f"resolve it directly in the application store first."
+            )
+            return 1
     bus = EventBus()
     if notifier is not None:
         from career_agent.core.events import (
@@ -809,6 +828,12 @@ async def run_auto_command(
     (truthfulness, ATS) run in full on every prepared application; every
     outcome ends in a notification and a handoff file awaiting the
     human's own ``career-agent apply`` confirmation.
+
+    ``application_store`` (Phase 22, ADR-0048), when given, also skips any
+    opportunity that already has a recorded non-``"rejected"`` application
+    attempt -- an unattended cron run must never re-tailor (and risk a
+    human later re-confirming a duplicate submission for) an opportunity
+    it already prepared or submitted in a previous run.
     """
     await run_discover_command(
         sources, repo, since=since, out_dir=out_dir
@@ -821,6 +846,15 @@ async def run_auto_command(
     included, _excluded = scorer.rank(opportunities, profile)  # type: ignore[attr-defined]
     prepared = 0
     for opportunity, decision in included[:top_n]:
+        if application_store is not None:
+            prior_status = application_store.prior_attempt_status(opportunity.id)
+            if prior_status is not None:
+                print(
+                    f"[{opportunity.id}] skipped: already has a recorded "
+                    f"application attempt (status={prior_status!r}) -- "
+                    f"never re-attempted automatically (Phase 22, ADR-0048)"
+                )
+                continue
         bus = EventBus()
         pipeline = ResumeTailoringPipeline(
             generator,

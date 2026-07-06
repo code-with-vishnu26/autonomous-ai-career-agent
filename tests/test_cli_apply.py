@@ -151,6 +151,75 @@ async def test_missing_summary_exits_nonzero_without_crashing() -> None:
     assert exit_code == 1
 
 
+async def test_prior_non_rejected_attempt_refuses_to_tailor_again(
+    tmp_path: Path,
+) -> None:
+    """Phase 22 / ADR-0048: never silently re-attempt a recorded application."""
+    from career_agent.domain.models import (
+        Application,
+        BasicsSection,
+        LegalStatusSection,
+        Opportunity,
+        Statement,
+        TailoredContent,
+        TailoredResume,
+        TruthfulnessResult,
+    )
+    from career_agent.storage.sqlite import SqliteApplicationStore
+
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            {
+                "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    store = SqliteApplicationStore(tmp_path / "db.sqlite")
+    prior_resume = TailoredResume(
+        id="resume-prior",
+        opportunity_id=opportunity.id,
+        profile_version="profile-v1",
+        content=TailoredContent(summary="Engineer."),
+        truthfulness=TruthfulnessResult(
+            profile_version="profile-v1",
+            approved=True,
+            statements=[
+                Statement(text="x", evidence=None, confidence=1, verified=True)
+            ],
+            prompt_version="test-v1",
+        ),
+    )
+    prior_application = Application(
+        id="prior-app",
+        opportunity_id=opportunity.id,
+        resume=prior_resume,
+        applicant=BasicsSection(name="Ada", email="ada@example.com"),
+        legal_status=LegalStatusSection(),
+        status="submitted",
+    )
+    store.record(
+        prior_application, company="acme", source="ats_api", ats_total=None
+    )
+
+    def _fail_if_called(_: str) -> str:
+        raise AssertionError("must refuse before ever tailoring")
+
+    exit_code = await _apply_pipeline(
+        _honest_profile(),
+        opportunity,
+        generator,
+        gate,
+        input_fn=_fail_if_called,
+        application_store=store,
+    )
+    assert exit_code == 1
+
+
 # ---------------------------------------------------------------------------
 # run_apply_command -- file loading and promptfoo-gate ordering, still offline
 # ---------------------------------------------------------------------------
