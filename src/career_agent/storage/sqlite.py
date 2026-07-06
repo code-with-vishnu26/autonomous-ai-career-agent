@@ -21,16 +21,25 @@ application row, the same never-mutate-history discipline as
 Plain stdlib ``sqlite3``, synchronous under the async methods: this is a
 single-user, local, personal-scale store -- an async driver would add a
 dependency for contention that cannot occur here. Documented, not hidden.
+
+``SqliteRunJournal`` (Phase 23, ADR-0049) is an append-only execution
+journal: one row per stage-transition event for one ``run_id``, used to
+reconstruct what a ``career-agent apply``/``auto`` invocation actually did
+-- for auditability and crash forensics, not as a safety gate (see
+``domain/journal.py`` and ADR-0049 for why a full transition-validated
+state machine is not justified yet).
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from career_agent.domain.identity import canonical_fingerprint
+from career_agent.domain.journal import RunEvent
 from career_agent.domain.models import Application, Opportunity
 
 _OPPORTUNITY_SCHEMA = """
@@ -66,6 +75,23 @@ CREATE TABLE IF NOT EXISTS outcomes (
     stage TEXT,
     recorded_at TEXT NOT NULL
 );
+"""
+
+
+_JOURNAL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS run_journal (
+    event_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    sequence_no INTEGER NOT NULL,
+    stage TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    outcome TEXT,
+    attempt_no INTEGER NOT NULL,
+    occurred_at TEXT NOT NULL,
+    metadata TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_run_journal_run_seq
+    ON run_journal (run_id, sequence_no);
 """
 
 
@@ -223,3 +249,93 @@ class SqliteApplicationStore:
                 " ORDER BY recorded_at"
             ).fetchall()
         return [dict(row) for row in rows]
+
+
+class SqliteRunJournal:
+    """Append-only execution journal: one row per run's stage transitions.
+
+    Only ``append``/``history`` are public -- there is no update or delete
+    method, so a prior event cannot be mutated through this class's own
+    API (append-only by construction, not just convention). Sequence
+    numbers are assigned per ``run_id``, monotonically, by this class
+    alone (never supplied by the caller): ``MAX(sequence_no) + 1`` is read
+    and the new row inserted inside the same connection, matching the
+    single-process, single-writer concurrency assumption every other
+    store in this module already documents.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_JOURNAL_SCHEMA)
+
+    def append(
+        self,
+        run_id: str,
+        stage: str,
+        event_type: str,
+        *,
+        outcome: str | None = None,
+        attempt_no: int = 1,
+        metadata: dict[str, str] | None = None,
+    ) -> RunEvent:
+        """Append one immutable event for ``run_id``; returns it as recorded."""
+        event_id = str(uuid.uuid4())
+        occurred_at = datetime.now(UTC)
+        recorded_metadata = metadata or {}
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT MAX(sequence_no) AS m FROM run_journal WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            sequence_no = (row["m"] or 0) + 1
+            connection.execute(
+                "INSERT INTO run_journal (event_id, run_id, sequence_no, stage,"
+                " event_type, outcome, attempt_no, occurred_at, metadata)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    event_id,
+                    run_id,
+                    sequence_no,
+                    stage,
+                    event_type,
+                    outcome,
+                    attempt_no,
+                    occurred_at.isoformat(),
+                    json.dumps(recorded_metadata),
+                ),
+            )
+        return RunEvent(
+            event_id=event_id,
+            run_id=run_id,
+            sequence_no=sequence_no,
+            stage=stage,
+            event_type=event_type,
+            outcome=outcome,
+            attempt_no=attempt_no,
+            occurred_at=occurred_at,
+            metadata=recorded_metadata,
+        )
+
+    def history(self, run_id: str) -> list[RunEvent]:
+        """Every event for ``run_id``, in sequence order (empty if unknown)."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT * FROM run_journal WHERE run_id = ? ORDER BY sequence_no",
+                (run_id,),
+            ).fetchall()
+        return [
+            RunEvent(
+                event_id=row["event_id"],
+                run_id=row["run_id"],
+                sequence_no=row["sequence_no"],
+                stage=row["stage"],
+                event_type=row["event_type"],
+                outcome=row["outcome"],
+                attempt_no=row["attempt_no"],
+                occurred_at=datetime.fromisoformat(row["occurred_at"]),
+                metadata=json.loads(row["metadata"]),
+            )
+            for row in rows
+        ]

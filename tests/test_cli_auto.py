@@ -38,6 +38,7 @@ from career_agent.domain.models import (
 from career_agent.storage.sqlite import (
     SqliteApplicationStore,
     SqliteOpportunityRepository,
+    SqliteRunJournal,
 )
 from tests._fakes import FakeClaimVerifier, FakeContentDrafter
 from tests.agents._profile_fixture import sample_master_profile
@@ -425,3 +426,182 @@ async def test_opportunity_with_a_prior_recorded_attempt_is_skipped(
     new_rows = [row for row in application_store.all_rows() if row["id"] != "prior-app"]
     assert len(new_rows) == 1
     assert new_rows[0]["opportunity_id"] == "opp-2"
+
+
+async def test_run_journal_records_a_skip_and_a_prepared_opportunity(
+    tmp_path: Path,
+) -> None:
+    """Phase 23 / ADR-0049: one run_id for the whole pass, with a
+    reconstructable per-opportunity outcome and a final RUN_COMPLETED."""
+    import sqlite3
+
+    from career_agent.domain.models import (
+        Application,
+        BasicsSection,
+        LegalStatusSection,
+        Statement,
+        TailoredContent,
+        TailoredResume,
+        TruthfulnessResult,
+    )
+    from career_agent.storage.sqlite import SqliteRunJournal
+
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer with strong API experience."
+    sources = [("boardA", _FakeSource([_opportunity("opp-1"), _opportunity("opp-2")]))]
+    db_path = tmp_path / "db.sqlite"
+    repo = SqliteOpportunityRepository(db_path)
+    out_dir = tmp_path / "opps"
+    scorer = DeterministicDecideScorer()
+    drafted = DraftedTailoring(
+        work=[
+            TailoredWorkEntry(
+                source_entry_id="work-techco",
+                position="Software Engineer",
+                highlights=["Built REST APIs serving 2M requests/day"],
+            )
+        ]
+    )
+    generator = LLMResumeGenerator(FakeContentDrafter(result=drafted))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            verdicts={
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    application_store = SqliteApplicationStore(db_path)
+    prior_resume = TailoredResume(
+        id="resume-prior",
+        opportunity_id="opp-1",
+        profile_version="profile-v1",
+        content=TailoredContent(summary="Engineer."),
+        truthfulness=TruthfulnessResult(
+            profile_version="profile-v1",
+            approved=True,
+            statements=[
+                Statement(text="x", evidence=None, confidence=1, verified=True)
+            ],
+            prompt_version="test-v1",
+        ),
+    )
+    application_store.record(
+        Application(
+            id="prior-app",
+            opportunity_id="opp-1",
+            resume=prior_resume,
+            applicant=BasicsSection(name="Ada", email="ada@example.com"),
+            legal_status=LegalStatusSection(),
+            status="submitted",
+        ),
+        company="acme",
+        source="ats_api",
+        ats_total=None,
+    )
+    journal = SqliteRunJournal(db_path)
+
+    exit_code = await run_auto_command(
+        sources,
+        repo,
+        profile,
+        scorer,
+        generator,
+        gate,
+        since=datetime(2026, 1, 1, tzinfo=UTC),
+        out_dir=out_dir,
+        top_n=3,
+        application_store=application_store,
+        run_journal=journal,
+    )
+    assert exit_code == 0
+
+    connection = sqlite3.connect(db_path)
+    rows = connection.execute(
+        "SELECT run_id, stage, event_type, outcome FROM run_journal"
+        " ORDER BY sequence_no"
+    ).fetchall()
+    connection.close()
+    run_ids = {row[0] for row in rows}
+    assert len(run_ids) == 1
+    event_types = [row[2] for row in rows]
+    assert event_types == [
+        "RUN_STARTED",
+        "DISCOVERY_COMPLETED",
+        "OPPORTUNITY_SKIPPED",
+        "APPLICATION_PREPARED",
+        "RUN_COMPLETED",
+    ]
+    skipped_row = rows[event_types.index("OPPORTUNITY_SKIPPED")]
+    assert skipped_row[3] == "submitted"  # the prior status, as evidence
+    assert rows[-1][3] == "prepared=1"
+
+
+async def test_restarting_auto_gets_a_new_run_id_and_no_duplicate_records(
+    tmp_path: Path,
+) -> None:
+    """Simulates a crash-and-restart: a second, independent `auto` invocation
+    against the same database gets its own fresh run_id (RQ8/P9 -- restart
+    does not collide with or mutate the previous run's journal), while
+    ADR-0048's guard still prevents the already-recorded opportunity from
+    being duplicated."""
+    import sqlite3
+
+    profile = sample_master_profile()
+    profile.basics.summary = "Backend engineer with strong API experience."
+    sources = [("boardA", _FakeSource([_opportunity("opp-1")]))]
+    db_path = tmp_path / "db.sqlite"
+    out_dir = tmp_path / "opps"
+    scorer = DeterministicDecideScorer()
+    drafted = DraftedTailoring(
+        work=[
+            TailoredWorkEntry(
+                source_entry_id="work-techco",
+                position="Software Engineer",
+                highlights=["Built REST APIs serving 2M requests/day"],
+            )
+        ]
+    )
+    generator = LLMResumeGenerator(FakeContentDrafter(result=drafted))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            verdicts={
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    application_store = SqliteApplicationStore(db_path)
+    journal = SqliteRunJournal(db_path)
+
+    for _ in range(2):  # the "restart": run auto twice against the same DB
+        await run_auto_command(
+            sources,
+            SqliteOpportunityRepository(db_path),
+            profile,
+            scorer,
+            generator,
+            gate,
+            since=datetime(2026, 1, 1, tzinfo=UTC),
+            out_dir=out_dir,
+            top_n=3,
+            application_store=application_store,
+            run_journal=journal,
+        )
+
+    # ADR-0048: only one application row ever recorded for opp-1.
+    assert len(application_store.all_rows()) == 1
+
+    connection = sqlite3.connect(db_path)
+    run_ids = [
+        row[0]
+        for row in connection.execute(
+            "SELECT DISTINCT run_id FROM run_journal"
+        ).fetchall()
+    ]
+    connection.close()
+    # Two independent invocations produced two independent run_ids -- a
+    # restart never collides with or extends the previous run's history.
+    assert len(run_ids) == 2
