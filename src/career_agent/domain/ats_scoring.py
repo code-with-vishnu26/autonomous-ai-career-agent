@@ -375,6 +375,77 @@ def score_resume(
     )
 
 
+class KeywordSensitivity(BaseModel):
+    """One missing keyword's exact marginal effect on ``total`` (read-only).
+
+    Diagnostic only -- reports what the score *would* become if a
+    currently-missing keyword were genuinely, truthfully covered. Never
+    feeds back into scoring, the retailor loop, the gap report, or the
+    drafter: it reads an already-computed :class:`AtsScoreReport` and
+    answers "how far, and from what," nothing more. Deliberately
+    orthogonal to the GENUINE/SURFACEABLE split (case B1) -- a GENUINE
+    keyword's number here is exactly as reportable to the human as a
+    SURFACEABLE one, since this says nothing about whether closing the
+    gap is achievable, only how much it would matter numerically if it
+    were.
+    """
+
+    keyword: str
+    kind: Literal["hard", "soft"]
+    #: Exact increase in ``report.total`` if this keyword alone were
+    #: credited at full (contextual) credit -- see :func:`keyword_sensitivity`.
+    marginal_points: float
+    #: Whether crediting just this one keyword would cross ``threshold``,
+    #: holding every hard format failure fixed (case A2 still applies).
+    would_flip_pass: bool
+
+
+def keyword_sensitivity(report: AtsScoreReport) -> list[KeywordSensitivity]:
+    """Rank missing keywords by their exact marginal contribution to ``total``.
+
+    Pure arithmetic derived from :func:`score_resume`'s own linear scoring
+    formula (``total = _COVERAGE_WEIGHT * coverage + ...``) -- not a new
+    model or a re-estimate, a closed-form partial effect of crediting one
+    missing keyword, holding everything else fixed. ``possible`` (the
+    coverage denominator) is reconstructed from ``report.matched`` and
+    ``report.missing_keywords`` using the same weight constants
+    :func:`score_resume` used to compute ``report.keyword_coverage`` in
+    the first place, so this never derives a *different* number than the
+    report already reports -- it explains the one it has.
+
+    Returns ``[]`` if the report already passed (there is nothing to be
+    sensitive to) or there are no missing keywords. Sorted by
+    ``marginal_points`` descending -- the single highest-leverage gap
+    first, which is what "how much can score change from each safe edit"
+    (ADR-0034's sensitivity-analysis extension) actually asks for.
+    """
+    if report.passed or not report.missing_keywords:
+        return []
+    possible = sum(
+        _HARD_WEIGHT if match.kind == "hard" else _SOFT_WEIGHT
+        for match in report.matched
+    ) + sum(keyword.weight for keyword in report.missing_keywords)
+    if possible == 0:
+        return []
+    results: list[KeywordSensitivity] = []
+    for keyword in report.missing_keywords:
+        marginal_points = _COVERAGE_WEIGHT * (100.0 * keyword.weight / possible)
+        would_flip = (
+            report.total + marginal_points >= report.threshold
+            and not report.format_hard_failures
+        )
+        results.append(
+            KeywordSensitivity(
+                keyword=keyword.keyword,
+                kind=keyword.kind,
+                marginal_points=marginal_points,
+                would_flip_pass=would_flip,
+            )
+        )
+    results.sort(key=lambda item: item.marginal_points, reverse=True)
+    return results
+
+
 def verified_semantic_keywords(
     claims: list[SemanticKeywordClaim],
     missing_keywords: list[MissingKeyword],

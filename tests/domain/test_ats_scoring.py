@@ -10,12 +10,16 @@ and QuestionAnswerer (ADR-0031).
 
 from __future__ import annotations
 
+import pytest
+
 from career_agent.domain.ats_scoring import (
     AtsScoreReport,
+    KeywordMatch,
     MissingKeyword,
     SemanticKeywordClaim,
     classify_missing_keywords,
     extract_jd_keywords,
+    keyword_sensitivity,
     score_resume,
     verified_semantic_keywords,
 )
@@ -234,3 +238,128 @@ def test_extract_jd_keywords_finds_taxonomy_skills_hard_first():
     assert {"Python", "Django", "PostgreSQL", "Docker", "Kubernetes"} <= set(names)
     kinds = [keyword.kind for keyword in keywords]
     assert kinds == sorted(kinds, key=lambda kind: kind != "hard")  # hard first
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity analysis: exact marginal contribution of each missing keyword
+# ---------------------------------------------------------------------------
+
+
+def test_sensitivity_is_empty_when_the_report_already_passed():
+    """Nothing to be sensitive to -- the gate already passed."""
+    report = _report(
+        total=80.0,
+        threshold=75.0,
+        missing_keywords=[MissingKeyword(keyword="AWS", kind="hard")],
+    )
+    assert keyword_sensitivity(report) == []
+
+
+def test_sensitivity_is_empty_with_no_missing_keywords():
+    report = _report(total=50.0, threshold=75.0, missing_keywords=[])
+    assert keyword_sensitivity(report) == []
+
+
+def test_sensitivity_computes_the_exact_marginal_points_for_one_hard_keyword():
+    """No matched keywords at all: possible == the one missing keyword's own
+    weight (2.0 for hard), so crediting it swings coverage 0 -> 100, and
+    total swings by exactly _COVERAGE_WEIGHT * 100 = 45.0 points."""
+    report = _report(
+        total=50.0,
+        threshold=75.0,
+        keyword_coverage=0.0,
+        matched=[],
+        missing_keywords=[MissingKeyword(keyword="Docker", kind="hard")],
+    )
+    results = keyword_sensitivity(report)
+    assert len(results) == 1
+    assert results[0].keyword == "Docker"
+    assert results[0].marginal_points == pytest.approx(45.0)
+    assert results[0].would_flip_pass is True  # 50 + 45 = 95 >= 75
+
+
+def test_sensitivity_ranks_hard_above_soft_and_matches_hand_computed_values():
+    """possible = hard(2.0) + soft(1.0) = 3.0. Hard's marginal share is
+    twice soft's -- exactly the ADR-0034 hard/soft weight ratio, made
+    visible as a ranking rather than only baked into the opaque total."""
+    report = _report(
+        total=10.0,
+        threshold=75.0,
+        keyword_coverage=0.0,
+        matched=[],
+        missing_keywords=[
+            MissingKeyword(keyword="Python", kind="hard"),
+            MissingKeyword(keyword="Communication", kind="soft"),
+        ],
+    )
+    results = keyword_sensitivity(report)
+    assert [item.keyword for item in results] == ["Python", "Communication"]
+    assert results[0].marginal_points == pytest.approx(30.0)  # 0.45*100*2/3
+    assert results[1].marginal_points == pytest.approx(15.0)  # 0.45*100*1/3
+    assert results[0].would_flip_pass is False  # 10 + 30 = 40 < 75
+    assert results[1].would_flip_pass is False
+
+
+def test_sensitivity_accounts_for_already_matched_keywords_in_the_denominator():
+    """possible must include matched keywords too -- otherwise a resume with
+    many matches and one gap would (wrongly) show that one gap as worth
+    100% of the coverage weight."""
+    report = _report(
+        total=60.0,
+        threshold=75.0,
+        keyword_coverage=50.0,
+        matched=[
+            KeywordMatch(
+                keyword="Python",
+                kind="hard",
+                occurrences=1,
+                contextual=True,
+                credit=1.0,
+            )
+        ],
+        missing_keywords=[MissingKeyword(keyword="Docker", kind="hard")],
+    )
+    # possible = matched Python(2.0) + missing Docker(2.0) = 4.0
+    # marginal = 0.45 * 100 * 2/4 = 22.5
+    results = keyword_sensitivity(report)
+    assert results[0].marginal_points == pytest.approx(22.5)
+    assert results[0].would_flip_pass is True  # 60 + 22.5 = 82.5 >= 75
+
+
+def test_sensitivity_never_claims_a_flip_across_a_hard_format_failure():
+    """Case A2 still applies: a hard format failure keeps passed False no
+    matter how many points a keyword would add (computed_field on
+    AtsScoreReport), so would_flip_pass must never lie about that."""
+    report = _report(
+        total=50.0,
+        threshold=75.0,
+        keyword_coverage=0.0,
+        matched=[],
+        missing_keywords=[MissingKeyword(keyword="Docker", kind="hard")],
+        format_hard_failures=["rendered text is empty"],
+    )
+    results = keyword_sensitivity(report)
+    assert results[0].marginal_points == pytest.approx(45.0)
+    assert results[0].would_flip_pass is False  # format failure overrides
+
+
+def test_sensitivity_sum_is_consistent_with_full_coverage_total():
+    """Metamorphic check: crediting every missing keyword at once must raise
+    `total` by exactly the sum of each one's independently-reported
+    marginal_points -- the scoring formula's linearity in `coverage` means
+    per-keyword marginal contributions are additive, not merely individually
+    correct in isolation."""
+    report = _report(
+        total=10.0,
+        threshold=75.0,
+        keyword_coverage=0.0,
+        matched=[],
+        missing_keywords=[
+            MissingKeyword(keyword="Python", kind="hard"),
+            MissingKeyword(keyword="Communication", kind="soft"),
+        ],
+    )
+    results = keyword_sensitivity(report)
+    total_if_all_credited = report.total + sum(item.marginal_points for item in results)
+    # possible = 3.0, crediting both -> coverage = 100 -> total = 10 + 0.45*100
+    assert total_if_all_credited == pytest.approx(10.0 + 45.0)
