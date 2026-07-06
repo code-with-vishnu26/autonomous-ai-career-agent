@@ -164,3 +164,40 @@ def test_application_store_is_append_only_and_exports_to_excel(
     assert "acme" in values
     assert "approved" in values  # truthfulness rendered readable
     assert "interview:onsite" in values
+
+
+def _application_with(
+    app_id: str, opportunity_id: str, status: str
+) -> Application:
+    application = _application(app_id)
+    return application.model_copy(
+        update={"opportunity_id": opportunity_id, "status": status}
+    )
+
+
+def test_prior_attempt_status_is_none_when_nothing_recorded(tmp_path: Path) -> None:
+    store = SqliteApplicationStore(tmp_path / "db.sqlite")
+    assert store.prior_attempt_status("opp-never-attempted") is None
+
+
+def test_prior_attempt_status_ignores_rejected_attempts(tmp_path: Path) -> None:
+    """A truthfulness-rejected attempt had no external side effect (ADR-0003)."""
+    store = SqliteApplicationStore(tmp_path / "db.sqlite")
+    store.record(
+        _application_with("app-1", "opp-1", "rejected"),
+        company="acme",
+        source="job_board",
+        ats_total=None,
+    )
+    assert store.prior_attempt_status("opp-1") is None
+
+
+def test_prior_attempt_status_reports_non_rejected_statuses(tmp_path: Path) -> None:
+    store = SqliteApplicationStore(tmp_path / "db.sqlite")
+    store.record(
+        _application_with("app-1", "opp-1", "submitted"),
+        company="acme",
+        source="job_board",
+        ats_total=None,
+    )
+    assert store.prior_attempt_status("opp-1") == "submitted"

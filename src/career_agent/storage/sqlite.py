@@ -170,6 +170,28 @@ class SqliteApplicationStore:
                 ),
             )
 
+    def prior_attempt_status(self, opportunity_id: str) -> str | None:
+        """Most recent non-``"rejected"`` attempt status for this opportunity.
+
+        Returns ``None`` when no such attempt exists. ``"rejected"`` (the
+        truthfulness gate blocked the draft, ADR-0003) is excluded because
+        it produced no external side effect -- a fresh attempt after fixing
+        the profile/content is legitimate and must not be blocked. Every
+        other recorded status (``"pending"``, ``"paused_for_human"``,
+        ``"submitted"``, ``"failed"``) means a prior attempt at least
+        reached tailoring/gating, and possibly a real submission attempt --
+        a second attempt risks a duplicate real-world side effect, so it
+        must be a human's explicit decision, never automatic (Phase 22,
+        ADR-0048).
+        """
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT status FROM applications WHERE opportunity_id = ?"
+                " AND status != 'rejected' ORDER BY recorded_at DESC LIMIT 1",
+                (opportunity_id,),
+            ).fetchone()
+        return row["status"] if row is not None else None
+
     def record_outcome(
         self, application_id: str, kind: str, stage: str | None
     ) -> None:
