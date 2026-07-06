@@ -48,6 +48,8 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from career_agent import __version__
+from career_agent.agents.planner.decide import DecisionScore
+from career_agent.agents.planner.sensitivity import RankFlipPoint, rank_flip_points
 from career_agent.agents.resume.gate import LLMTruthfulnessGate
 from career_agent.agents.resume.generator import LLMResumeGenerator, MissingSummaryError
 from career_agent.agents.resume.pipeline import ResumeTailoringPipeline
@@ -66,6 +68,7 @@ from career_agent.domain.models import (
     Opportunity,
     SubmissionPreview,
 )
+from career_agent.domain.pareto import ObjectivePoint, analyze_frontier
 from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
     diagnose_prompt_drift,
@@ -303,6 +306,110 @@ async def run_apply_command(
     )
 
 
+#: Printed once per ranked-summary run, only if some displayed opportunity's
+#: evidence-quality signal is below 1.0 (ADR-0046) -- explicit, so a heuristic
+#: linear-shrinkage interval (domain/pareto.py, ADR-0045) is never mistaken
+#: for a calibrated statistical confidence, which this project has no
+#: historical accuracy data to actually calibrate.
+_EVIDENCE_QUALITY_CAVEAT = (
+    "Note: [Pareto-optimal]/[dominated by] reflects a heuristic evidence-"
+    "quality band derived from each source's extraction confidence "
+    "(ADR-0012/0045), not a calibrated statistical probability."
+)
+
+
+def _objective_point(
+    opportunity: Opportunity, decision: DecisionScore
+) -> ObjectivePoint:
+    """Adapt Decide's scalar-ranking output into Pareto's generic input.
+
+    The only place ``DecisionScore``'s four named fields and
+    ``Opportunity.provenance.extraction_confidence`` meet
+    ``domain.pareto.ObjectivePoint`` -- deliberately here, not inside
+    either module, since neither should know about the other's type
+    (ADR-0045's decoupling, ADR-0046's integration policy).
+    """
+    return ObjectivePoint(
+        id=opportunity.id,
+        objectives={
+            "profile_match": decision.profile_match,
+            "source_reliability": decision.source_reliability,
+            "freshness": decision.freshness,
+            "salary_transparency": decision.salary_transparency,
+        },
+        confidence=opportunity.provenance.extraction_confidence,
+    )
+
+
+def _dominance_annotations(
+    included: list[tuple[Opportunity, DecisionScore]],
+) -> dict[str, str]:
+    """Per-opportunity Pareto-frontier annotation (ADR-0046), advisory only.
+
+    Computed over the **full** ``included`` set, never a truncated display
+    slice -- a lower-ranked opportunity outside a printed top-10 could
+    still be the one that dominates a displayed one, and silently ignoring
+    it would misreport dominance.
+    """
+    if not included:
+        return {}
+    points = [_objective_point(o, d) for o, d in included]
+    frontier = analyze_frontier(points)
+    by_id = {e.id: e for e in frontier.explanations}
+    annotations: dict[str, str] = {}
+    for opportunity, _decision in included:
+        explanation = by_id[opportunity.id]
+        if explanation.pareto_optimal:
+            annotations[opportunity.id] = " [Pareto-optimal]"
+        else:
+            annotations[opportunity.id] = (
+                f" [dominated by: {', '.join(explanation.dominated_by)}]"
+            )
+    return annotations
+
+
+def _sensitivity_summary(
+    included: list[tuple[Opportunity, DecisionScore]],
+) -> list[str]:
+    """The bounded, top-1-vs-runner-up sensitivity summary (ADR-0046).
+
+    Deliberately not a full O(n) (let alone O(n^2)) dump of every adjacent
+    pair -- the single most decision-relevant question a ranked list can
+    answer is "how fragile is my top pick", which is exactly the #1-vs-#2
+    comparison. Reuses :func:`rank_flip_points` unmodified and filters its
+    output to that one pair rather than relying on its internal ordering.
+    """
+    if len(included) < 2:
+        return []
+    decisions = [decision for _opportunity, decision in included]
+    top_pair_flips: list[RankFlipPoint] = [
+        flip
+        for flip in rank_flip_points(decisions)
+        if flip.higher_id == decisions[0].opportunity_id
+        and flip.lower_id == decisions[1].opportunity_id
+    ]
+    if not top_pair_flips:
+        return []
+    lines = [
+        f"Sensitivity (#1 vs #2, ADR-0045/0046): current margin "
+        f"{top_pair_flips[0].current_margin:.1f}"
+    ]
+    reachable = [flip for flip in top_pair_flips if flip.breakeven_delta is not None]
+    if not reachable:
+        lines.append(
+            "  no single weight's valid [0,1] range could flip this order."
+        )
+    else:
+        closest = min(reachable, key=lambda flip: abs(flip.breakeven_delta))  # type: ignore[arg-type]
+        lines.append(
+            f"  most sensitive to {closest.weight_name!r}: current weight "
+            f"{closest.current_weight:.2f}, flips at delta "
+            f"{closest.breakeven_delta:+.3f}; {len(reachable)} of "
+            f"{len(top_pair_flips)} weights could flip this order alone."
+        )
+    return lines
+
+
 async def run_discover_command(
     sources: list[tuple[str, object]],
     repo: object,
@@ -352,16 +459,28 @@ async def run_discover_command(
     if profile is not None and scorer is not None and new_opportunities:
         included, excluded = scorer.rank(new_opportunities, profile)  # type: ignore[attr-defined]
         print("Ranked (Decide layer, ADR-0038):")
+        # Advisory decision intelligence (ADR-0045/0046): computed over the
+        # full `included` set, never just the printed top-10 -- never
+        # changes which opportunities are included/excluded/ordered.
+        dominance = _dominance_annotations(included)
         for opportunity, decision in included[:10]:
             print(
                 f"  {decision.total:5.1f}  {opportunity.canonical_company}: "
                 f"{opportunity.title}  ({out_dir / (opportunity.id + '.json')})"
+                f"{dominance.get(opportunity.id, '')}"
             )
         for decision in excluded:
             print(
                 f"  EXCLUDED {decision.opportunity_id}: "
                 f"{'; '.join(decision.exclude_reasons)}"
             )
+        if any(
+            opportunity.provenance.extraction_confidence < 1.0
+            for opportunity, _decision in included
+        ):
+            print(_EVIDENCE_QUALITY_CAVEAT)
+        for line in _sensitivity_summary(included):
+            print(line)
     return 0
 
 

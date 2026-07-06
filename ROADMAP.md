@@ -758,16 +758,21 @@ proposed until a concrete trigger justifies the work.
 - **R3 -- Graph-based deduplication.** Proposed, not started --
   `domain/identity.py`'s exact-key + fingerprint approach has shown no
   observed false-duplicate or missed-duplicate failures yet.
-- **R4 -- Multi-objective decision engine.** ✅ First slice done: **ADR-0045**
-  (`domain/pareto.py` + `agents/planner/sensitivity.py`: nominal + confidence-
-  interval-robust Pareto dominance/frontier over Decide's existing four
-  objectives, plus closed-form adjacent-pair weight-flip sensitivity). A
-  repository audit found this item's own trigger ("if soft-score trading
-  against hard constraints ever becomes an observed problem") still unmet --
-  so this slice is additive analysis only, not a replacement for Decide's
-  weighted-sum ranking, and not wired into any CLI output yet. Full
-  constrained-optimization/epsilon-constraint/lexicographic methods remain
-  future work, gated on the same still-unobserved trigger.
+- **R4 -- Multi-objective decision engine.** ✅ **ADR-0045** (`domain/pareto.py`
+  + `agents/planner/sensitivity.py`: nominal + confidence-interval-robust
+  Pareto dominance/frontier over Decide's existing four objectives, plus
+  closed-form adjacent-pair weight-flip sensitivity) + **ADR-0046** (Phase 20:
+  wired into `discover`'s existing ranked-summary output as read-only
+  advisory annotations -- Pareto-frontier/dominance markers computed over the
+  full included set, a bounded #1-vs-#2 sensitivity summary, an explicit
+  heuristic-not-calibrated evidence-quality caveat). Decide's weighted-sum
+  ranking and `auto`'s scalar-order selection remain structurally
+  untouched and authoritative -- this item's own trigger ("if soft-score
+  trading against hard constraints ever becomes an observed problem")
+  remains unmet, so full constrained-optimization/epsilon-constraint/
+  lexicographic methods, and wiring this analysis into `auto`'s actual
+  selection, both remain future work gated on that same still-unobserved
+  trigger.
 - **R5 -- Application portfolio optimization.** Proposed, not started -- no
   current daily/weekly application-budget constraint exists to optimize
   against.
