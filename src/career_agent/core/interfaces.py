@@ -434,6 +434,14 @@ class ClaimVerdict(BaseModel):
             "date_inconsistency",
             "metric_unsupported",
             "verification_failed",
+            # Both added by ADR-0044's deterministic precheck layer, but open
+            # to any ClaimVerifier (LLM or deterministic) to report: distinct
+            # from "evidence_missing" because the failure mode is specific
+            # enough to name -- a stronger verb/ownership claim than the
+            # evidence supports for the same object, or a title/seniority
+            # word absent from the evidenced position.
+            "unsupported_action_inference",
+            "unsupported_seniority",
         ]
         | None
     ) = None

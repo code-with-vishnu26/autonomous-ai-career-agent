@@ -80,3 +80,23 @@ provider is never treated as a pass for the other, by filename construction.
 3. Re-run **both** provider suites above before merging. A prompt change that
    breaks any of the 12 cases, on either provider, is not mergeable, same as
    a code change that breaks a test.
+
+## `truthfulness-gate-v2` (ADR-0044)
+
+The prompt and 4 of the 12 test cases changed on this bump: a skill noun
+alone no longer proves an action was performed with it, and a stronger
+ownership/action verb ("architected"/"led") is no longer automatically
+entailed by a weaker one ("built"/"used") for the same object. Cases #1, #9,
+#11 flipped from "must be verified" to "must be blocked"; #5's expected
+category changed from `employer_mismatch` to the new, more precise
+`unsupported_seniority`. See ADR-0044 for the full audit and reasoning, and
+`src/career_agent/domain/truthfulness_predicates.py` for the deterministic
+Layer-1 precheck that now applies the same rules structurally, before this
+prompt is ever called, for the claims Layer 1 can resolve on its own.
+
+**Any `truthfulness-gate-v1` results file is void.** `verify_promptfoo_results`
+keys on the exact prompt version by filename
+(`{prompt_version}--{provider}.json`), so a `v1` pass cannot satisfy a `v2`
+check by construction — this is not a manual step to remember, it is
+structural. A fresh live run against `truthfulness-gate-v2` is required for
+both providers before either `ClaimVerifier` may be used for real.

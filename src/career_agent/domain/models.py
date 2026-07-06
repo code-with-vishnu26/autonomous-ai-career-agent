@@ -172,6 +172,15 @@ class RejectionReason(BaseModel):
         # than overloading a content category, because "we couldn't check" is
         # not the same claim as "we checked and it's unsupported."
         "verification_failed",
+        # ADR-0044's deterministic precheck layer: a stronger verb/ownership
+        # claim than the evidence supports (e.g. "architected" where the
+        # evidence only says "built"), or a technology named only as a bare
+        # skills-list token asserted as an action ("containerized ... Docker"
+        # with no contextual evidence Docker was ever used for anything).
+        "unsupported_action_inference",
+        # A title/seniority word (e.g. "Senior", "Lead") absent from the
+        # evidenced position.
+        "unsupported_seniority",
     ]
     detail: str
 
