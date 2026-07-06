@@ -372,6 +372,31 @@ def test_prompt_drift_check_passes_when_recorded_text_matches(
     )  # does not raise -- recorded and current prompt text match exactly
 
 
+def test_prompt_drift_check_ignores_crlf_vs_lf_line_endings(tmp_path: Path) -> None:
+    """The exact false positive found from a real fresh 10/10/0 Groq run:
+    promptfoo (Node) records prompt.txt's raw bytes with whatever line
+    endings are physically on disk, while Python's Path.read_text() always
+    translates CRLF to LF on read -- so a checkout with CRLF line endings
+    (e.g. Windows git with core.autocrlf=true; this repo ships no
+    .gitattributes to prevent that) made a genuinely fresh, unmodified
+    prompt look like drift. Only the newline convention differs here, not
+    the prompt's content."""
+    results_dir = tmp_path / "results"
+    lf_text = "CLAIM: {{statement}}\nEVIDENCE: {{evidence}}\n"
+    (tmp_path / "prompt.txt").write_text(lf_text)
+    _write_results(
+        results_dir,
+        "truthfulness-gate-v2",
+        "groq",
+        successes=_EXPECTED_CASE_COUNT,
+        failures=0,
+        recorded_prompt_raw=lf_text.replace("\n", "\r\n"),
+    )
+    verify_promptfoo_results(
+        "truthfulness-gate-v2", results_dir, provider_id="groq"
+    )  # does not raise -- CRLF vs LF is not real drift
+
+
 def test_prompt_drift_check_rejects_a_mismatch(tmp_path: Path) -> None:
     """The results file proves a pass against a prompt that isn't the one
     currently on disk -- a stale/since-edited prompt.txt, not a fresh run

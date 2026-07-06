@@ -77,6 +77,24 @@ fails closed on a mismatch. It is skipped -- not failed -- when no sibling
 a ``results.prompts[0].raw`` string (an older/different promptfoo schema
 shape); this is a deliberate best-effort addition layered on top of the
 mandatory stats/provider checks above, not a new required field.
+
+**Line-ending normalization (found from a real false-positive report).** A
+fresh, genuinely current-checkout live Groq run was rejected by this check
+immediately after passing 10/10 -- not stale, not a sync issue. Root cause:
+promptfoo (Node) reads ``prompt.txt`` with ``fs.readFileSync(path, "utf8")``,
+preserving whatever line endings are physically on disk, while Python's
+``Path.read_text()`` applies universal-newline translation on every read,
+silently turning CRLF into LF. On a checkout with CRLF line endings (this
+repo ships no ``.gitattributes``, so a Windows git client with the common
+``core.autocrlf=true`` setting checks the file out with CRLF) the two
+readers of the *same, unmodified file* produced two different Python
+strings, and the comparison reported "drift" that was actually just a
+newline-convention difference. ``_canonicalize_newlines`` collapses
+CRLF/CR to LF on both sides before comparing -- proven, not assumed, to be
+representation-only via an offline reproduction (see
+``tests/llm/test_promptfoo_gate.py``) -- and nothing else is normalized: a
+real difference in the prompt's words, structure, or braces still fails
+this check exactly as before.
 """
 
 from __future__ import annotations
@@ -124,6 +142,30 @@ def _recorded_provider_ids(payload: dict[str, object]) -> set[str]:
         elif isinstance(entry, dict) and "id" in entry:
             ids.add(str(entry["id"]))
     return ids
+
+
+def _canonicalize_newlines(text: str) -> str:
+    r"""Collapse CRLF/CR to LF -- the only difference proven non-semantic here.
+
+    promptfoo is a Node program; it reads ``prompt.txt`` with
+    ``fs.readFileSync(path, "utf8")``, which returns the file's bytes
+    decoded as UTF-8 with whatever line endings are physically on disk
+    preserved verbatim -- so ``results.prompts[0].raw`` carries literal
+    ``\\r\\n`` if the checkout has CRLF line endings (e.g. Windows git with
+    ``core.autocrlf=true``, which this repo has no ``.gitattributes`` to
+    override). Python's ``Path.read_text()``, by contrast, opens the file
+    in text mode with universal-newline translation *on by default*, which
+    silently converts ``\\r\\n``/``\\r`` to ``\\n`` on read -- so the exact
+    same, byte-for-byte-unmodified ``prompt.txt`` produces two different
+    Python strings depending only on which library read it. A results
+    artifact freshly generated from the current prompt on a CRLF checkout
+    was being rejected as "drift" for this reason alone: not a different
+    prompt, a different newline convention for representing the identical
+    one. Canonicalizing both sides here closes exactly that gap, while
+    changing nothing else the comparison would otherwise catch (a genuinely
+    different word, line, or brace is untouched by this).
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _recorded_prompt_raw(payload: dict[str, object]) -> str | None:
@@ -211,7 +253,10 @@ def verify_promptfoo_results(
     prompt_txt_path = results_dir.parent / "prompt.txt"
     if prompt_txt_path.exists():
         recorded_raw = _recorded_prompt_raw(payload)
-        if recorded_raw is not None and recorded_raw != prompt_txt_path.read_text():
+        current_text = prompt_txt_path.read_text(encoding="utf-8")
+        if recorded_raw is not None and _canonicalize_newlines(
+            recorded_raw
+        ) != _canonicalize_newlines(current_text):
             problems.append(
                 f"the prompt text promptfoo recorded running against does not "
                 f"match the current {prompt_txt_path} -- this results file was "
