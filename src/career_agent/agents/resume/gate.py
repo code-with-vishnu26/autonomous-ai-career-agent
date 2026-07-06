@@ -1,10 +1,21 @@
-"""The concrete, LLM-backed :class:`TruthfulnessGate` (ADR-0016).
+"""The concrete, LLM-backed :class:`TruthfulnessGate` (ADR-0016, ADR-0044).
 
 Implements the Phase 2 ``TruthfulnessGate`` Protocol (``core/interfaces.py``,
 unchanged by this phase) using an injected :class:`ClaimVerifier`. This is the
 orchestration layer: it decides *what* evidence a claim is checked against and
 *how* verdicts are aggregated; the verifier decides *whether* a given claim is
 entailed by that evidence.
+
+**ADR-0044 adds a deterministic precheck layer in front of the verifier**
+(:func:`~career_agent.domain.truthfulness_predicates.precheck_claim`): every
+free-text claim is checked against a closed-vocabulary technology/metric/
+seniority/verb-strength model *before* the LLM is ever called.
+Deterministically ``"unsafe"`` claims are blocked without a model call;
+deterministically ``"safe"`` claims (a checked, direction-preserving
+abstraction of the evidence -- never merely "nothing flagged") are approved
+without one. Only ``"ambiguous"`` claims -- the honest, open-world default
+-- reach the verifier at all. This is strictly additive to the verifier's
+own judgment, never a replacement for it on the claims it still sees.
 
 Design commitments (ADR-0016):
 
@@ -37,6 +48,8 @@ Design commitments (ADR-0016):
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from career_agent.core.interfaces import ClaimVerifier
 from career_agent.domain.models import (
     EvidenceRef,
@@ -48,8 +61,26 @@ from career_agent.domain.models import (
     TruthfulnessResult,
     WorkEntry,
 )
+from career_agent.domain.truthfulness_predicates import precheck_claim
 
 _DEFAULT_CONFIDENCE_THRESHOLD = 0.7
+
+
+class _Evidence(NamedTuple):
+    """The three shapes ``precheck_claim``/the verifier each actually need.
+
+    ``combined`` is exactly the single string this gate has always passed
+    to the LLM verifier (Position/highlights + Skills + Projects) --
+    ADR-0044 does not change what the verifier sees on ``ambiguous``
+    claims. ``contextual`` (no skills line) and ``skills`` (the skills
+    line alone) are the split ``precheck_claim`` needs to tell "evidenced
+    in context" apart from "only ever a bare skill" -- the entire point
+    of ADR-0044's Rule 4.
+    """
+
+    combined: str
+    contextual: str
+    skills: str
 
 
 class LLMTruthfulnessGate:
@@ -160,18 +191,53 @@ class LLMTruthfulnessGate:
     async def _check_claim(
         self,
         claim_text: str,
-        evidence: str,
+        evidence: _Evidence,
         profile_version: str,
         section: str,
         entry_id: str,
     ) -> tuple[Statement, RejectionReason | None]:
-        """Check one free-text claim against evidence via the injected verifier.
+        """Check one free-text claim: Layer 1 precheck, then the verifier.
 
-        Any verifier exception is caught here and turned into an explicit
-        block -- infrastructure failure is never evidence of truthfulness.
+        ADR-0044: :func:`precheck_claim` runs first. A deterministic
+        ``"unsafe"`` or ``"safe"`` verdict resolves the claim without ever
+        calling ``self._verifier`` -- only ``"ambiguous"`` (the honest
+        default; not "everything not caught") falls through to it. Any
+        verifier exception is still caught here and turned into an
+        explicit block -- infrastructure failure is never evidence of
+        truthfulness.
         """
+        precheck = precheck_claim(claim_text, evidence.contextual, evidence.skills)
+        if precheck.verdict == "unsafe":
+            statement = Statement(
+                text=claim_text, evidence=None, confidence=1.0, verified=False
+            )
+            rejection = RejectionReason(
+                statement_text=claim_text,
+                category=precheck.category or "evidence_missing",
+                detail=precheck.detail,
+            )
+            return statement, rejection
+        if precheck.verdict == "safe":
+            evidence_ref = EvidenceRef(
+                profile_version=profile_version,
+                section=section,  # type: ignore[arg-type]
+                entry_id=entry_id,
+                field="highlights",
+                index=None,
+                excerpt=evidence.combined[:280],
+            )
+            statement = Statement(
+                text=claim_text,
+                evidence=evidence_ref,
+                confidence=1.0,
+                verified=True,
+            )
+            return statement, None
+
         try:
-            verdict = await self._verifier.verify_claim(claim_text, evidence)
+            verdict = await self._verifier.verify_claim(
+                claim_text, evidence.combined
+            )
         except Exception as exc:  # noqa: BLE001 -- fail closed, never propagate
             statement = Statement(
                 text=claim_text, evidence=None, confidence=0.0, verified=False
@@ -196,7 +262,7 @@ class LLMTruthfulnessGate:
                 entry_id=entry_id,
                 field="highlights",
                 index=verdict.matched_index,
-                excerpt=evidence[:280],
+                excerpt=evidence.combined[:280],
             )
             statement = Statement(
                 text=claim_text,
@@ -243,7 +309,7 @@ def _find_project_entry(profile: MasterProfile, entry_id: str) -> ProjectEntry |
     return next((entry for entry in profile.projects if entry.id == entry_id), None)
 
 
-def _work_evidence(entry: WorkEntry, profile: MasterProfile) -> str:
+def _work_evidence(entry: WorkEntry, profile: MasterProfile) -> _Evidence:
     """Assemble the evidence union reachable from one work entry.
 
     Includes the entry's own position/highlights AND the full skills list and
@@ -252,20 +318,31 @@ def _work_evidence(entry: WorkEntry, profile: MasterProfile) -> str:
     lets the verifier catch a composite claim (a real skill and a real
     achievement stitched into an invented combined claim) as genuinely
     ungrounded, rather than passing because some fragment matches elsewhere.
+
+    ``contextual`` (position/highlights/projects -- genuine "work done"
+    evidence) and ``skills`` (the bare skills line) are split out
+    separately for ADR-0044's precheck; ``combined`` is unchanged from
+    before ADR-0044 and is exactly what the LLM verifier still sees.
     """
-    lines = [f"Position: {entry.position}"]
-    lines.extend(f"- {highlight}" for highlight in entry.highlights)
-    lines.append("Skills: " + ", ".join(skill.name for skill in profile.skills))
+    contextual_lines = [f"Position: {entry.position}"]
+    contextual_lines.extend(f"- {highlight}" for highlight in entry.highlights)
     for project in profile.projects:
-        lines.append(f"Project ({project.name}): " + "; ".join(project.highlights))
-    return "\n".join(lines)
+        contextual_lines.append(
+            f"Project ({project.name}): " + "; ".join(project.highlights)
+        )
+    contextual = "\n".join(contextual_lines)
+    skills = "Skills: " + ", ".join(skill.name for skill in profile.skills)
+    combined = f"{contextual}\n{skills}"
+    return _Evidence(combined=combined, contextual=contextual, skills=skills)
 
 
-def _project_evidence(entry: ProjectEntry, profile: MasterProfile) -> str:
-    lines = [f"Project: {entry.name}"]
-    lines.extend(f"- {highlight}" for highlight in entry.highlights)
-    lines.append("Skills: " + ", ".join(skill.name for skill in profile.skills))
-    return "\n".join(lines)
+def _project_evidence(entry: ProjectEntry, profile: MasterProfile) -> _Evidence:
+    contextual_lines = [f"Project: {entry.name}"]
+    contextual_lines.extend(f"- {highlight}" for highlight in entry.highlights)
+    contextual = "\n".join(contextual_lines)
+    skills = "Skills: " + ", ".join(skill.name for skill in profile.skills)
+    combined = f"{contextual}\n{skills}"
+    return _Evidence(combined=combined, contextual=contextual, skills=skills)
 
 
 def _normalize(value: str) -> str:

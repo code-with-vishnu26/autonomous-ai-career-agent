@@ -138,7 +138,7 @@ source_modules = ["career_agent.plugins"]
 forbidden_modules = ["career_agent.core.config"]
 
 [[tool.importlinter.contracts]]
-name = "Orchestration never imports the concrete AnthropicClaimVerifier (ADR-0018)"
+name = "Orchestration never imports a concrete ClaimVerifier directly (ADR-0018, ADR-0043)"
 type = "forbidden"
 source_modules = [
     "career_agent.agents",
@@ -146,4 +146,7 @@ source_modules = [
     "career_agent.plugins",
     "career_agent.storage",
 ]
-forbidden_modules = ["career_agent.llm.claim_verifier"]
+forbidden_modules = [
+    "career_agent.llm.claim_verifier",
+    "career_agent.llm.groq_claim_verifier",
+]

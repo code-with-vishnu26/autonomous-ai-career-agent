@@ -1,0 +1,28 @@
+description: "Regression: the REAL promptfoo/prompt.txt must render through Nunjucks without a template error (ADR-0044)"
+
+# Points at the actual prompt file the live Groq/Anthropic configs use --
+# not a copy -- so a future edit that reintroduces stray double braces in
+# the JSON example line (Nunjucks reads {{ }} as its own variable
+# delimiters; only {{evidence}}/{{statement}} should ever be doubled) is
+# caught here before anyone spends a live API call finding out the hard
+# way. Uses only promptfoo itself (no extra dependency), so this runs
+# identically via plain `npx promptfoo@latest` on any machine.
+prompts:
+  - file://../../prompt.txt
+
+providers:
+  - file://echoProvider.js
+
+tests:
+  - vars:
+      evidence: "Skills: Python, Docker"
+      statement: "AWS"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).verified === false"
+
+defaultTest:
+  options:
+    transform: "output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1)"
+  assert:
+    - type: is-json

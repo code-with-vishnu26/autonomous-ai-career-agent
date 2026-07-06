@@ -1,0 +1,25 @@
+description: "Negative control: transform as a bare sibling of assert (the pre-fix, wrong YAML level) -- must fail"
+
+prompts:
+  - "CLAIM: {{statement}}"
+
+providers:
+  - file://echoProvider.js
+
+tests:
+  - vars:
+      statement: "AWS"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).verified === false"
+
+defaultTest:
+  # WRONG on purpose: promptfoo@0.121.17's TestCaseSchema has no top-level
+  # `transform` field (only `options` accepts arbitrary keys), and
+  # transformRunEvalResponse only ever reads `test.options.transform` /
+  # `test.options.postprocess`. This bare key is silently stripped and
+  # never applied -- kept here only to prove that fact, on demand, without
+  # needing a live API call to rediscover it.
+  transform: "output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1)"
+  assert:
+    - type: is-json

@@ -251,20 +251,29 @@ async def test_artifacts_generated_for_approved_drafts_when_dir_set(
 async def test_no_artifacts_for_rejected_drafts_even_with_dir_set(
     tmp_path,
 ) -> None:
+    """ADR-0044: ``_honest_drafted()``'s highlight is a verbatim restatement
+    of the profile's own evidence, which the gate's Layer-1 precheck now
+    confidently approves before the (fake) LLM is ever consulted -- so
+    forcing a *rejection* to test this pipeline behavior needs a claim
+    Layer 1 cannot resolve as safe. A named, unevidenced technology (AWS)
+    is rejected deterministically, at Layer 1, without the fake verifier
+    even being called."""
     profile = sample_master_profile()
     profile.basics.summary = "Backend engineer."
     bus = EventBus()
-    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
-    gate = LLMTruthfulnessGate(
-        FakeClaimVerifier(
-            {
-                "Software Engineer": ClaimVerdict(verified=False, confidence=0.9),
-                "Built REST APIs serving 2M requests/day": ClaimVerdict(
-                    verified=False, confidence=0.9
-                ),
-            }
-        )
+    rejected_draft = DraftedTailoring(
+        work=[
+            TailoredWorkEntry(
+                source_entry_id="work-techco",
+                position="Software Engineer",
+                highlights=["Deployed the platform on AWS"],
+            )
+        ],
+        skills=["Python"],
+        projects=[],
     )
+    generator = LLMResumeGenerator(FakeContentDrafter(rejected_draft))
+    gate = LLMTruthfulnessGate(FakeClaimVerifier({}))
     pipeline = ResumeTailoringPipeline(
         generator, gate, bus, artifacts_dir=tmp_path
     )

@@ -42,8 +42,15 @@ _JD = (
 )
 
 _BASE_HIGHLIGHT = "Built REST APIs serving 2M requests/day"
-_DOCKER_HIGHLIGHT = "Containerized services with Docker"
-_DOCKER_PG_HIGHLIGHT = "Containerized services with Docker and PostgreSQL"
+# ADR-0044: "Containerized services with Docker" (a skill-only technology
+# paired with an accomplishment verb) is now itself an unsupported-action
+# claim, caught by the truthfulness gate's own precheck -- these fixtures
+# use a familiarity phrasing ("Skilled in") instead, which keeps the exact
+# same keyword-coverage credit (ATS scoring counts literal keyword
+# occurrence, not surrounding verb) while remaining truthful under the
+# stricter standard.
+_DOCKER_HIGHLIGHT = "Skilled in Docker"
+_DOCKER_PG_HIGHLIGHT = "Skilled in Docker and PostgreSQL"
 _FABRICATED_HIGHLIGHT = "Ran the Kubernetes platform team"
 
 _VERDICTS = {

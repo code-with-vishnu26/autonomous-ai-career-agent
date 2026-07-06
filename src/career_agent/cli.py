@@ -64,14 +64,18 @@ from career_agent.domain.models import (
     Opportunity,
     SubmissionPreview,
 )
-from career_agent.llm.claim_verifier import AnthropicClaimVerifier
-from career_agent.llm.content_drafter import AnthropicContentDrafter
 from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
+    diagnose_prompt_drift,
     verify_promptfoo_results,
 )
 from career_agent.llm.prompts import TRUTHFULNESS_GATE_PROMPT_VERSION
-from career_agent.llm.semantic_matcher import AnthropicSemanticKeywordMatcher
+from career_agent.llm.providers import (
+    NoLLMProviderConfiguredError,
+    select_claim_verifier,
+    select_content_drafter,
+    select_semantic_matcher,
+)
 from career_agent.storage.excel import export_applications
 from career_agent.storage.profile import (
     ProfileValidationError,
@@ -251,29 +255,32 @@ async def run_apply_command(
         return 1
 
     settings = Settings()
-    if not settings.anthropic_api_key:
-        print(
-            "ANTHROPIC_API_KEY is not set -- required to tailor and gate a "
-            "real resume."
-        )
+    try:
+        claim_verifier = select_claim_verifier(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
         return 1
 
     results_dir = promptfoo_results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR
     try:
-        verify_promptfoo_results(TRUTHFULNESS_GATE_PROMPT_VERSION, results_dir)
+        verify_promptfoo_results(
+            claim_verifier.prompt_version,
+            results_dir,
+            provider_id=claim_verifier.provider_id,
+        )
     except PromptfooNotValidatedError as exc:
         print(str(exc))
         return 1
 
-    generator = LLMResumeGenerator(
-        AnthropicContentDrafter(api_key=settings.anthropic_api_key)
-    )
-    gate = LLMTruthfulnessGate(
-        AnthropicClaimVerifier(api_key=settings.anthropic_api_key)
-    )
-    semantic_matcher = AnthropicSemanticKeywordMatcher(
-        api_key=settings.anthropic_api_key
-    )
+    try:
+        content_drafter = select_content_drafter(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
+        return 1
+
+    generator = LLMResumeGenerator(content_drafter)
+    gate = LLMTruthfulnessGate(claim_verifier)
+    semantic_matcher = select_semantic_matcher(settings)
     return await _apply_pipeline(
         profile,
         opportunity,
@@ -472,6 +479,68 @@ def run_capture_legal_status_command(
         f"Saved legal status to {profile_path} "
         f"(profile version will change on next load)."
     )
+    return 0
+
+
+def run_verify_promptfoo_command(
+    provider_id: str, results_dir: Path | None = None
+) -> int:
+    """Check a real local promptfoo results artifact against the exact production gate.
+
+    No API key, no network call, and no side effect beyond printing a
+    verdict. This calls the *same*
+    :func:`~career_agent.llm.promptfoo_gate.verify_promptfoo_results` that
+    ``apply``
+    calls before constructing a real ``ClaimVerifier`` -- not a
+    reimplementation of its logic -- against the current
+    ``TRUTHFULNESS_GATE_PROMPT_VERSION`` and the requested provider, so a
+    "pass" printed here means ``apply`` would also pass this gate for that
+    provider right now. It intentionally does not go through
+    ``select_claim_verifier`` (which requires that provider's API key to be
+    configured just to read its ``provider_id``/``prompt_version``
+    attributes) -- both are fixed per provider, so this checks whichever
+    ``--provider`` was asked for directly, independent of what is currently
+    configured in the environment.
+    """
+    try:
+        verify_promptfoo_results(
+            TRUTHFULNESS_GATE_PROMPT_VERSION,
+            results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR,
+            provider_id=provider_id,
+        )
+    except PromptfooNotValidatedError as exc:
+        print(str(exc))
+        return 1
+    print(
+        f"PASS: promptfoo results for prompt version "
+        f"{TRUTHFULNESS_GATE_PROMPT_VERSION!r} / provider {provider_id!r} "
+        f"prove a complete, clean run. This is a structural/content check "
+        f"only -- see promptfoo_gate.py's module docstring for what it does "
+        f"and does not prove about authenticity."
+    )
+    return 0
+
+
+def run_diagnose_promptfoo_drift_command(
+    provider_id: str, results_dir: Path | None = None
+) -> int:
+    """Report why the prompt-content drift check would accept or reject an artifact.
+
+    Never exposes résumé/claim content or secrets. Reuses the exact same
+    parsing (``_recorded_prompt_raw``) and
+    normalization (``_canonicalize_prompt_text``) the real
+    ``verify_promptfoo_results`` check uses -- this can never disagree
+    with what that check actually does, because it calls the same code,
+    not a reimplementation of it.
+    """
+    print(
+        diagnose_prompt_drift(
+            TRUTHFULNESS_GATE_PROMPT_VERSION,
+            results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR,
+            provider_id=provider_id,
+        )
+    )
+    return 0
     return 0
 
 
@@ -707,6 +776,38 @@ def main(argv: list[str] | None = None) -> None:
         "--xlsx", type=Path, default=Path("data/applications.xlsx")
     )
 
+    verify_promptfoo_parser = subparsers.add_parser(
+        "verify-promptfoo",
+        help="Check a real local promptfoo results artifact against the "
+        "exact gate 'apply' uses -- no API key, no network call.",
+    )
+    verify_promptfoo_parser.add_argument(
+        "--provider", required=True, choices=("anthropic", "groq")
+    )
+    verify_promptfoo_parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=None,
+        help="Defaults to promptfoo/results at the repo root.",
+    )
+
+    diagnose_promptfoo_parser = subparsers.add_parser(
+        "diagnose-promptfoo-drift",
+        help="Print exactly why the prompt-content drift check in "
+        "verify-promptfoo would accept or reject a real local results "
+        "artifact -- lengths, hashes, first differing character. No "
+        "résumé/claim content or secrets printed.",
+    )
+    diagnose_promptfoo_parser.add_argument(
+        "--provider", required=True, choices=("anthropic", "groq")
+    )
+    diagnose_promptfoo_parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=None,
+        help="Defaults to promptfoo/results at the repo root.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "discover":
@@ -769,6 +870,16 @@ def main(argv: list[str] | None = None) -> None:
         settings = Settings()
         raise SystemExit(
             run_export_command(Path(settings.database_path), args.xlsx)
+        )
+
+    if args.command == "verify-promptfoo":
+        raise SystemExit(
+            run_verify_promptfoo_command(args.provider, args.results_dir)
+        )
+
+    if args.command == "diagnose-promptfoo-drift":
+        raise SystemExit(
+            run_diagnose_promptfoo_drift_command(args.provider, args.results_dir)
         )
 
     if args.command == "apply":

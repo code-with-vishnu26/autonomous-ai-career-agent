@@ -725,6 +725,48 @@ assumption.
 
 ---
 
+## Research track (evidence-driven, not scheduled ahead of need)
+
+A separate track from the numbered phases above: algorithmic/mathematical
+improvements to existing components, pursued only where this project's own
+repository evidence shows a real gap, not because a technique sounds
+sophisticated. Each item gets its own audit before implementation; most stay
+proposed until a concrete trigger justifies the work.
+
+- **R1 — Formal claim-evidence entailment.** ✅ First slice done: **ADR-0044**
+  (deterministic Layer-1 precheck: technology/metric/verb-strength/seniority,
+  closed-vocabulary, zero-cost, no NLP model). Object/scope/causal-relation
+  predicates deliberately deferred to the LLM (Layer 4) -- revisit only if
+  real tailoring runs show that gap causing missed fabrications at scale.
+- **R2 -- Hybrid retrieval/ranking for discovery.** Proposed, not started --
+  no evidence yet that polling-based discovery is missing relevant postings
+  at this project's actual (single-user) scale.
+- **R3 -- Graph-based deduplication.** Proposed, not started --
+  `domain/identity.py`'s exact-key + fingerprint approach has shown no
+  observed false-duplicate or missed-duplicate failures yet.
+- **R4 -- Multi-objective decision engine.** Proposed, not started -- Decide
+  (Phase 14, ADR-0038) is a deterministic weighted sum today; a Pareto/
+  constrained-optimization model is real future work if soft-score trading
+  against hard constraints ever becomes an observed problem.
+- **R5 -- Application portfolio optimization.** Proposed, not started -- no
+  current daily/weekly application-budget constraint exists to optimize
+  against.
+- **R6 -- Uncertainty calibration.** Partially addressed already: the Learn
+  pillar (ADR-0039) shows raw counts with an explicit small-sample caveat
+  rather than false-precision statistics. A Bayesian/shrinkage model is
+  future work if/when N grows enough to matter.
+- **R7 -- Ghost-job risk modeling.** Proposed, not started -- no ghost-job
+  signal exists in this codebase today.
+- **R8 -- Learning/bandits.** Explicitly NOT started, on the Learn pillar's
+  own recorded reasoning (ADR-0039): no bandit routing until N is sufficient
+  for it to mean anything.
+
+Ranked by evidence-based priority, not sophistication -- see the research
+audit in this project's session history (2026-07-06) for the full inventory,
+gap analysis, and Groq truthfulness audit that produced this list.
+
+---
+
 ## Deferred work (named, not forgotten)
 
 Items explicitly scoped out of the numbered phases above, with a recorded reason

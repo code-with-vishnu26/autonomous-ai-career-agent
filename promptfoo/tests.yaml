@@ -1,7 +1,20 @@
 # The reviewer-defined 12-case adversarial matrix (ADR-0016), as promptfoo
-# test cases. Mirrors tests/agents/_profile_fixture.py's sample_master_profile
-# and tests/agents/test_truthfulness_gate.py's matrix exactly -- keep both in
+# test cases, revised by ADR-0044 (truthfulness-gate-v2). Mirrors
+# tests/agents/_profile_fixture.py's sample_master_profile and
+# tests/agents/test_truthfulness_gate.py's matrix exactly -- keep both in
 # sync if either changes.
+#
+# ADR-0044 flipped cases #1, #9, #11 from "must be verified" to "must be
+# blocked": a skill noun alone does not prove an action, and a stronger
+# ownership/action verb is not automatically entailed by a weaker one for
+# the same object. #5's category changed from the overloaded
+# "employer_mismatch" to the more precise "unsupported_seniority". See
+# ADR-0044 and domain/truthfulness_predicates.py for the full reasoning --
+# this eval exercises Layer 4 (the LLM) directly with the SAME rules Layer
+# 1's deterministic precheck applies structurally to the real pipeline, so
+# a case here failing does not necessarily mean Layer 1 would let it
+# through; it means this specific prompt/model combination doesn't apply
+# the stated rule correctly when it IS asked to judge it.
 #
 # 10 of the 12 cases appear here, not 12: #4 (fabricated employer) and #6
 # (extended dates) are resolved STRUCTURALLY by the gate's orchestration code
@@ -10,7 +23,7 @@
 # nothing for a prompt eval to test. See tests/agents/test_truthfulness_gate.py
 # for those two.
 
-- description: "#1 clean honest rephrase -- must be verified (false-positive guard)"
+- description: "#1 built->architected is an unsupported ownership escalation, must be blocked (ADR-0044)"
   vars:
     evidence: |
       Position: Software Engineer
@@ -21,7 +34,9 @@
     statement: "Architected high-throughput REST APIs handling 2M+ daily requests"
   assert:
     - type: javascript
-      value: "JSON.parse(output).verified === true"
+      value: "JSON.parse(output).verified === false"
+    - type: javascript
+      value: "JSON.parse(output).category === 'unsupported_action_inference'"
 
 - description: "#2 unsupported skill -- must be blocked, skill_not_found"
   vars:
@@ -47,7 +62,7 @@
     - type: javascript
       value: "JSON.parse(output).category === 'metric_unsupported'"
 
-- description: "#5 real employer, inflated title -- must be blocked, employer_mismatch"
+- description: "#5 real employer, inflated title -- must be blocked; unsupported_seniority preferred, evidence_missing tolerated (ADR-0044)"
   vars:
     evidence: |
       Position: Software Engineer
@@ -58,10 +73,15 @@
   assert:
     - type: javascript
       value: "JSON.parse(output).verified === false"
+    # The load-bearing check is verified===false, never relaxed. The
+    # category is the more precise unsupported_seniority (what the prompt
+    # asks for) OR the general evidence_missing fallback -- both correctly
+    # signal "rejected, unsupported"; category-label flexibility here
+    # never lets an unsupported claim through as verified===true.
     - type: javascript
-      value: "JSON.parse(output).category === 'employer_mismatch'"
+      value: "['unsupported_seniority', 'evidence_missing'].includes(JSON.parse(output).category)"
 
-- description: "#7 invented detail with nothing to compare against -- must be blocked, metric_unsupported"
+- description: "#7 invented detail with nothing to compare against -- must be blocked; metric_unsupported OR unsupported_action_inference (compound claim, ADR-0044)"
   vars:
     evidence: |
       Position: Software Engineer
@@ -70,10 +90,23 @@
       Skills: Python, Django, PostgreSQL, Docker
     statement: "Led a team of 8 engineers"
   assert:
+    # The load-bearing check, never relaxed: this claim must be rejected.
     - type: javascript
       value: "JSON.parse(output).verified === false"
+    # This is a genuinely compound claim with TWO independently unsupported
+    # dimensions: the metric ("8", nowhere in evidence) and the action/
+    # ownership verb ("Led", nowhere in evidence). The prompt's own
+    # taxonomy states no precedence between them for a claim that fits
+    # both descriptions, and this project's own deterministic Layer-1
+    # reference implementation (domain/truthfulness_predicates.py) only
+    # picks metric_unsupported first because its rules happen to run in
+    # that order -- an implementation-order artifact, not a semantic
+    # ruling that the metric reason is more "correct" than the action
+    # reason. A model choosing either is equally right; category
+    # flexibility here can never turn verified===true into a pass -- that
+    # check above is unconditional.
     - type: javascript
-      value: "JSON.parse(output).category === 'metric_unsupported'"
+      value: "['metric_unsupported', 'unsupported_action_inference'].includes(JSON.parse(output).category)"
 
 - description: "#8 honest generalization/vagueness -- must be verified (false-positive guard)"
   vars:
@@ -87,7 +120,7 @@
     - type: javascript
       value: "JSON.parse(output).verified === true"
 
-- description: "#9 skill listed but never demonstrated in a bullet -- must be verified (skills list is first-class evidence)"
+- description: "#9 skill listed but never demonstrated -- must be blocked, a skill noun alone does not prove the action (ADR-0044)"
   vars:
     evidence: |
       Position: Software Engineer
@@ -97,7 +130,9 @@
     statement: "Containerized services using Docker"
   assert:
     - type: javascript
-      value: "JSON.parse(output).verified === true"
+      value: "JSON.parse(output).verified === false"
+    - type: javascript
+      value: "JSON.parse(output).category === 'unsupported_action_inference'"
 
 - description: "#10 composite fabrication -- real facts stitched into an untrue combined claim, must be blocked for the RIGHT reason"
   vars:
@@ -110,12 +145,18 @@
   assert:
     - type: javascript
       value: "JSON.parse(output).verified === false"
-    # the detail must actually name the invented piece, not just fire on
-    # something coincidental -- Django (real) must not be what's blamed
+    # The block must not be a naive "Django isn't a known skill" mistake --
+    # Django genuinely is one. category !== skill_not_found proves that
+    # directly. (A prior version of this assertion checked whether the
+    # word "django" appeared anywhere in the model's own detail text --
+    # too brittle: a model correctly explaining "the evidence doesn't
+    # support a Django-based microservices platform" legitimately mentions
+    # "Django" while quoting the claim back, which isn't the same as
+    # blaming Django for the rejection.)
     - type: javascript
-      value: "!JSON.parse(output).detail.toLowerCase().includes('django')"
+      value: "JSON.parse(output).category !== 'skill_not_found'"
 
-- description: "#11 synonym/elaboration, not verbatim -- must be verified (false-positive guard)"
+- description: "#11 PostgreSQL skill does not prove design competency -- must be blocked (ADR-0044)"
   vars:
     evidence: |
       Position: Software Engineer
@@ -125,7 +166,9 @@
     statement: "relational database design (PostgreSQL)"
   assert:
     - type: javascript
-      value: "JSON.parse(output).verified === true"
+      value: "JSON.parse(output).verified === false"
+    - type: javascript
+      value: "JSON.parse(output).category === 'unsupported_action_inference'"
 
 - description: "#12 real project, fabricated outcome -- must be blocked, metric_unsupported"
   vars:

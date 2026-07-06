@@ -1,0 +1,29 @@
+description: "Regression: defaultTest.options.transform strips a reasoning preamble before assertions run (ADR-0043)"
+
+prompts:
+  - "CLAIM: {{statement}}"
+
+providers:
+  - file://echoProvider.js
+
+tests:
+  - vars:
+      statement: "AWS"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).verified === false"
+      - type: javascript
+        value: "JSON.parse(output).category === 'skill_not_found'"
+  - vars:
+      statement: "Improved system performance"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).verified === true"
+
+defaultTest:
+  options:
+    # Byte-identical to career_agent.llm.groq_client.extract_json_object
+    # and to promptfooconfig.groq.yaml's real transform.
+    transform: "output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1)"
+  assert:
+    - type: is-json

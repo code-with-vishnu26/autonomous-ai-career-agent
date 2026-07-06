@@ -1,0 +1,73 @@
+# Truthfulness gate promptfoo eval, Groq provider (ADR-0043).
+#
+# Hard merge gate for the free-tier GroqClaimVerifier -- see README.md.
+# Requires GROQ_API_KEY and network access; not runnable in the sandbox
+# this project was built in. Run from your own machine, and write output
+# to a DIFFERENT results file than the Anthropic config -- promptfoo_gate.py
+# keys its check to provider_id="groq" specifically, so a pass recorded here
+# never satisfies (or is satisfied by) the Anthropic provider's results.
+#
+# max_tokens/reasoning_effort/include_reasoning below MUST match
+# groq_claim_verifier.py's _MAX_TOKENS/_REASONING_EFFORT/include_reasoning
+# exactly, and defaultTest.options.transform below MUST match
+# groq_client.extract_json_object exactly. Three live runs, three distinct
+# bugs, all config/harness mismatches -- not model-quality failures:
+#
+# 1. A first run at max_tokens=300 with neither reasoning parameter set
+#    scored 0/10 -- gpt-oss-120b spends part of max_tokens on hidden
+#    chain-of-thought before emitting the requested JSON, which starved
+#    every case's actual answer before it could be written.
+# 2. A second run, after fixing (1), still scored 0/10 -- gpt-oss-120b
+#    prepends visible reasoning text to its answer ("Thinking: ...
+#    {json}") regardless of include_reasoning=false (a documented
+#    upstream Groq/gpt-oss quirk). The JSON itself was correct on every
+#    case; it was never the entire response text.
+# 3. A third run, with a `transform` key added as a SIBLING of `assert`
+#    under `defaultTest`, still scored 0/10. Read directly from the
+#    installed promptfoo@0.121.17 package
+#    (dist/src/tables-*.js's TestCaseSchema, dist/src/evaluator-*.js's
+#    transformRunEvalResponse): there is no top-level `test.transform`
+#    field at all -- only `test.options.transform` (or the legacy alias
+#    `test.options.postprocess`) is ever read, and TestCaseSchema silently
+#    strips unrecognized top-level keys, so the misplaced `transform` did
+#    nothing and every assertion still saw the raw, untransformed output.
+#    Fixed by nesting it under `options:` below, confirmed against the
+#    actual installed package source, not guessed.
+#
+# None of these three fixes touch what counts as a pass: is-json and every
+# per-case JS assertion in tests.yaml are unchanged, and still fail any
+# output that (once extracted) isn't valid, correctly-judged JSON.
+
+description: "Truthfulness gate -- adversarial fabrication matrix (12 cases), Groq provider"
+
+prompts:
+  - file://prompt.txt
+
+providers:
+  # openai/gpt-oss-120b via Groq's OpenAI-compatible endpoint -- the
+  # strongest reasoning model on Groq's free tier, chosen for this port
+  # specifically because it is the single highest-stakes judgment in the
+  # system (see GroqClaimVerifier's docstring, ADR-0043).
+  - id: openai:chat:openai/gpt-oss-120b
+    config:
+      apiBaseUrl: https://api.groq.com/openai/v1
+      apiKeyEnvar: GROQ_API_KEY
+      temperature: 0
+      max_tokens: 2000
+      reasoning_effort: low
+      include_reasoning: false
+
+tests: file://tests.yaml
+
+defaultTest:
+  options:
+    # Mirrors career_agent.llm.groq_client.extract_json_object exactly:
+    # the substring from the first '{' to the last '}'. Confirmed correct
+    # against promptfoo@0.121.17's actual source: transformRunEvalResponse
+    # (dist/src/evaluator-*.js) reads exactly this key
+    # (`test.options.transform`) and applies it to `processedResponse.output`
+    # BEFORE runAssertions is called with that transformed value -- this is
+    # the one and only field name/level the installed version reads.
+    transform: "output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1)"
+  assert:
+    - type: is-json

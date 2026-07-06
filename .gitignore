@@ -54,6 +54,15 @@ exports/
 master_profile.json
 !examples/**/master_profile.json
 
+# ---- promptfoo live-validation evidence (machine-local, never committed) ----
+# See promptfoo/README.md: these are the artifacts verify_promptfoo_results
+# checks structurally/by content, never cryptographically -- committing one
+# would misleadingly imply "checked into version control" means "verified",
+# when a fabricated file with the right counters would look identical.
+# Every developer/CI environment must produce its own by running the real
+# suite (promptfoo/README.md's "Running it" section).
+promptfoo/results/
+
 # ---- Browser / Playwright session state ----
 .auth/
 playwright/.cache/

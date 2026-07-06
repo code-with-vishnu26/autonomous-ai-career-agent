@@ -1,18 +1,23 @@
 """The real, Claude-backed :class:`ClaimVerifier` (ADR-0016).
 
-This is the only concrete production implementation of the port defined in
-``core/interfaces.py``. Never imported on the test path -- tests inject
-``FakeClaimVerifier`` (``tests/_fakes.py``) instead, the same offline-testing
-discipline every other real-network component in this project follows.
+This was the only concrete production implementation of the port defined in
+``core/interfaces.py`` until ADR-0043 added ``GroqClaimVerifier`` as a
+free-tier alternative on direct user instruction to run at zero ongoing
+cost. Never imported on the test path -- tests inject ``FakeClaimVerifier``
+(``tests/_fakes.py``) instead, the same offline-testing discipline every
+other real-network component in this project follows.
 
 Two hard constraints, stated in code as well as in ADR-0016 so they cannot
 silently regress:
 
-1. **Permanently exempt from cost-cascade routing.** ``_MODEL`` is pinned to
-   the most capable tier. A false-approve here is catastrophic; a false-block
-   merely means an honest claim is held back for the user to notice and fix.
-   That asymmetry is why this task never gets routed to a cheaper model, even
-   as the rest of the system uses a Haiku -> Sonnet -> Opus cascade elsewhere.
+1. **Pinned to the most capable Anthropic tier, still used as the fallback
+   when ``GROQ_API_KEY`` is unset.** A false-approve here is catastrophic; a
+   false-block merely means an honest claim is held back for the user to
+   notice and fix. ADR-0016's "never cost-cascade this" reasoning is exactly
+   why ADR-0043 did not simply reroute this class's ``_MODEL`` to a cheaper
+   tier -- it added a distinct, separately promptfoo-gated class instead
+   (see ``groq_claim_verifier.py``), so the asymmetry stays visible per
+   provider rather than blurred into one model constant.
 2. **Temperature 0.** Minimizes (but does not eliminate) run-to-run variance.
    Re-verifying the same claim against the same evidence may still legitimately
    diverge across calls -- an expected, documented limitation of resting
@@ -40,6 +45,9 @@ class AnthropicClaimVerifier:
     """A :class:`~career_agent.core.interfaces.ClaimVerifier` backed by Claude."""
 
     prompt_version = TRUTHFULNESS_GATE_PROMPT_VERSION
+    #: Keys the promptfoo results artifact (ADR-0043) -- distinct from
+    #: ``GroqClaimVerifier``'s so a pass for one can never cover the other.
+    provider_id = "anthropic"
 
     def __init__(self, *, api_key: str, model: str = _MODEL) -> None:
         """Configure the verifier with a bare API key.

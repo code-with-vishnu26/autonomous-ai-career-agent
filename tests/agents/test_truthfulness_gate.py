@@ -1,5 +1,6 @@
 """The load-bearing test for Phase 5: the reviewer-defined 12-case adversarial
-fabrication matrix (ADR-0016).
+fabrication matrix (ADR-0016), revised by ADR-0044's deterministic precheck
+layer.
 
 The matrix is the reviewer's, not the implementer's -- same governance as the
 HN held-candidate matrix and the cross-source dedup branches. Each case is
@@ -9,7 +10,31 @@ aggregation) is correct. It does NOT prove a real model judges these claims
 correctly -- that is the promptfoo suite's job (see ``promptfoo/``), and the
 distinction is deliberate, not an oversight.
 
-Approve: #1, #8, #9, #11. Block: #2, #3, #4, #5, #6, #7, #10, #12.
+**ADR-0044 revised three of this matrix's original verdicts**, on the
+explicit, documented finding that "a skill noun alone proves an action" and
+"any honest-sounding rephrase is entailed" were themselves under-specified
+policy, not settled fact -- see ADR-0044 for the full audit and reasoning:
+
+- #1 (built -> architected) now BLOCKS: an unsupported ownership/verb
+  escalation, not a "false-positive guard" case.
+- #9 (Docker skill -> "containerized ... Docker") now BLOCKS: a skill
+  listed but never demonstrated does not prove the action.
+- #11 (PostgreSQL skill -> "database design (PostgreSQL)") now BLOCKS, for
+  the same reason as #9.
+- #10 (Django-based "microservices platform") still BLOCKS, but now at
+  Layer 1 (``Microservices`` is a named, curated-taxonomy technology with
+  zero evidence anywhere -- not even a skill), before the LLM is ever
+  called, rather than at Layer 4 via the model's semantic judgment.
+- #5 (title escalation) still BLOCKS, now with the more precise
+  ``unsupported_seniority`` category instead of the overloaded
+  ``employer_mismatch``.
+
+#8 (a specific, evidenced improvement generalized into vaguer wording,
+introducing nothing new) is the one matrix case ADR-0044 explicitly
+confirmed as a genuine safe abstraction, not merely un-rejected -- see
+``domain/truthfulness_predicates.py``'s Rule 6 and its own test suite.
+
+Approve: #8. Block: #1, #2, #3, #4, #5, #6, #7, #9, #10, #11, #12.
 """
 
 from __future__ import annotations
@@ -43,15 +68,14 @@ def test_gate_satisfies_the_truthfulness_gate_protocol() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_case_1_honest_rephrase_is_approved() -> None:
+async def test_case_1_built_to_architected_is_now_blocked() -> None:
+    """ADR-0044 revised this from APPROVE to BLOCK: "architected" outranks
+    the evidenced "built" for the same object, an unsupported ownership
+    escalation -- not merely a stylistic rephrase. Resolved entirely at
+    Layer 1 (precheck); the FakeClaimVerifier is never even called for
+    this claim (empty verdict map proves it -- a call would raise)."""
     claim = "Architected high-throughput REST APIs handling 2M+ daily requests"
-    verifier = FakeClaimVerifier(
-        {
-            claim: ClaimVerdict(verified=True, confidence=0.95),
-            "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
-            "Cut pipeline runtime 40%": ClaimVerdict(verified=True, confidence=0.95),
-        }
-    )
+    verifier = FakeClaimVerifier({})
     gate = LLMTruthfulnessGate(verifier)
     draft = _draft(
         TailoredContent(
@@ -66,8 +90,9 @@ async def test_case_1_honest_rephrase_is_approved() -> None:
         )
     )
     result = await gate.verify(draft, sample_master_profile())
-    assert result.approved is True
-    assert result.rejections == []
+    assert result.approved is False
+    assert result.rejections[0].category == "unsupported_action_inference"
+    assert verifier.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -147,21 +172,17 @@ async def test_case_4_fabricated_employer_is_blocked() -> None:
 
 
 # ---------------------------------------------------------------------------
-# #5 -- real employer, inflated title (BLOCK, employer_mismatch)
+# #5 -- real employer, inflated title (BLOCK, unsupported_seniority)
 # ---------------------------------------------------------------------------
 
 
 async def test_case_5_inflated_title_is_blocked() -> None:
-    verifier = FakeClaimVerifier(
-        {
-            "Senior Software Engineer": ClaimVerdict(
-                verified=False,
-                confidence=0.9,
-                category="employer_mismatch",
-                detail="title inflated: profile states Software Engineer",
-            ),
-        }
-    )
+    """ADR-0044: resolved at Layer 1 now, with the more precise
+    ``unsupported_seniority`` category -- "employer_mismatch" was always an
+    overloaded label for a title/seniority claim, not an actual employer
+    dispute (the employer, Techco, is correct; only the title is
+    inflated)."""
+    verifier = FakeClaimVerifier({})
     gate = LLMTruthfulnessGate(verifier)
     draft = _draft(
         TailoredContent(
@@ -178,7 +199,8 @@ async def test_case_5_inflated_title_is_blocked() -> None:
     )
     result = await gate.verify(draft, sample_master_profile())
     assert result.approved is False
-    assert result.rejections[0].category == "employer_mismatch"
+    assert result.rejections[0].category == "unsupported_seniority"
+    assert verifier.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -272,19 +294,18 @@ async def test_case_8_honest_generalization_is_approved() -> None:
 
 
 # ---------------------------------------------------------------------------
-# #9 -- skill listed but never demonstrated in a bullet (APPROVE -- resolved
-# explicitly: the skills list is first-class evidence in its own right)
+# #9 -- skill listed but never demonstrated in a bullet (BLOCK, ADR-0044 --
+# a skill noun alone does not prove an action was performed with it)
 # ---------------------------------------------------------------------------
 
 
-async def test_case_9_skill_list_alone_is_sufficient_evidence() -> None:
+async def test_case_9_skill_list_alone_does_not_prove_the_action() -> None:
+    """ADR-0044 revised this from APPROVE to BLOCK: Docker is a real skill,
+    but "containerized services" asserts a specific action never
+    demonstrated anywhere in the work/project evidence -- only in the bare
+    skills list. Resolved at Layer 1; the verifier is never called."""
     claim = "Containerized services using Docker"
-    verifier = FakeClaimVerifier(
-        {
-            "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
-            claim: ClaimVerdict(verified=True, confidence=0.9),
-        }
-    )
+    verifier = FakeClaimVerifier({})
     gate = LLMTruthfulnessGate(verifier)
     draft = _draft(
         TailoredContent(
@@ -299,38 +320,28 @@ async def test_case_9_skill_list_alone_is_sufficient_evidence() -> None:
         )
     )
     result = await gate.verify(draft, sample_master_profile())
-    assert result.approved is True
-    # confirms the skills list was actually included in the evidence the
-    # verifier saw, not just coincidentally approved
-    _, evidence_seen = verifier.calls[-1]
-    assert "Docker" in evidence_seen
+    assert result.approved is False
+    assert result.rejections[0].category == "unsupported_action_inference"
+    assert "Docker" in result.rejections[0].detail
+    assert verifier.calls == []
 
 
 # ---------------------------------------------------------------------------
 # #10 -- composite fabrication: real facts stitched into an untrue combined
-# claim (BLOCK, evidence_missing -- caught by entailment, not keyword luck)
+# claim (BLOCK, evidence_missing -- now caught at Layer 1, ADR-0044)
 # ---------------------------------------------------------------------------
 
 
 async def test_case_10_composite_fabrication_is_blocked_for_the_right_reason() -> None:
-    """Django is a real skill; the REST-API highlight is real. Only
-    "microservices platform" is invented. This must be caught because the
-    added detail is ungrounded -- not because some unrelated fragment (e.g.
-    "Django" alone) happens to trip skill_not_found. The evidence the fake
-    verifier receives includes Django, proving a naive skill-presence check
-    could NOT have caused this block by accident."""
+    """Django is a real skill; the REST-API highlight is real. "Microservices"
+    is a curated-taxonomy technology with zero evidence anywhere -- not the
+    LLM's semantic judgment call this used to be, but Layer 1's Rule 1
+    (unsupported technology), resolved before the verifier is ever reached.
+    The block is specifically about "Microservices", not a naive
+    skill-presence miss on Django -- proven by the case immediately below,
+    where a Django-only claim of the same shape is NOT blocked."""
     claim = "Built a Django-based microservices platform serving 2M requests"
-    verifier = FakeClaimVerifier(
-        {
-            "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
-            claim: ClaimVerdict(
-                verified=False,
-                confidence=0.85,
-                category="evidence_missing",
-                detail="microservices platform architecture not supported by evidence",
-            ),
-        }
-    )
+    verifier = FakeClaimVerifier({})
     gate = LLMTruthfulnessGate(verifier)
     draft = _draft(
         TailoredContent(
@@ -347,26 +358,17 @@ async def test_case_10_composite_fabrication_is_blocked_for_the_right_reason() -
     result = await gate.verify(draft, sample_master_profile())
     assert result.approved is False
     assert result.rejections[0].category == "evidence_missing"
-    assert "microservices" in result.rejections[0].detail
-    # Django genuinely was in the evidence the verifier judged against --
-    # the block is despite that, not because Django was absent.
-    _, evidence_seen = verifier.calls[-1]
-    assert "Django" in evidence_seen
+    assert "Microservices" in result.rejections[0].detail
+    assert verifier.calls == []
 
 
-# ---------------------------------------------------------------------------
-# #11 -- synonym / elaboration, not verbatim (APPROVE, false-positive guard)
-# ---------------------------------------------------------------------------
-
-
-async def test_case_11_synonym_elaboration_is_approved() -> None:
-    claim = "relational database design (PostgreSQL)"
-    verifier = FakeClaimVerifier(
-        {
-            "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
-            claim: ClaimVerdict(verified=True, confidence=0.9),
-        }
-    )
+async def test_case_10b_a_genuinely_evidenced_technology_is_not_blocked() -> None:
+    """The companion proof for #10: a claim naming ONLY Django (genuinely
+    evidenced, if only as a skill) is not blocked by Rule 1 -- the previous
+    test's block is specifically about "Microservices", not an accidental
+    Django false-positive."""
+    claim = "Used Django"
+    verifier = FakeClaimVerifier({})
     gate = LLMTruthfulnessGate(verifier)
     draft = _draft(
         TailoredContent(
@@ -382,6 +384,37 @@ async def test_case_11_synonym_elaboration_is_approved() -> None:
     )
     result = await gate.verify(draft, sample_master_profile())
     assert result.approved is True
+
+
+# ---------------------------------------------------------------------------
+# #11 -- PostgreSQL skill does not prove design competency (BLOCK, ADR-0044)
+# ---------------------------------------------------------------------------
+
+
+async def test_case_11_skill_does_not_prove_design_competency() -> None:
+    """ADR-0044 revised this from APPROVE to BLOCK: PostgreSQL is a real
+    skill, but "database design" asserts a competency never demonstrated
+    anywhere in the work/project evidence -- the same shape as #9, applied
+    to a competency noun ("design") rather than a verb."""
+    claim = "relational database design (PostgreSQL)"
+    verifier = FakeClaimVerifier({})
+    gate = LLMTruthfulnessGate(verifier)
+    draft = _draft(
+        TailoredContent(
+            summary="x",
+            work=[
+                TailoredWorkEntry(
+                    source_entry_id="work-techco",
+                    position="Software Engineer",
+                    highlights=[claim],
+                )
+            ],
+        )
+    )
+    result = await gate.verify(draft, sample_master_profile())
+    assert result.approved is False
+    assert result.rejections[0].category == "unsupported_action_inference"
+    assert verifier.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -425,29 +458,25 @@ async def test_case_12_fabricated_project_outcome_is_blocked() -> None:
 
 
 async def test_matrix_load_bearing_pairing() -> None:
-    """#1, #8, #9, #11 must approve; #2-#7, #10, #12 must block. A gate that
-    blocks the honest cases is uselessly strict; a gate that approves any
-    fabrication case has failed at the one thing it exists to do."""
+    """#8 must approve; #1, #2-#7, #9, #10, #11, #12 must block (ADR-0044
+    revised #1/#9/#11 from approve to block -- see the module docstring).
+    A gate that blocks the one honest case is uselessly strict; a gate
+    that approves any fabrication case has failed at the one thing it
+    exists to do. Every claim here resolves at Layer 1 -- the verifier is
+    never called at all, proven by ``FakeClaimVerifier({})`` plus the
+    empty-calls assertion."""
     profile = sample_master_profile()
-    approve_claims = [
+    approve_claims = ["Improved system performance"]
+    block_claims = [
         "Architected high-throughput REST APIs handling 2M+ daily requests",
-        "Improved system performance",
         "Containerized services using Docker",
         "relational database design (PostgreSQL)",
-    ]
-    block_claims = [
         "Cut pipeline runtime 90%",
         "Led a team of 8 engineers",
         "Built a Django-based microservices platform serving 2M requests",
     ]
-    verdicts = {"Software Engineer": ClaimVerdict(verified=True, confidence=1.0)}
-    for claim in approve_claims:
-        verdicts[claim] = ClaimVerdict(verified=True, confidence=0.9)
-    for claim in block_claims:
-        verdicts[claim] = ClaimVerdict(
-            verified=False, confidence=0.9, category="evidence_missing", detail="x"
-        )
-    gate = LLMTruthfulnessGate(FakeClaimVerifier(verdicts))
+    verifier = FakeClaimVerifier({})
+    gate = LLMTruthfulnessGate(verifier)
     draft = _draft(
         TailoredContent(
             summary="x",
@@ -475,3 +504,4 @@ async def test_matrix_load_bearing_pairing() -> None:
     assert blocked_texts == set(block_claims)
     # any single failing statement blocks the whole draft
     assert result.approved is False
+    assert verifier.calls == []
