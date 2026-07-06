@@ -220,6 +220,137 @@ async def test_prior_non_rejected_attempt_refuses_to_tailor_again(
     assert exit_code == 1
 
 
+def _all_journal_rows(db_path: Path) -> list[tuple]:
+    """Raw peek at every journal row -- test-only, the store exposes no
+    "list all runs" method (not needed by any real caller yet)."""
+    import sqlite3
+
+    connection = sqlite3.connect(db_path)
+    rows = connection.execute(
+        "SELECT run_id, sequence_no, stage, event_type, outcome"
+        " FROM run_journal ORDER BY run_id, sequence_no"
+    ).fetchall()
+    connection.close()
+    return rows
+
+
+async def test_run_journal_records_the_happy_path_stage_history(
+    tmp_path: Path,
+) -> None:
+    """Phase 23 / ADR-0049: a fresh run_id, in-order stage transitions,
+    ending with RUN_COMPLETED -- purely informational, never a gate."""
+    from career_agent.domain.models import Opportunity
+    from career_agent.storage.sqlite import SqliteRunJournal
+
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            {
+                "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    db_path = tmp_path / "db.sqlite"
+    journal = SqliteRunJournal(db_path)
+
+    exit_code = await _apply_pipeline(
+        _honest_profile(),
+        opportunity,
+        generator,
+        gate,
+        input_fn=lambda _: "y",
+        run_journal=journal,
+    )
+    assert exit_code == 0
+
+    rows = _all_journal_rows(db_path)
+    run_ids = {row[0] for row in rows}
+    assert len(run_ids) == 1  # exactly one run_id for this whole invocation
+    event_types = [row[3] for row in rows]
+    assert event_types == [
+        "RUN_STARTED",
+        "TAILORING_STARTED",
+        "TAILORING_COMPLETED",
+        "TRUTHFULNESS_APPROVED",
+        "AWAITING_CONFIRMATION",
+        "RUN_COMPLETED",
+    ]
+    assert rows[-1][4] == "confirmed_not_submitted"
+
+
+async def test_run_journal_records_idempotency_refusal_without_tailoring(
+    tmp_path: Path,
+) -> None:
+    """A refused re-attempt (ADR-0048) is itself a reconstructable event,
+    distinct from a real tailoring run."""
+    from career_agent.domain.models import (
+        Application,
+        BasicsSection,
+        LegalStatusSection,
+        Opportunity,
+        Statement,
+        TailoredContent,
+        TailoredResume,
+        TruthfulnessResult,
+    )
+    from career_agent.storage.sqlite import SqliteApplicationStore, SqliteRunJournal
+
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    db_path = tmp_path / "db.sqlite"
+    store = SqliteApplicationStore(db_path)
+    prior_resume = TailoredResume(
+        id="resume-prior",
+        opportunity_id=opportunity.id,
+        profile_version="profile-v1",
+        content=TailoredContent(summary="Engineer."),
+        truthfulness=TruthfulnessResult(
+            profile_version="profile-v1",
+            approved=True,
+            statements=[
+                Statement(text="x", evidence=None, confidence=1, verified=True)
+            ],
+            prompt_version="test-v1",
+        ),
+    )
+    store.record(
+        Application(
+            id="prior-app",
+            opportunity_id=opportunity.id,
+            resume=prior_resume,
+            applicant=BasicsSection(name="Ada", email="ada@example.com"),
+            legal_status=LegalStatusSection(),
+            status="submitted",
+        ),
+        company="acme",
+        source="ats_api",
+        ats_total=None,
+    )
+    journal = SqliteRunJournal(db_path)
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(FakeClaimVerifier({}))
+
+    def _fail_if_called(_: str) -> str:
+        raise AssertionError("must refuse before ever tailoring")
+
+    exit_code = await _apply_pipeline(
+        _honest_profile(),
+        opportunity,
+        generator,
+        gate,
+        input_fn=_fail_if_called,
+        application_store=store,
+        run_journal=journal,
+    )
+    assert exit_code == 1
+
+    event_types = [row[3] for row in _all_journal_rows(db_path)]
+    assert event_types == ["RUN_STARTED", "RUN_REFUSED"]
+
+
 # ---------------------------------------------------------------------------
 # run_apply_command -- file loading and promptfoo-gate ordering, still offline
 # ---------------------------------------------------------------------------

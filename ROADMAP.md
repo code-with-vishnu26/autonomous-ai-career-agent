@@ -825,6 +825,22 @@ applications, not thousands," ADR-0039) justifies adding any of it yet.
   phase -- see ADR-0048's "What was deliberately not built" section for the
   evidence behind each. Revisit only if a concrete, observed failure mode
   (not a hypothetical one) shows one of these is actually needed.
+- ✅ **Append-only execution journal -- ADR-0049 (Phase 23).** Central
+  finding: an irreversible external submission -- the one risk Phase 23's
+  brief centrally worried about -- is structurally unreachable from any
+  composition-root command today (`TieredApplicator`/`BrowserApplicator`/
+  `EmailApplicator`/`SubmissionPipeline` are never imported by `cli.py`).
+  A minimal, append-only `SqliteRunJournal` gives `apply`/`auto` a stable
+  per-invocation `run_id` and reconstructable stage history (for
+  auditability/crash-forensics, not as a safety gate), composed with
+  ADR-0048's still-active guard. A recovery planner, a validated
+  transition-gated state machine, and a `SUBMISSION_UNCERTAIN` state were
+  explicitly NOT built -- nothing reachable today is unsafe to simply
+  re-run from the start. **Named, deferred trigger:** before any real
+  `Applicator` is ever wired into a live `cli.py` command, this journal
+  must be extended with `EXTERNAL_ACTION_*` states and a deterministic
+  recovery planner enforcing "uncertain effect ⇒ never auto-replay" --
+  tracked explicitly, not built speculatively now.
 
 ---
 

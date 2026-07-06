@@ -90,6 +90,7 @@ from career_agent.storage.profile import (
 from career_agent.storage.sqlite import (
     SqliteApplicationStore,
     SqliteOpportunityRepository,
+    SqliteRunJournal,
 )
 
 _YES = {"y", "yes"}
@@ -153,6 +154,7 @@ async def _apply_pipeline(
     ats_threshold: float | None = None,
     semantic_matcher: SemanticKeywordMatcher | None = None,
     application_store: SqliteApplicationStore | None = None,
+    run_journal: SqliteRunJournal | None = None,
     notifier: object | None = None,
 ) -> int:
     """Tailor, gate, render, and confirm -- injectable for testing.
@@ -172,7 +174,28 @@ async def _apply_pipeline(
     fresh attempt risks a duplicate real-world submission. This tool never
     decides that risk is acceptable on the user's behalf -- resolving it
     (or removing the stale record) is an explicit human act.
+
+    ``run_journal`` (Phase 23, ADR-0049), when given, records this
+    invocation's own stage transitions under a fresh ``run_id`` -- purely
+    for reconstruction/auditability, never a gate: this call's actual
+    behavior is identical whether or not a journal is supplied.
     """
+    run_id = str(uuid.uuid4())
+
+    def _emit(
+        stage: str,
+        event_type: str,
+        *,
+        outcome: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
+        if run_journal is not None:
+            run_journal.append(
+                run_id, stage, event_type, outcome=outcome, metadata=metadata
+            )
+
+    _emit("run", "RUN_STARTED", metadata={"opportunity_id": opportunity.id})
+
     if application_store is not None:
         prior_status = application_store.prior_attempt_status(opportunity.id)
         if prior_status is not None:
@@ -183,6 +206,11 @@ async def _apply_pipeline(
                 f"real-world submission -- this is never retried "
                 f"automatically. If the prior record is stale or wrong, "
                 f"resolve it directly in the application store first."
+            )
+            _emit(
+                "idempotency_guard",
+                "RUN_REFUSED",
+                outcome=prior_status,
             )
             return 1
     bus = EventBus()
@@ -205,15 +233,19 @@ async def _apply_pipeline(
         ats_threshold=ats_threshold,
         semantic_matcher=semantic_matcher,
     )
+    _emit("tailoring", "TAILORING_STARTED")
     try:
         result = await pipeline.run(opportunity, profile)
     except MissingSummaryError as exc:
         print(f"Cannot tailor a resume: {exc}")
+        _emit("tailoring", "RUN_COMPLETED", outcome="missing_summary")
         return 1
     except AtsScoreBelowThresholdError as exc:
         print("The ATS score gate refused this application:")
         print(str(exc))
+        _emit("tailoring", "RUN_COMPLETED", outcome="ats_gate_failed")
         return 1
+    _emit("tailoring", "TAILORING_COMPLETED")
 
     if application_store is not None:
         application_store.record(
@@ -227,7 +259,9 @@ async def _apply_pipeline(
         print("The truthfulness gate rejected this draft:")
         for rejection in result.application.resume.truthfulness.rejections:
             print(f"  - [{rejection.category}] {rejection.detail}")
+        _emit("truthfulness", "RUN_COMPLETED", outcome="rejected")
         return 1
+    _emit("truthfulness", "TRUTHFULNESS_APPROVED")
 
     rendered = result.application.resume.rendered_text or ""
     print(rendered)
@@ -241,15 +275,18 @@ async def _apply_pipeline(
         rendered_content=rendered,
         preview_token=str(uuid.uuid4()),
     )
+    _emit("confirmation", "AWAITING_CONFIRMATION")
     confirmation = confirm_submission(preview, input_fn=input_fn)
     if confirmation is None:
         print("Not confirmed. Exiting without submitting.")
+        _emit("confirmation", "RUN_COMPLETED", outcome="declined")
         return 0
 
     print(
         "Confirmed. No real ATS adapter is wired in yet -- real submission "
         "is separate, future work (ADR-0026). Nothing was actually sent."
     )
+    _emit("confirmation", "RUN_COMPLETED", outcome="confirmed_not_submitted")
     return 0
 
 
@@ -321,6 +358,7 @@ async def run_apply_command(
         ats_threshold=settings.ats_threshold,
         semantic_matcher=semantic_matcher,
         application_store=SqliteApplicationStore(Path(settings.database_path)),
+        run_journal=SqliteRunJournal(Path(settings.database_path)),
         notifier=build_notifier(settings),
     )
 
@@ -817,6 +855,7 @@ async def run_auto_command(
     ats_threshold: float | None = None,
     artifacts_dir: Path | None = None,
     application_store: SqliteApplicationStore | None = None,
+    run_journal: SqliteRunJournal | None = None,
     notifier: object | None = None,
 ) -> int:
     """One scheduling-safe pass: discover -> rank -> tailor+gate -> notify.
@@ -834,7 +873,27 @@ async def run_auto_command(
     attempt -- an unattended cron run must never re-tailor (and risk a
     human later re-confirming a duplicate submission for) an opportunity
     it already prepared or submitted in a previous run.
+
+    ``run_journal`` (Phase 23, ADR-0049), when given, records this whole
+    pass under one fresh ``run_id`` -- one event per opportunity outcome
+    (skipped/failed/rejected/prepared), plus a final ``RUN_COMPLETED`` --
+    purely for reconstruction/auditability; behavior is unchanged either way.
     """
+    run_id = str(uuid.uuid4())
+
+    def _emit(
+        stage: str,
+        event_type: str,
+        *,
+        outcome: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
+        if run_journal is not None:
+            run_journal.append(
+                run_id, stage, event_type, outcome=outcome, metadata=metadata
+            )
+
+    _emit("run", "RUN_STARTED")
     await run_discover_command(
         sources, repo, since=since, out_dir=out_dir
     )
@@ -843,6 +902,11 @@ async def run_auto_command(
         Opportunity.model_validate(json.loads(path.read_text(encoding="utf-8")))
         for path in handoffs
     ]
+    _emit(
+        "discovery",
+        "DISCOVERY_COMPLETED",
+        metadata={"opportunity_count": str(len(opportunities))},
+    )
     included, _excluded = scorer.rank(opportunities, profile)  # type: ignore[attr-defined]
     prepared = 0
     for opportunity, decision in included[:top_n]:
@@ -853,6 +917,12 @@ async def run_auto_command(
                     f"[{opportunity.id}] skipped: already has a recorded "
                     f"application attempt (status={prior_status!r}) -- "
                     f"never re-attempted automatically (Phase 22, ADR-0048)"
+                )
+                _emit(
+                    "idempotency_guard",
+                    "OPPORTUNITY_SKIPPED",
+                    outcome=prior_status,
+                    metadata={"opportunity_id": opportunity.id},
                 )
                 continue
         bus = EventBus()
@@ -867,6 +937,12 @@ async def run_auto_command(
             result = await pipeline.run(opportunity, profile)
         except (MissingSummaryError, AtsScoreBelowThresholdError) as exc:
             print(f"[{opportunity.id}] not prepared: {exc}")
+            _emit(
+                "tailoring",
+                "OPPORTUNITY_NOT_PREPARED",
+                outcome="tailoring_failed",
+                metadata={"opportunity_id": opportunity.id},
+            )
             continue
         if application_store is not None:
             application_store.record(
@@ -877,8 +953,19 @@ async def run_auto_command(
             )
         if result.submittable is None:
             print(f"[{opportunity.id}] truthfulness gate rejected the draft")
+            _emit(
+                "truthfulness",
+                "OPPORTUNITY_NOT_PREPARED",
+                outcome="rejected",
+                metadata={"opportunity_id": opportunity.id},
+            )
             continue
         prepared += 1
+        _emit(
+            "application",
+            "APPLICATION_PREPARED",
+            metadata={"opportunity_id": opportunity.id},
+        )
         message = (
             f"{opportunity.canonical_company}: {opportunity.title} "
             f"(rank {decision.total:.1f}) is tailored, gated, and waiting "
@@ -893,6 +980,7 @@ async def run_auto_command(
                 print(f"(notification not delivered: {exc})")
     print(f"{prepared} application(s) prepared; none submitted -- submission "
           f"is always your explicit act.")
+    _emit("run", "RUN_COMPLETED", outcome=f"prepared={prepared}")
     return 0
 
 
@@ -969,6 +1057,7 @@ async def run_auto_cli_command(
         ats_threshold=settings.ats_threshold,
         artifacts_dir=Path(settings.artifacts_dir),
         application_store=SqliteApplicationStore(Path(settings.database_path)),
+        run_journal=SqliteRunJournal(Path(settings.database_path)),
         notifier=build_notifier(settings),
     )
 
