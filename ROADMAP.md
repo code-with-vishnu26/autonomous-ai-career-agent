@@ -772,7 +772,15 @@ proposed until a concrete trigger justifies the work.
   remains unmet, so full constrained-optimization/epsilon-constraint/
   lexicographic methods, and wiring this analysis into `auto`'s actual
   selection, both remain future work gated on that same still-unobserved
-  trigger.
+  trigger. **ADR-0047** (Phase 21) validated, not extended, this system:
+  proved (algebraically and by an exhaustive 390,625-pair finite-grid
+  search, zero counterexamples) that under the current architecture the
+  scalar winner can never be Pareto-dominated -- all four weights are
+  strictly positive and the Pareto comparison uses exactly the objectives
+  `S` sums over, so dominance always implies a strictly higher scalar
+  score. The evidence gate re-checked every adjacent candidate algorithm
+  (portfolio, Bayesian uncertainty, Monte Carlo/Sobol sensitivity,
+  bandits, learned ranking): none justified by this phase's findings.
 - **R5 -- Application portfolio optimization.** Proposed, not started -- no
   current daily/weekly application-budget constraint exists to optimize
   against.

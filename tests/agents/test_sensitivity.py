@@ -116,6 +116,49 @@ def test_breakeven_delta_is_none_when_outside_the_valid_weight_range() -> None:
             )
 
 
+def test_order_is_unchanged_just_below_and_flipped_just_above_breakeven() -> None:
+    """Phase 21 (ADR-0047) audit: direct recomputation slightly on either
+    side of a real breakeven delta, proving the flip is an actual sign
+    change at that exact point, not merely that the margin passes through
+    zero somewhere in the neighborhood."""
+    higher = _score(
+        "higher",
+        total=0.5 * 70 + 0.2 * 40 + 0.2 * 60 + 0.1 * 0,
+        profile_match=70.0,
+        source_reliability=40.0,
+        freshness=60.0,
+        salary_transparency=0.0,
+    )
+    lower = _score(
+        "lower",
+        total=0.5 * 55 + 0.2 * 90 + 0.2 * 30 + 0.1 * 100,
+        profile_match=55.0,
+        source_reliability=90.0,
+        freshness=30.0,
+        salary_transparency=100.0,
+    )
+    points = rank_flip_points([higher, lower])
+    reachable = [p for p in points if p.breakeven_delta is not None]
+    assert reachable
+
+    epsilon = 1e-6
+    for point in reachable:
+        below = point.breakeven_delta - epsilon
+        above = point.breakeven_delta + epsilon
+        margin_below = _perturbed_total(
+            higher, point.weight_name, below
+        ) - _perturbed_total(lower, point.weight_name, below)
+        margin_above = _perturbed_total(
+            higher, point.weight_name, above
+        ) - _perturbed_total(lower, point.weight_name, above)
+        # A real sign change occurs exactly at the computed breakeven point
+        # -- direction-agnostic (the affine function's slope in delta can
+        # be positive or negative depending on the weight and pair), so
+        # this checks the two sides have strictly opposite signs rather
+        # than assuming which side is "original."
+        assert margin_below * margin_above < 0
+
+
 def test_only_adjacent_pairs_are_analyzed() -> None:
     ranked = [
         _score("first", total=90.0),
