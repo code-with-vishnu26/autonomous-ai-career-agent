@@ -21,6 +21,23 @@ for the lower-stakes drafting/matching ports) -- this is the single
 highest-stakes judgment in the system, so it gets Groq's strongest
 available free-tier reasoning model, not the same default as everything
 else.
+
+**Live promptfoo validation against the original ``max_tokens=300``
+uncovered a real configuration bug, not a model-quality failure**: Groq's
+own docs state ``gpt-oss-120b`` spends part of its token budget on hidden
+chain-of-thought reasoning before ever emitting the requested JSON, and
+that reasoning is not excluded from ``max_tokens`` by default. At 300
+tokens, reasoning alone consumed most or all of the budget on every one of
+the 12-case matrix's live-run cases, truncating the response before the
+JSON answer -- the promptfoo run's own transcripts showed the model's
+*reasoning* correctly identifying every fabrication, while the response
+never reached the point of emitting parseable JSON, so every case failed
+on ``is-json``, not on judgment quality. ``reasoning_effort="low"`` and
+``include_reasoning=False`` (Groq's documented controls for this model
+family) plus a much larger ``max_tokens`` are the fix; see
+``promptfoo/promptfooconfig.groq.yaml``, which must mirror these exactly,
+since a config that tests a different call shape than this class actually
+uses would validate nothing real.
 """
 
 from __future__ import annotations
@@ -35,6 +52,11 @@ from career_agent.llm.prompts import (
 )
 
 _MODEL = "openai/gpt-oss-120b"
+#: Reasoning tokens count against max_tokens for this model (Groq docs) --
+#: sized generously above the ~170 reasoning tokens/case observed in a live
+#: 12-case run, with headroom, not tuned to the bare minimum.
+_MAX_TOKENS = 2000
+_REASONING_EFFORT = "low"
 
 
 class GroqClaimVerifier:
@@ -63,7 +85,12 @@ class GroqClaimVerifier:
             evidence=evidence, statement=statement_text
         )
         text = await groq_chat_completion(
-            api_key=self._api_key, model=self._model, prompt=prompt, max_tokens=300
+            api_key=self._api_key,
+            model=self._model,
+            prompt=prompt,
+            max_tokens=_MAX_TOKENS,
+            reasoning_effort=_REASONING_EFFORT,
+            include_reasoning=False,
         )
         payload = json.loads(text)  # raises on malformed response, by design
         return ClaimVerdict(

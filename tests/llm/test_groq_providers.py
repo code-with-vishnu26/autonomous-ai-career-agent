@@ -100,6 +100,45 @@ async def test_groq_call_returns_message_content(monkeypatch):
     assert text == '{"ok": true}'
 
 
+async def test_groq_call_omits_reasoning_params_when_not_given(monkeypatch):
+    """Non-reasoning models (llama-3.3-70b-versatile) never see these keys --
+    only a caller that explicitly asks for them (GroqClaimVerifier) does."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert "reasoning_effort" not in body
+        assert "include_reasoning" not in body
+        return _groq_response('{"ok": true}')
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    await groq_chat_completion(
+        api_key="k", model="llama-3.3-70b-versatile", prompt="p", max_tokens=100
+    )
+
+
+async def test_groq_call_forwards_reasoning_params_when_given(monkeypatch):
+    """Regression for the live-run truncation bug: reasoning_effort and
+    include_reasoning must actually reach the request body when a caller
+    (GroqClaimVerifier) supplies them -- a silent no-op here would look
+    identical to the config that scored 0/10 on the real 12-case matrix."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["reasoning_effort"] == "low"
+        assert body["include_reasoning"] is False
+        return _groq_response('{"ok": true}')
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    await groq_chat_completion(
+        api_key="k",
+        model="openai/gpt-oss-120b",
+        prompt="p",
+        max_tokens=2000,
+        reasoning_effort="low",
+        include_reasoning=False,
+    )
+
+
 async def test_groq_call_raises_typed_error_on_http_failure(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, json={"error": "rate limited"})
@@ -149,6 +188,9 @@ async def test_groq_call_never_logs_the_api_key(monkeypatch, caplog):
 
 async def test_groq_content_drafter_parses_a_successful_draft(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert "reasoning_effort" not in body
+        assert "include_reasoning" not in body
         return _groq_response(
             json.dumps({"work": [], "skills": ["Python"], "projects": []})
         )
@@ -348,6 +390,29 @@ async def test_groq_claim_verifier_parses_a_successful_verdict(monkeypatch):
     verdict = await verifier.verify_claim("I know Docker.", "Used Docker daily.")
     assert verdict.verified is True
     assert verdict.confidence == 0.95
+
+
+async def test_groq_claim_verifier_sends_the_reasoning_truncation_fix(monkeypatch):
+    """Regression for the live 0/10 promptfoo run: max_tokens=300 with no
+    reasoning_effort/include_reasoning let gpt-oss-120b's hidden
+    chain-of-thought consume the whole budget before any JSON was emitted.
+    Pins the exact fix so a future edit can't silently regress it back to
+    the config that failed live -- must also stay in sync with
+    promptfoo/promptfooconfig.groq.yaml, which this test cannot check."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["max_tokens"] >= 2000
+        assert body["reasoning_effort"] == "low"
+        assert body["include_reasoning"] is False
+        return _groq_response(
+            json.dumps(
+                {"verified": True, "confidence": 1.0, "category": None, "detail": "x"}
+            )
+        )
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    await GroqClaimVerifier(api_key="k").verify_claim("claim", "evidence")
 
 
 async def test_groq_claim_verifier_raises_on_malformed_json(monkeypatch):

@@ -6,6 +6,18 @@
 # to a DIFFERENT results file than the Anthropic config -- promptfoo_gate.py
 # keys its check to provider_id="groq" specifically, so a pass recorded here
 # never satisfies (or is satisfied by) the Anthropic provider's results.
+#
+# max_tokens/reasoning_effort/include_reasoning below MUST match
+# groq_claim_verifier.py's _MAX_TOKENS/_REASONING_EFFORT/include_reasoning
+# exactly. A first live run at max_tokens=300 with neither reasoning
+# parameter set scored 0/10 -- gpt-oss-120b spends part of max_tokens on
+# hidden chain-of-thought before emitting the requested JSON (undocumented
+# in this project until that run), which starved every case's actual answer
+# before it could be written. The model's *reasoning* in that run correctly
+# identified every fabrication; the response was simply truncated before the
+# JSON existed. This is a corrected config-runtime mismatch, not a relaxed
+# assertion -- is-json below is unchanged and still fails any output that
+# isn't valid, parseable JSON.
 
 description: "Truthfulness gate -- adversarial fabrication matrix (12 cases), Groq provider"
 
@@ -22,7 +34,9 @@ providers:
       apiBaseUrl: https://api.groq.com/openai/v1
       apiKeyEnvar: GROQ_API_KEY
       temperature: 0
-      max_tokens: 300
+      max_tokens: 2000
+      reasoning_effort: low
+      include_reasoning: false
 
 tests: file://tests.yaml
 

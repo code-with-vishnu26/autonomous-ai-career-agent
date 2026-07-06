@@ -118,3 +118,17 @@ def test_a_pass_for_one_provider_never_authorizes_another() -> None:
             verify_promptfoo_results(
                 "truthfulness-gate-v1", results_dir, provider_id="groq"
             )
+
+
+def test_a_real_0_of_10_groq_run_cannot_unlock_the_verifier(tmp_path: Path) -> None:
+    """The exact shape of a real live run against the pre-fix Groq config
+    (max_tokens=300, no reasoning_effort/include_reasoning): 0 successes,
+    10 failures, 0 errors. Written to disk at the real path
+    verify_promptfoo_results checks, it must refuse -- confirming that this
+    specific failed artifact can never be mistaken for a pass, regardless
+    of how it got there."""
+    _write_results(tmp_path, "truthfulness-gate-v1", "groq", successes=0, failures=10)
+    with pytest.raises(PromptfooNotValidatedError, match="0 passing"):
+        verify_promptfoo_results(
+            "truthfulness-gate-v1", tmp_path, provider_id="groq"
+        )
