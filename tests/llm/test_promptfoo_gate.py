@@ -30,24 +30,32 @@ def _write_results(
     failures: int,
     errors: int = 0,
     recorded_provider: str | None = None,
+    recorded_prompt_raw: str | None = None,
 ) -> None:
     """Write a results file shaped like a real promptfoo output.
 
     ``recorded_provider`` defaults to the *correct* id for ``provider_id``
     (from ``_EXPECTED_PROVIDER_IDS``) so tests that aren't specifically
     about provider mismatch don't have to think about it; pass an explicit
-    (wrong) value to test that check.
+    (wrong) value to test that check. ``recorded_prompt_raw``, if given,
+    populates ``results.prompts[0].raw`` the way a real promptfoo run does;
+    omitted by default so existing tests (no sibling ``prompt.txt``) are
+    unaffected by the drift check, which is skipped when that field is
+    absent.
     """
     dir_.mkdir(parents=True, exist_ok=True)
     provider = recorded_provider or _EXPECTED_PROVIDER_IDS[provider_id]
+    results: dict[str, object] = {
+        "stats": {
+            "successes": successes,
+            "failures": failures,
+            "errors": errors,
+        }
+    }
+    if recorded_prompt_raw is not None:
+        results["prompts"] = [{"raw": recorded_prompt_raw}]
     payload = {
-        "results": {
-            "stats": {
-                "successes": successes,
-                "failures": failures,
-                "errors": errors,
-            }
-        },
+        "results": results,
         "config": {"providers": [{"id": provider, "config": {}}]},
     }
     (dir_ / f"{prompt_version}--{provider_id}.json").write_text(json.dumps(payload))
@@ -318,3 +326,67 @@ def test_exact_complete_clean_run_is_accepted(tmp_path: Path) -> None:
     verify_promptfoo_results(
         "truthfulness-gate-v2", tmp_path, provider_id="groq"
     )  # does not raise
+
+
+# ---------------------------------------------------------------------------
+# Prompt-content drift check (integrity-against-drift only, best-effort;
+# see promptfoo_gate.py's module docstring for what this does and does not
+# prove -- it is not a defense against deliberate fabrication).
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_drift_check_is_skipped_when_no_sibling_prompt_txt_exists(
+    tmp_path: Path,
+) -> None:
+    """Every other test in this file relies on exactly this: a bare
+    ``tmp_path`` results dir with no sibling ``prompt.txt`` must not be
+    affected by the drift check at all, clean run or not."""
+    _write_results(
+        tmp_path,
+        "truthfulness-gate-v2",
+        "groq",
+        successes=_EXPECTED_CASE_COUNT,
+        failures=0,
+        recorded_prompt_raw="whatever text, never compared",
+    )
+    verify_promptfoo_results(
+        "truthfulness-gate-v2", tmp_path, provider_id="groq"
+    )  # does not raise -- no promptfoo/prompt.txt sibling to compare against
+
+
+def test_prompt_drift_check_passes_when_recorded_text_matches(
+    tmp_path: Path,
+) -> None:
+    results_dir = tmp_path / "results"
+    (tmp_path / "prompt.txt").write_text("CLAIM: {{statement}}\n")
+    _write_results(
+        results_dir,
+        "truthfulness-gate-v2",
+        "groq",
+        successes=_EXPECTED_CASE_COUNT,
+        failures=0,
+        recorded_prompt_raw="CLAIM: {{statement}}\n",
+    )
+    verify_promptfoo_results(
+        "truthfulness-gate-v2", results_dir, provider_id="groq"
+    )  # does not raise -- recorded and current prompt text match exactly
+
+
+def test_prompt_drift_check_rejects_a_mismatch(tmp_path: Path) -> None:
+    """The results file proves a pass against a prompt that isn't the one
+    currently on disk -- a stale/since-edited prompt.txt, not a fresh run
+    against the current text."""
+    results_dir = tmp_path / "results"
+    (tmp_path / "prompt.txt").write_text("CLAIM: {{statement}}\n")
+    _write_results(
+        results_dir,
+        "truthfulness-gate-v2",
+        "groq",
+        successes=_EXPECTED_CASE_COUNT,
+        failures=0,
+        recorded_prompt_raw="an old, since-changed prompt text\n",
+    )
+    with pytest.raises(PromptfooNotValidatedError, match="does not match"):
+        verify_promptfoo_results(
+            "truthfulness-gate-v2", results_dir, provider_id="groq"
+        )

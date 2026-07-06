@@ -42,6 +42,41 @@ independently, fail-closed on any missing/malformed field:
 - the results file's own recorded provider id matches the expected id for
   ``provider_id`` (catches a renamed/misplaced results file the filename
   convention alone cannot)
+
+**What this module proves, and what it does not.** Every check above is
+*integrity against accidental drift*: a stale prompt, a partial run, a
+provider mismatch, a malformed file. None of it is *authenticity against
+deliberate fabrication*. ``verify_promptfoo_results`` trusts the JSON
+counters and metadata in the results file at face value -- it never
+contacts promptfoo, Groq, or Anthropic itself, and has no way to. A
+hand-edited or hand-written file with ``successes`` equal to
+``_EXPECTED_CASE_COUNT``, ``failures``/``errors`` at ``0``, and a
+``config.providers`` entry copied from a real config would satisfy every
+check in this module, including the prompt-content check added below,
+which a fabricator could defeat just as easily by also copying the real
+``prompt.txt`` text into the fake file. Nothing here is a cryptographic
+signature or a call-log audit trail; closing that gap for real (e.g. a
+signed attestation from the eval run itself) is unimplemented and would be
+new scope, not a fix to what exists.
+
+The prompt-content check added after ADR-0044's stats hardening closes one
+further *drift* gap, not the authenticity one: ``verify_promptfoo_results``
+previously trusted the filename's ``prompt_version`` segment to mean the
+results were actually validated against the *current* ``promptfoo/prompt.txt``
+text, with nothing checking that promptfoo's own recorded prompt actually
+matches -- a version bump without regenerating results, or a hand-edited
+``prompt.txt`` after a real run, would go undetected. When a
+``prompt.txt`` file exists next to ``results_dir`` (the real, production
+layout -- ``results_dir`` is always ``promptfoo/results``, so
+``results_dir.parent`` is always ``promptfoo/``), this now compares that
+file's exact current text against ``results.prompts[0].raw``, the exact
+unrendered prompt text promptfoo itself recorded at evaluation time, and
+fails closed on a mismatch. It is skipped -- not failed -- when no sibling
+``prompt.txt`` exists (the existing unit tests in this project use bare
+``tmp_path`` fixtures with no such file) or when the results payload lacks
+a ``results.prompts[0].raw`` string (an older/different promptfoo schema
+shape); this is a deliberate best-effort addition layered on top of the
+mandatory stats/provider checks above, not a new required field.
 """
 
 from __future__ import annotations
@@ -91,6 +126,22 @@ def _recorded_provider_ids(payload: dict[str, object]) -> set[str]:
     return ids
 
 
+def _recorded_prompt_raw(payload: dict[str, object]) -> str | None:
+    """The exact unrendered prompt text promptfoo recorded at eval time.
+
+    Returns ``None`` (never raises) on any shape that doesn't match --
+    callers treat that as "nothing to compare against", not an error, since
+    this check is best-effort by design (see module docstring).
+    """
+    try:
+        results = payload["results"]  # type: ignore[index]
+        prompts = results["prompts"]  # type: ignore[index]
+        raw = prompts[0]["raw"]
+        return raw if isinstance(raw, str) else None
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 def verify_promptfoo_results(
     prompt_version: str, results_dir: Path, *, provider_id: str
 ) -> None:
@@ -106,6 +157,13 @@ def verify_promptfoo_results(
     (not merely at least one success), and the file's own recorded provider
     id matching what ``provider_id`` expects -- not merely that the file
     exists, or that some subset of cases happened to pass.
+
+    Best-effort, additional to the above: if ``results_dir.parent /
+    "prompt.txt"`` exists (the real production layout), the results file's
+    own recorded ``results.prompts[0].raw`` must match that file's current
+    text exactly -- a drift check, not an authenticity one (see module
+    docstring). Skipped silently when no such sibling file exists or the
+    results payload doesn't carry that field.
     """
     results_path = results_dir / f"{prompt_version}--{provider_id}.json"
     if not results_path.exists():
@@ -150,6 +208,17 @@ def verify_promptfoo_results(
             f"include the expected {expected_provider!r} for provider_id "
             f"{provider_id!r}"
         )
+    prompt_txt_path = results_dir.parent / "prompt.txt"
+    if prompt_txt_path.exists():
+        recorded_raw = _recorded_prompt_raw(payload)
+        if recorded_raw is not None and recorded_raw != prompt_txt_path.read_text():
+            problems.append(
+                f"the prompt text promptfoo recorded running against does not "
+                f"match the current {prompt_txt_path} -- this results file was "
+                f"validated against a different prompt (drift check only; see "
+                f"module docstring for what this does and does not prove)"
+            )
+
     if problems:
         raise PromptfooNotValidatedError(
             f"{results_path} does not prove a complete, clean pass for "

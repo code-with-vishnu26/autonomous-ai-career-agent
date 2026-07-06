@@ -49,6 +49,77 @@ npx promptfoo@latest view   # inspect results in a browser
 zero failures — an empty/no-op run does not count as a pass. A pass for one
 provider is never treated as a pass for the other, by filename construction.
 
+## Checking a results artifact against the real gate, without a live call
+
+`career-agent verify-promptfoo --provider {anthropic,groq} [--results-dir DIR]`
+calls the exact, unmodified `verify_promptfoo_results` that `apply` calls
+before constructing a real verifier -- zero-cost, offline, no API key
+needed just to check a file that already exists on disk:
+
+```bash
+career-agent verify-promptfoo --provider groq
+# reads promptfoo/results/<TRUTHFULNESS_GATE_PROMPT_VERSION>--groq.json
+# by default; pass --results-dir to point elsewhere.
+```
+
+A `PASS` here means `apply` would pass this same gate for that provider
+right now, with whatever is currently on disk.
+
+## Artifact policy: local evidence, never committed
+
+`promptfoo/results/*.json` is gitignored. These files are proof that *one
+person, on one machine, at one point in time* ran the live suite -- not a
+repository-wide fact, and not something a fresh clone should inherit from
+history. A fresh install (or CI) has no shortcut: it must run its own live
+suite per provider (see "Running it" above) to obtain its own trusted
+evidence. Committing a results file would not make it more true, and would
+actively mislead: see the security note below for exactly why "checked
+into version control" is not the same property as "verified."
+
+## Security note: this checks structure and content, not authenticity
+
+**`verify_promptfoo_results` trusts the JSON in the results file at face
+value.** It never re-contacts promptfoo, Groq, or Anthropic -- it has no
+way to confirm the file's counters (`successes`/`failures`/`errors`), its
+recorded `config.providers` entry, or (as of the prompt-content drift
+check documented in `promptfoo_gate.py`'s module docstring) its recorded
+`results.prompts[0].raw` text actually came from a real API call, as
+opposed to being hand-written or hand-edited to match. A file with
+`successes: 10, failures: 0, errors: 0`, the right provider id, and the
+current `prompt.txt` text copied in verbatim would pass every check in
+this module today, real run or not.
+
+This is an accepted, explicitly-scoped gap, not an oversight:
+
+- **Integrity against accidental drift** (a stale prompt, a partial run, a
+  provider mismatch, a since-edited `prompt.txt`) -- this module checks
+  for real, fail-closed, and is what its filename convention plus
+  ADR-0044's stats/provider/prompt-content checks exist to do.
+- **Authenticity against deliberate fabrication** (cryptographic proof a
+  real model call actually happened) -- this module does **not** provide
+  this, and nothing in this project currently does. A plain content hash
+  would not close this gap either: hashing `prompt.txt`, `tests.yaml`, or
+  the provider config only proves *which* prompt/tests/provider a results
+  file claims to be about, exactly like the checks that already exist --
+  it does not, and cannot, prove the file's stats came from a real
+  judged run rather than a matching hash typed by hand.
+
+Proportionate, zero-cost options if this gap is ever worth closing
+further (not implemented -- named here so the tradeoff is a documented,
+deliberate decision rather than a silent gap): recording the real
+promptfoo eval's own run id/timestamp and requiring it be "recent"; a
+locally-generated manifest (checksums of prompt/tests/config) written by
+a wrapper script at eval time, checked at verify time, closing the
+"human retypes matching values by hand" case but not a scripted forgery
+that also computes correct hashes; a real signed attestation, which would
+need a trusted signer and key management this single-user, self-hosted
+project has no infrastructure for today. None of these change what is
+true right now: **a hand-crafted or hand-edited JSON with correct-looking
+values currently satisfies `verify_promptfoo_results`.** Treat a "PASS"
+from a results file you did not personally see promptfoo produce with the
+same skepticism the truthfulness gate itself applies to an unverified
+claim.
+
 ## Files
 
 - `promptfoo/promptfooconfig.anthropic.yaml` — the Anthropic eval config.

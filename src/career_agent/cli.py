@@ -68,6 +68,7 @@ from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
     verify_promptfoo_results,
 )
+from career_agent.llm.prompts import TRUTHFULNESS_GATE_PROMPT_VERSION
 from career_agent.llm.providers import (
     NoLLMProviderConfiguredError,
     select_claim_verifier,
@@ -480,6 +481,45 @@ def run_capture_legal_status_command(
     return 0
 
 
+def run_verify_promptfoo_command(
+    provider_id: str, results_dir: Path | None = None
+) -> int:
+    """Check a real local promptfoo results artifact against the exact production gate.
+
+    No API key, no network call, and no side effect beyond printing a
+    verdict. This calls the *same*
+    :func:`~career_agent.llm.promptfoo_gate.verify_promptfoo_results` that
+    ``apply``
+    calls before constructing a real ``ClaimVerifier`` -- not a
+    reimplementation of its logic -- against the current
+    ``TRUTHFULNESS_GATE_PROMPT_VERSION`` and the requested provider, so a
+    "pass" printed here means ``apply`` would also pass this gate for that
+    provider right now. It intentionally does not go through
+    ``select_claim_verifier`` (which requires that provider's API key to be
+    configured just to read its ``provider_id``/``prompt_version``
+    attributes) -- both are fixed per provider, so this checks whichever
+    ``--provider`` was asked for directly, independent of what is currently
+    configured in the environment.
+    """
+    try:
+        verify_promptfoo_results(
+            TRUTHFULNESS_GATE_PROMPT_VERSION,
+            results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR,
+            provider_id=provider_id,
+        )
+    except PromptfooNotValidatedError as exc:
+        print(str(exc))
+        return 1
+    print(
+        f"PASS: promptfoo results for prompt version "
+        f"{TRUTHFULNESS_GATE_PROMPT_VERSION!r} / provider {provider_id!r} "
+        f"prove a complete, clean run. This is a structural/content check "
+        f"only -- see promptfoo_gate.py's module docstring for what it does "
+        f"and does not prove about authenticity."
+    )
+    return 0
+
+
 def run_export_command(database_path: Path, xlsx_path: Path) -> int:
     """Export the application audit trail to a formatted Excel workbook."""
     store = SqliteApplicationStore(database_path)
@@ -712,6 +752,21 @@ def main(argv: list[str] | None = None) -> None:
         "--xlsx", type=Path, default=Path("data/applications.xlsx")
     )
 
+    verify_promptfoo_parser = subparsers.add_parser(
+        "verify-promptfoo",
+        help="Check a real local promptfoo results artifact against the "
+        "exact gate 'apply' uses -- no API key, no network call.",
+    )
+    verify_promptfoo_parser.add_argument(
+        "--provider", required=True, choices=("anthropic", "groq")
+    )
+    verify_promptfoo_parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=None,
+        help="Defaults to promptfoo/results at the repo root.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "discover":
@@ -774,6 +829,11 @@ def main(argv: list[str] | None = None) -> None:
         settings = Settings()
         raise SystemExit(
             run_export_command(Path(settings.database_path), args.xlsx)
+        )
+
+    if args.command == "verify-promptfoo":
+        raise SystemExit(
+            run_verify_promptfoo_command(args.provider, args.results_dir)
         )
 
     if args.command == "apply":
