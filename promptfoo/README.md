@@ -62,6 +62,14 @@ provider is never treated as a pass for the other, by filename construction.
 - `promptfoo/tests.yaml` — the 12-case adversarial matrix, each case asserting
   the expected `verified`/`category` in the model's JSON response. Shared by
   both provider configs.
+- `promptfoo/tests/offline_transform_regression/` — an offline, no-API-key
+  regression proving `promptfooconfig.groq.yaml`'s
+  `defaultTest.options.transform` is at the correct YAML level for the
+  installed promptfoo version (and that the same key one level up, as a
+  bare sibling of `assert`, silently does nothing). Run this first if a
+  future promptfoo upgrade makes `GroqClaimVerifier`'s live validation
+  start failing again with correct-looking JSON visible in the transcript
+  but every case still failing -- see its own README.
 
 ## Updating after a prompt change
 

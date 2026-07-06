@@ -9,9 +9,9 @@
 #
 # max_tokens/reasoning_effort/include_reasoning below MUST match
 # groq_claim_verifier.py's _MAX_TOKENS/_REASONING_EFFORT/include_reasoning
-# exactly, and defaultTest.transform below MUST match
-# groq_client.extract_json_object exactly. Two live runs, two distinct
-# bugs, both config/harness mismatches -- not model-quality failures:
+# exactly, and defaultTest.options.transform below MUST match
+# groq_client.extract_json_object exactly. Three live runs, three distinct
+# bugs, all config/harness mismatches -- not model-quality failures:
 #
 # 1. A first run at max_tokens=300 with neither reasoning parameter set
 #    scored 0/10 -- gpt-oss-120b spends part of max_tokens on hidden
@@ -21,12 +21,22 @@
 #    prepends visible reasoning text to its answer ("Thinking: ...
 #    {json}") regardless of include_reasoning=false (a documented
 #    upstream Groq/gpt-oss quirk). The JSON itself was correct on every
-#    case; it was never the entire response text. transform below
-#    extracts it the same way the runtime does, before assertions run.
+#    case; it was never the entire response text.
+# 3. A third run, with a `transform` key added as a SIBLING of `assert`
+#    under `defaultTest`, still scored 0/10. Read directly from the
+#    installed promptfoo@0.121.17 package
+#    (dist/src/tables-*.js's TestCaseSchema, dist/src/evaluator-*.js's
+#    transformRunEvalResponse): there is no top-level `test.transform`
+#    field at all -- only `test.options.transform` (or the legacy alias
+#    `test.options.postprocess`) is ever read, and TestCaseSchema silently
+#    strips unrecognized top-level keys, so the misplaced `transform` did
+#    nothing and every assertion still saw the raw, untransformed output.
+#    Fixed by nesting it under `options:` below, confirmed against the
+#    actual installed package source, not guessed.
 #
-# Neither fix touches what counts as a pass: is-json and every per-case
-# JS assertion in tests.yaml are unchanged, and still fail any output
-# that (once extracted) isn't valid, correctly-judged JSON.
+# None of these three fixes touch what counts as a pass: is-json and every
+# per-case JS assertion in tests.yaml are unchanged, and still fail any
+# output that (once extracted) isn't valid, correctly-judged JSON.
 
 description: "Truthfulness gate -- adversarial fabrication matrix (12 cases), Groq provider"
 
@@ -50,13 +60,14 @@ providers:
 tests: file://tests.yaml
 
 defaultTest:
-  # Mirrors career_agent.llm.groq_client.extract_json_object exactly: the
-  # substring from the first '{' to the last '}'. NOTE (not runnable in
-  # this sandbox, unverified against a live promptfoo install): confirm
-  # this transform actually applies before assertions run -- if your
-  # promptfoo version needs a different key (e.g. a per-test `transform`
-  # instead of `defaultTest.transform`), fix the syntax here, not the
-  # extraction logic, and keep it byte-equivalent to extract_json_object.
-  transform: "output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1)"
+  options:
+    # Mirrors career_agent.llm.groq_client.extract_json_object exactly:
+    # the substring from the first '{' to the last '}'. Confirmed correct
+    # against promptfoo@0.121.17's actual source: transformRunEvalResponse
+    # (dist/src/evaluator-*.js) reads exactly this key
+    # (`test.options.transform`) and applies it to `processedResponse.output`
+    # BEFORE runAssertions is called with that transformed value -- this is
+    # the one and only field name/level the installed version reads.
+    transform: "output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1)"
   assert:
     - type: is-json

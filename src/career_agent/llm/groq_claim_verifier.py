@@ -22,7 +22,7 @@ highest-stakes judgment in the system, so it gets Groq's strongest
 available free-tier reasoning model, not the same default as everything
 else.
 
-**Two live promptfoo runs, two distinct bugs found and fixed, neither a
+**Three live promptfoo runs, three distinct bugs found and fixed -- none a
 model-quality failure**:
 
 1. At ``max_tokens=300`` with no reasoning controls, hidden chain-of-thought
@@ -38,12 +38,23 @@ model-quality failure**:
    response text, which is what a bare ``json.loads(text)`` assumed. Fixed
    by :func:`~career_agent.llm.groq_client.extract_json_object`, which pulls
    the JSON substring out before parsing.
+3. With that fixed too, a third live run still scored 0/10: the promptfoo
+   config's ``transform`` had been added as a bare sibling of ``assert``
+   under ``defaultTest``, but promptfoo (confirmed by reading the actual
+   installed ``promptfoo@0.121.17`` source, not guessed) only ever reads
+   ``test.options.transform`` -- the bare key is silently stripped by
+   ``TestCaseSchema`` and never applied, so every assertion still saw the
+   raw, untransformed output. Fixed by nesting it under
+   ``defaultTest.options`` instead. An offline regression proving both the
+   bug and the fix, using a local mock provider and the real promptfoo
+   binary (no network, no API key), lives at
+   ``promptfoo/tests/offline_transform_regression/``.
 
-``promptfoo/promptfooconfig.groq.yaml`` must mirror both fixes exactly --
-its ``defaultTest.transform`` re-implements the same first-``{``-to-last-
-``}`` extraction, so the eval validates the same parsing path this class
-actually uses. A config that tests a different call shape than this class
-uses would validate nothing real.
+``promptfoo/promptfooconfig.groq.yaml`` must mirror all three fixes exactly
+-- its ``defaultTest.options.transform`` re-implements the same
+first-``{``-to-last-``}`` extraction, so the eval validates the same
+parsing path this class actually uses. A config that tests a different
+call shape than this class uses would validate nothing real.
 """
 
 from __future__ import annotations
