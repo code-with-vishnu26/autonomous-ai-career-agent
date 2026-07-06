@@ -758,10 +758,16 @@ proposed until a concrete trigger justifies the work.
 - **R3 -- Graph-based deduplication.** Proposed, not started --
   `domain/identity.py`'s exact-key + fingerprint approach has shown no
   observed false-duplicate or missed-duplicate failures yet.
-- **R4 -- Multi-objective decision engine.** Proposed, not started -- Decide
-  (Phase 14, ADR-0038) is a deterministic weighted sum today; a Pareto/
-  constrained-optimization model is real future work if soft-score trading
-  against hard constraints ever becomes an observed problem.
+- **R4 -- Multi-objective decision engine.** ✅ First slice done: **ADR-0045**
+  (`domain/pareto.py` + `agents/planner/sensitivity.py`: nominal + confidence-
+  interval-robust Pareto dominance/frontier over Decide's existing four
+  objectives, plus closed-form adjacent-pair weight-flip sensitivity). A
+  repository audit found this item's own trigger ("if soft-score trading
+  against hard constraints ever becomes an observed problem") still unmet --
+  so this slice is additive analysis only, not a replacement for Decide's
+  weighted-sum ranking, and not wired into any CLI output yet. Full
+  constrained-optimization/epsilon-constraint/lexicographic methods remain
+  future work, gated on the same still-unobserved trigger.
 - **R5 -- Application portfolio optimization.** Proposed, not started -- no
   current daily/weekly application-budget constraint exists to optimize
   against.
