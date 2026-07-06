@@ -3,33 +3,35 @@
 ``confirm_submission`` (Phase 8c, ADR-0024) is this project's first real,
 executable source of a :class:`~career_agent.domain.models.HumanConfirmation`.
 
-``apply`` (Phase 8e, ADR-0026) is the first real, runnable command: load a
-real profile and a real opportunity, tailor and gate a real resume with the
-real, Claude-backed generator and verifier, render it, and ask a real human
-to confirm it. It deliberately stops there -- there is no real
-``ATSAdapter`` implementation anywhere in this codebase yet (only
-``FakeATSAdapter``, test-only), so a confirmed application has nowhere real
-to actually be sent. The command says so plainly rather than pretending to
-submit; real submission is separate, named future work.
+``apply`` (Phase 8e, ADR-0026) is the runnable command that acts on one
+opportunity: load a real profile and a real opportunity, tailor and gate a
+real resume with the real, Groq/Claude-backed generator and verifier,
+render it, and ask a real human to confirm it. It deliberately stops there
+-- real submission (Tier 2 browser, Tier 3 email draft-only) is a separate,
+supervised act via the tiered ``Applicator``, never automatic from
+``apply`` itself.
 
 **The real ``ClaimVerifier`` is gated by an actual check, not a claim.**
-ADR-0016 requires the promptfoo suite to pass on live calls before
-``AnthropicClaimVerifier`` is wired into a real apply path. Until this
-command existed, that requirement was enforced only by written policy and
-by an import-linter contract that (correctly) leaves ``cli.py`` itself
-unconstrained, since it is the composition root. ``run_apply_command``
-calls :func:`~career_agent.llm.promptfoo_gate.verify_promptfoo_results`
-before constructing the real verifier -- it refuses to run without a real,
+ADR-0016 requires the promptfoo suite to pass on live calls before a real
+``ClaimVerifier`` is wired into a real apply/auto path. That requirement is
+enforced structurally, not just by written policy and the import-linter
+contract that (correctly) leaves ``cli.py`` itself unconstrained, since it
+is the composition root: ``run_apply_command``/``run_auto_command`` both
+call :func:`~career_agent.llm.promptfoo_gate.verify_promptfoo_results`
+before constructing the real verifier -- refusing to run without a real,
 current, actually-passing results artifact on disk, not a flag typed from
 memory.
 
-The opportunity is read from a plain JSON file
-(``--opportunity-file``), not looked up by id from a persistent store --
-no persistent ``OpportunityRepository`` exists yet, and no ``discover``
-command exists to produce one. This is the narrowest real scope: a future
-``discover`` command can produce this same file format without either
-command's internal logic needing to change, and a future persistent store
-can replace the file handoff later the same way.
+The opportunity ``apply`` acts on is read from a plain JSON file
+(``--opportunity-file``) -- the same handoff format ``discover`` (Phase 13,
+ADR-0037) and ``auto`` (Phase 17, ADR-0041) both write, so a future
+persistent-store lookup could replace the file handoff without either
+command's internal tailoring/gating logic needing to change. ``auto`` is
+the one bounded, cron-safe pass that composes discover -> rank -> tailor+gate
+-> record -> notify end to end -- structurally incapable of confirming or
+submitting (no input function, no ``HumanConfirmation``, no ``Applicator``
+anywhere in its call graph), always ending with a handoff file and a
+notification pointing back at ``apply`` for the human's own confirmation.
 """
 
 from __future__ import annotations
@@ -428,6 +430,34 @@ def build_discovery_sources(settings: Settings) -> list[tuple[str, object]]:
     return sources
 
 
+def _build_decide_scorer(settings: Settings) -> object:
+    """Build the one ``DeterministicDecideScorer`` shared by discover/auto.
+
+    So the two commands can never silently diverge on which opportunities
+    Decide excludes.
+    """
+    from career_agent.agents.planner.decide import (
+        DecideFilters,
+        DeterministicDecideScorer,
+    )
+
+    return DeterministicDecideScorer(
+        DecideFilters(
+            blacklist_companies=[
+                c.strip()
+                for c in settings.decide_blacklist_companies.split(",")
+                if c.strip()
+            ],
+            allowed_locations=[
+                c.strip()
+                for c in settings.decide_allowed_locations.split(",")
+                if c.strip()
+            ],
+            remote_only=settings.decide_remote_only,
+        )
+    )
+
+
 _LEGAL_ANSWERS = {"yes": True, "no": False, "skip": None}
 
 
@@ -699,6 +729,67 @@ async def run_auto_command(
     return 0
 
 
+async def run_auto_cli_command(
+    *,
+    profile_path: Path,
+    since_days: int,
+    out_dir: Path,
+    top_n: int,
+) -> int:
+    """The real ``career-agent auto`` composition root (Phase 17, ADR-0041).
+
+    Was, until now, only reachable by calling :func:`run_auto_command`
+    directly in a test -- ``main()`` never registered an ``auto``
+    subparser at all, so the roadmap's own "Done when: ``career-agent
+    auto``" criterion for this phase was not actually satisfiable by a
+    real user. Mirrors ``apply``'s gate-then-construct ordering exactly:
+    select the real (Groq/Anthropic) ``ClaimVerifier``, positively verify
+    its promptfoo results before it's ever used, then select the content
+    drafter -- all before ``run_auto_command`` (whose own body is
+    structurally incapable of confirming or submitting) ever runs.
+    """
+    settings = Settings()
+    since = datetime.now(UTC) - timedelta(days=since_days)
+    profile = load_master_profile(profile_path)
+    scorer = _build_decide_scorer(settings)
+    try:
+        claim_verifier = select_claim_verifier(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
+        return 1
+    try:
+        verify_promptfoo_results(
+            claim_verifier.prompt_version,
+            _DEFAULT_PROMPTFOO_RESULTS_DIR,
+            provider_id=claim_verifier.provider_id,
+        )
+    except PromptfooNotValidatedError as exc:
+        print(str(exc))
+        return 1
+    try:
+        content_drafter = select_content_drafter(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
+        return 1
+    generator = LLMResumeGenerator(content_drafter)
+    gate = LLMTruthfulnessGate(claim_verifier)
+    return await run_auto_command(
+        build_discovery_sources(settings),
+        SqliteOpportunityRepository(Path(settings.database_path)),
+        profile,
+        scorer,
+        generator,
+        gate,
+        since=since,
+        out_dir=out_dir,
+        top_n=top_n,
+        ats_threshold=settings.ats_threshold,
+        artifacts_dir=Path(settings.artifacts_dir),
+        application_store=SqliteApplicationStore(Path(settings.database_path)),
+        notifier=build_notifier(settings),
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     """Parse CLI arguments and dispatch, or print the Phase 1 placeholder banner.
 
@@ -747,6 +838,29 @@ def main(argv: list[str] | None = None) -> None:
         type=Path,
         default=None,
         help="Optional profile path: enables the ranked summary (ADR-0038).",
+    )
+
+    auto_parser = subparsers.add_parser(
+        "auto",
+        help="One bounded, cron-safe pass: discover -> rank -> tailor+gate "
+        "-> record -> notify. Structurally cannot confirm or submit "
+        "(ADR-0041) -- always ends with career-agent apply left for you.",
+    )
+    auto_parser.add_argument(
+        "--profile",
+        type=Path,
+        required=True,
+        help="Path to your JSON Resume master profile.",
+    )
+    auto_parser.add_argument("--since-days", type=int, default=7)
+    auto_parser.add_argument(
+        "--out-dir", type=Path, default=Path("data/opportunities")
+    )
+    auto_parser.add_argument(
+        "--top-n",
+        type=int,
+        default=3,
+        help="How many top-ranked opportunities to tailor+gate this pass.",
     )
 
     capture_parser = subparsers.add_parser(
@@ -811,31 +925,12 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "discover":
-        from career_agent.agents.planner.decide import (
-            DecideFilters,
-            DeterministicDecideScorer,
-        )
-
         settings = Settings()
         since = datetime.now(UTC) - timedelta(days=args.since_days)
         profile = (
             load_master_profile(args.profile) if args.profile is not None else None
         )
-        scorer = DeterministicDecideScorer(
-            DecideFilters(
-                blacklist_companies=[
-                    c.strip()
-                    for c in settings.decide_blacklist_companies.split(",")
-                    if c.strip()
-                ],
-                allowed_locations=[
-                    c.strip()
-                    for c in settings.decide_allowed_locations.split(",")
-                    if c.strip()
-                ],
-                remote_only=settings.decide_remote_only,
-            )
-        )
+        scorer = _build_decide_scorer(settings)
         exit_code = asyncio.run(
             run_discover_command(
                 build_discovery_sources(settings),
@@ -844,6 +939,17 @@ def main(argv: list[str] | None = None) -> None:
                 out_dir=args.out_dir,
                 profile=profile,
                 scorer=scorer,
+            )
+        )
+        raise SystemExit(exit_code)
+
+    if args.command == "auto":
+        exit_code = asyncio.run(
+            run_auto_cli_command(
+                profile_path=args.profile,
+                since_days=args.since_days,
+                out_dir=args.out_dir,
+                top_n=args.top_n,
             )
         )
         raise SystemExit(exit_code)

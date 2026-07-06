@@ -702,7 +702,7 @@ distribution, the ADR-0039 funnel with its caveat intact; SQLite read
 directly as a separate read model so the repository contract stays
 add/get.
 
-## 🔄 Phase 17 — Scheduling (LAST, hard-gated)
+## ✅ Phase 17 — Scheduling (LAST, hard-gated)
 Recorded in **ADR-0041**. Both recorded gates closed first:
 profile-staleness re-verification (`StaleProfileError` before `prepare()`
 ever runs -- a stale application never produces a confirmable preview;
@@ -717,6 +717,20 @@ code, asserted at the co_names level. Confirmation and submission remain
 human-gated forever (ADR-0008) -- a permanent boundary, not a current
 limitation. Deferred: multi-tier selection; real OAuth GmailDraftSink +
 SentMailChecker (live, user-present).
+
+**Post-merge correction (found in a repository reality audit after PR
+#40):** `run_auto_command` was built and tested as a Python function this
+phase, but `main()` never actually registered an `auto` subparser -- this
+roadmap claimed "Scheduling itself is `career-agent auto`" while a real
+user typing that command got `argparse: invalid choice`. Fixed: `auto` is
+now a real subcommand (`run_auto_cli_command`, mirroring `apply`'s
+gate-then-construct ordering: real `ClaimVerifier` selected, its
+promptfoo results positively verified, then the content drafter selected,
+all before the structurally-submission-incapable `run_auto_command` body
+ever runs), plus this project's first offline end-to-end rehearsal test
+(`tests/test_cli_auto.py`) proving discover -> dedup -> rank -> tailor ->
+truthfulness-gate -> notify compose for real through the actual CLI
+entry point, not just in per-phase isolation.
 
 ## ⬜ Phase 18 — Ashby (whenever unblocked)
 Blocked on the user's dev-tools DOM inspection of a live Ashby posting --
