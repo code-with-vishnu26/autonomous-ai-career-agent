@@ -253,7 +253,7 @@ def verify_promptfoo_results(
             f"promptfoo/promptfooconfig.{provider_id}.yaml -o {results_path}"
         )
     try:
-        payload = json.loads(results_path.read_text())
+        payload = json.loads(results_path.read_text(encoding="utf-8"))
         stats = payload["results"]["stats"]
         failures = int(stats["failures"])
         successes = int(stats["successes"])
@@ -348,7 +348,7 @@ def diagnose_prompt_drift(
     results_path = results_dir / f"{prompt_version}--{provider_id}.json"
     if not results_path.exists():
         return f"No results file at {results_path}"
-    payload = json.loads(results_path.read_text())
+    payload = json.loads(results_path.read_text(encoding="utf-8"))
     prompts = payload.get("results", {}).get("prompts", [])
     lines.append(f"results.prompts: {len(prompts)} entrie(s)")
     if prompts:
