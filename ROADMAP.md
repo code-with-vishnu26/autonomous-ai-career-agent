@@ -888,6 +888,22 @@ profile.
   reviewer can introduce unsupported claims with only a prompt instruction
   as its guard); an interview-prep pack (LLM-dependent). Each is named for
   a future phase, not built speculatively now.
+- ✅ **Evidence-grounded CV ingestion -- ADR-0052 (Phase 26).** Closes the
+  "CV extraction must land as an *unverified* draft" half of the deferred
+  item above, deterministically (no LLM). `career-agent import-cv` parses a
+  DOCX/TXT CV into UNVERIFIED, source-bound `FactProposal`s (email, phone,
+  URLs, a labelled name heuristic, an explicit "Skills:" line -- nothing
+  inferred) and writes a draft that never touches the profile.
+  `career-agent promote-cv` promotes only proposals a human marked
+  `confirmed`, through a fail-closed boundary (`domain/ingestion.py`,
+  108-point space exhaustively verified) requiring a content-bound
+  confirmation, evidence re-validated against the re-read source
+  (source-drift refused), no unresolved conflict, and no silent overwrite
+  of a different verified value. Zero new dependency (DOCX via the declared
+  `python-docx`); MasterProfile/truthfulness gate/prompt-version/Promptfoo
+  all unchanged; injection text in a CV is inert data. **Deferred:** PDF/OCR
+  ingestion (no declared PDF reader -- named limitation) and LLM-assisted
+  proposal extraction (must still pass this same promotion boundary).
 
 ---
 

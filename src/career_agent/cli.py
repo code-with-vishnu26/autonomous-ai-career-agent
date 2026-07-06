@@ -68,6 +68,7 @@ from career_agent.domain.execution import (
     execute_allowed,
     resolve_source_policy,
 )
+from career_agent.domain.ingestion import ADD, IngestionDraft
 from career_agent.domain.models import (
     HumanConfirmation,
     LegalStatusSection,
@@ -87,6 +88,14 @@ from career_agent.llm.providers import (
     select_claim_verifier,
     select_content_drafter,
     select_semantic_matcher,
+)
+from career_agent.storage.cv_ingest import (
+    DocumentParseError,
+    UnsupportedDocumentError,
+    apply_confirmed_promotions,
+    document_digest,
+    ingest_document,
+    read_document,
 )
 from career_agent.storage.excel import export_applications
 from career_agent.storage.profile import (
@@ -1202,6 +1211,130 @@ def run_setup_command(
     return 0
 
 
+def run_import_cv_command(*, cv_path: Path, out_path: Path | None = None) -> int:
+    """The ``career-agent import-cv`` command (Phase 26, ADR-0052).
+
+    Parses a CV into an UNVERIFIED :class:`IngestionDraft` of source-bound
+    fact proposals and writes it to a draft file. **Never touches the
+    verified profile** and makes no network/LLM call. Returns non-zero on a
+    malformed/unsupported document, after which nothing was written.
+    """
+    try:
+        draft = ingest_document(cv_path)
+    except UnsupportedDocumentError as exc:
+        print(str(exc))
+        return 1
+    except (DocumentParseError, OSError) as exc:
+        print(f"Could not read {cv_path}: {exc}")
+        return 1
+
+    target = out_path or cv_path.with_suffix(".draft.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        draft.model_dump_json(indent=2) + "\n", encoding="utf-8"
+    )
+
+    conflicted = sum(1 for p in draft.proposals if p.conflict_ids)
+    print(f"Imported {cv_path} ({draft.source_type}).")
+    print(f"  {len(draft.proposals)} UNVERIFIED proposal(s) extracted.")
+    print(f"  {conflicted} proposal(s) in a detected conflict.")
+    print(
+        "  Nothing was trusted or written to your profile -- every proposal "
+        "is unverified.\n"
+    )
+    print(f"Draft written to {target}")
+    print(
+        "Next: open the draft, set \"trust_state\": \"confirmed\" on each "
+        "proposal you personally verify (leave the rest, or set "
+        '"rejected"), then run:\n'
+        f"  career-agent promote-cv --draft {target} --cv {cv_path} "
+        "--profile profile.json"
+    )
+    return 0
+
+
+def run_promote_cv_command(
+    *, draft_path: Path, cv_path: Path, profile_path: Path
+) -> int:
+    """The ``career-agent promote-cv`` command (Phase 26, ADR-0052).
+
+    Promotes only the proposals a human marked ``confirmed`` in the draft,
+    and only through the fail-closed boundary: the source document is
+    re-read and its identity checked against the draft (source-drift
+    refusal), every promoted proposal's evidence is re-validated against
+    that document, and a different existing verified value is never
+    overwritten. Writes the profile back only if something was actually
+    added; makes no network/LLM call.
+    """
+    try:
+        draft = IngestionDraft.model_validate_json(
+            draft_path.read_text(encoding="utf-8")
+        )
+    except (OSError, ValidationError, json.JSONDecodeError) as exc:
+        print(f"Could not load draft {draft_path}: {exc}")
+        return 1
+
+    try:
+        raw_bytes, document_text, _ = read_document(cv_path)
+    except (UnsupportedDocumentError, DocumentParseError, OSError) as exc:
+        print(f"Could not read {cv_path}: {exc}")
+        return 1
+
+    if document_digest(raw_bytes) != draft.document_digest:
+        print(
+            f"Source drift: {cv_path} no longer matches the document this "
+            f"draft was built from (its content changed). Re-run "
+            f"career-agent import-cv and review the new draft. Nothing was "
+            f"promoted."
+        )
+        return 1
+
+    if not profile_path.exists():
+        print(
+            f"No profile at {profile_path}. Run 'career-agent setup' first, "
+            f"then promote into it. Nothing was promoted."
+        )
+        return 1
+    try:
+        profile_raw = json.loads(profile_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Could not load profile {profile_path}: {exc}")
+        return 1
+
+    updated, results = apply_confirmed_promotions(draft, document_text, profile_raw)
+
+    added = [r for r in results if r.outcome == ADD]
+    if added:
+        profile_path.write_text(
+            json.dumps(updated, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+    counts: dict[str, int] = {}
+    for result in results:
+        counts[result.outcome] = counts.get(result.outcome, 0) + 1
+    print(f"Promotion summary for {profile_path}:")
+    for outcome in sorted(counts):
+        print(f"  {outcome}: {counts[outcome]}")
+    for result in results:
+        if result.outcome != "NO_OP":
+            print(
+                f"  - [{result.outcome}] {result.field_path} = "
+                f"{result.proposed_value!r} ({result.reason})"
+            )
+    if added:
+        print(
+            f"\n{len(added)} fact(s) promoted into {profile_path}. Review the "
+            f"file, then: career-agent verify-promptfoo / discover."
+        )
+    else:
+        print(
+            "\nNothing was promoted (mark proposals \"confirmed\" in the "
+            "draft, or resolve conflicts/overwrites, then re-run)."
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     """Parse CLI arguments and dispatch, or print the Phase 1 placeholder banner.
 
@@ -1225,6 +1358,31 @@ def main(argv: list[str] | None = None) -> None:
         type=Path,
         default=Path("profile.json"),
         help="Where your JSON Resume master profile is (or should be scaffolded).",
+    )
+
+    import_cv_parser = subparsers.add_parser(
+        "import-cv",
+        help="Parse a CV (.docx/.txt/.md) into an UNVERIFIED draft of "
+        "source-bound fact proposals. Never touches your verified profile.",
+    )
+    import_cv_parser.add_argument("--cv", type=Path, required=True)
+    import_cv_parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Draft output path (default: <cv>.draft.json).",
+    )
+
+    promote_cv_parser = subparsers.add_parser(
+        "promote-cv",
+        help="Promote only the proposals you marked 'confirmed' in a draft "
+        "into your profile -- fail-closed, never overwriting a different "
+        "verified value.",
+    )
+    promote_cv_parser.add_argument("--draft", type=Path, required=True)
+    promote_cv_parser.add_argument("--cv", type=Path, required=True)
+    promote_cv_parser.add_argument(
+        "--profile", type=Path, default=Path("profile.json")
     )
 
     apply_parser = subparsers.add_parser(
@@ -1380,6 +1538,16 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "setup":
         raise SystemExit(run_setup_command(profile_path=args.profile))
+
+    if args.command == "import-cv":
+        raise SystemExit(run_import_cv_command(cv_path=args.cv, out_path=args.out))
+
+    if args.command == "promote-cv":
+        raise SystemExit(
+            run_promote_cv_command(
+                draft_path=args.draft, cv_path=args.cv, profile_path=args.profile
+            )
+        )
 
     if args.command == "capture-legal-status":
         raise SystemExit(run_capture_legal_status_command(args.profile))
