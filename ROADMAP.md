@@ -904,6 +904,23 @@ profile.
   all unchanged; injection text in a CV is inert data. **Deferred:** PDF/OCR
   ingestion (no declared PDF reader -- named limitation) and LLM-assisted
   proposal extraction (must still pass this same promotion boundary).
+- ✅ **Truthfulness-re-gated revision loop -- ADR-0053 (Phase 27).** The
+  audit found this loop **already exists and is used** (ADR-0034's
+  `_ats_gate_loop`: retailor up to 2×, full truthfulness gate before any
+  ATS re-scoring, convergence, fail-closed refusal, SURFACEABLE-only gap
+  report). **Decision: Option A** -- build no LLM reviewer/reviser
+  subsystem (it would duplicate the loop, add a prompt-injection surface
+  and LLM cost, and any reviser output is re-gated anyway). Phase 27
+  formalizes the authority model (truthfulness rejection is absolute; ATS/
+  "reviewer" advice is advisory + SURFACEABLE-only; skills are structural)
+  and pins the composition invariants: the gate never receives the JD (I9),
+  no verification cache (I3), `agents/resume` never imports Phase 26
+  ingestion (I10/I11), and an injection JD that makes the drafter add an
+  unsupported skill yields a rejected application. No production code, no
+  prompt-version bump, no new dependency. **Deferred (Phase 28 candidate):**
+  a *deterministic* typed advisory reviewer (never a free-form LLM one),
+  only if real usage shows the ATS-driven retailor leaves an observed
+  quality gap.
 
 ---
 
