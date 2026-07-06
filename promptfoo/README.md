@@ -62,22 +62,32 @@ provider is never treated as a pass for the other, by filename construction.
 - `promptfoo/tests.yaml` — the 12-case adversarial matrix, each case asserting
   the expected `verified`/`category` in the model's JSON response. Shared by
   both provider configs.
-- `promptfoo/tests/offline_transform_regression/` — an offline, no-API-key
-  regression proving `promptfooconfig.groq.yaml`'s
-  `defaultTest.options.transform` is at the correct YAML level for the
-  installed promptfoo version (and that the same key one level up, as a
-  bare sibling of `assert`, silently does nothing). Run this first if a
-  future promptfoo upgrade makes `GroqClaimVerifier`'s live validation
-  start failing again with correct-looking JSON visible in the transcript
-  but every case still failing -- see its own README.
+- `promptfoo/tests/offline_transform_regression/` — two offline, no-API-key
+  regressions: (1) `defaultTest.options.transform` is at the correct YAML
+  level for the installed promptfoo version -- run this if a future
+  promptfoo upgrade makes live validation fail again with correct-looking
+  JSON visible in the transcript but every case still failing; (2) the real
+  `prompt.txt` renders through Nunjucks without a template error -- run
+  this after *any* edit to `prompt.txt` (see its own README).
 
 ## Updating after a prompt change
 
 1. Edit `src/career_agent/llm/prompts.py` — bump
    `TRUTHFULNESS_GATE_PROMPT_VERSION` (never edit a shipped version's text in
    place).
-2. Copy the new prompt text into `promptfoo/prompt.txt`.
-3. Re-run **both** provider suites above before merging. A prompt change that
+2. Copy the new prompt text into `promptfoo/prompt.txt` — **with single
+   braces for any literal JSON example, not the doubled braces
+   `prompts.py`'s Python string needs for `.format()`.** Only
+   `{{evidence}}`/`{{statement}}` should ever be doubled in `prompt.txt`;
+   promptfoo renders it with Nunjucks directly, which reads any other
+   `{{`/`}}` as its own (broken) variable syntax -- exactly the bug a live
+   `truthfulness-gate-v2` run found and
+   `tests/offline_transform_regression/config_prompt_render.yaml` now
+   catches offline.
+3. Run `npx promptfoo@latest eval --config tests/offline_transform_regression/config_prompt_render.yaml --no-cache`
+   (from `promptfoo/`) to confirm the file still renders before spending a
+   live API call finding out otherwise.
+4. Re-run **both** provider suites above before merging. A prompt change that
    breaks any of the 12 cases, on either provider, is not mergeable, same as
    a code change that breaks a test.
 

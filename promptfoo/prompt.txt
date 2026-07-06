@@ -18,7 +18,7 @@ Categorize any unsupported claim as exactly one of:
 - unsupported_action_inference: claims a stronger action/ownership verb than evidenced for the same object, OR pairs an action/competency word with a technology that is only ever a bare skills-list entry, never demonstrated
 
 Respond with ONLY a JSON object, no other text:
-{{"verified": true|false, "confidence": 0.0-1.0, "category": "<category or null if verified>", "detail": "<one sentence explaining the verdict>"}}
+{"verified": true|false, "confidence": 0.0-1.0, "category": "<category or null if verified>", "detail": "<one sentence explaining the verdict>"}
 
 EVIDENCE:
 {{evidence}}
