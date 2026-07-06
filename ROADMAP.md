@@ -841,6 +841,25 @@ applications, not thousands," ADR-0039) justifies adding any of it yet.
   must be extended with `EXTERNAL_ACTION_*` states and a deterministic
   recovery planner enforcing "uncertain effect ⇒ never auto-replay" --
   tracked explicitly, not built speculatively now.
+- ✅ **Execution-safety boundary -- ADR-0050 (Phase 24).** Builds the exact
+  prerequisite ADR-0049 deferred: a pure, deterministic, fail-closed
+  execution-permission boundary (`domain/execution.py`) with a four-way
+  `SubmissionOutcome` (incl. `OUTCOME_UNCERTAIN`, never collapsed into
+  failure), a retry rule where uncertain/submitted priors are never
+  auto-retryable, deterministic source-policy resolution (no source maps
+  to `AUTOMATED` -- ADR-0027 killed every fully-automated path), and a
+  reference confirmed-artifact digest. The whole 256-combination input
+  space is exhaustively enumerated (`research/execution_safety.py`) with
+  zero invariant/metamorphic counterexamples. Wired live into `apply`
+  after confirmation with `executor_available=False`, so it always refuses
+  with an explicit journaled reason -- **no executor is wired and no
+  external submission is newly reachable** (browser=no-exception-means-
+  success, email=draft-only, direct-API=dead: none safe to wire). **Named,
+  deferred trigger:** the eventual executor-wiring phase must add a
+  write-ahead `EXECUTION_INTENT` event and a real, provider-specific
+  acknowledgement classifier feeding this boundary's `prior_outcome`, and
+  flip `executor_available` per source only when a deterministic ack model
+  exists -- specified in ADR-0050, not built speculatively now.
 
 ---
 

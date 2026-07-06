@@ -61,6 +61,13 @@ from career_agent.core.interfaces import (
     TruthfulnessGate,
 )
 from career_agent.domain.ats_scoring import AtsScoreBelowThresholdError
+from career_agent.domain.ats_urls import resolve_ats_kind
+from career_agent.domain.execution import (
+    ExecutionRequest,
+    SubmissionOutcome,
+    execute_allowed,
+    resolve_source_policy,
+)
 from career_agent.domain.models import (
     HumanConfirmation,
     LegalStatusSection,
@@ -282,9 +289,41 @@ async def _apply_pipeline(
         _emit("confirmation", "RUN_COMPLETED", outcome="declined")
         return 0
 
+    # Execution-safety boundary (Phase 24, ADR-0050). A human confirmation
+    # authorizes *attempting* a submission; whether an attempt is actually
+    # permitted is a separate, deterministic, fail-closed decision. No
+    # automated executor is wired in this build (``executor_available`` is
+    # a hardcoded False -- there is no executor registry, and none of the
+    # three unwired applicators has a deterministic acknowledgement model
+    # safe to submit through), so the boundary always refuses with an
+    # explicit reason. This is exactly today's "nothing was sent" behavior,
+    # now reasoned and journaled instead of implicit.
+    ats_kind = resolve_ats_kind(opportunity.source_url)
+    decision = execute_allowed(
+        ExecutionRequest(
+            source_policy=resolve_source_policy(opportunity.source, ats_kind),
+            executor_available=False,
+            confirmation_present=True,
+            artifact_matches=True,
+            prior_outcome=SubmissionOutcome.NOT_ATTEMPTED,
+            journal_has_unresolved_intent=False,
+        )
+    )
+    if decision.allowed:
+        # Unreachable while ``executor_available`` is False (proven by the
+        # boundary's fail-closed first check). Kept as a fail-closed guard
+        # so a future edit enabling execution cannot silently fall through
+        # here without also wiring the executor call this branch would need
+        # -- rule 30: an irreversible action must have an explicit executor.
+        raise RuntimeError(
+            "execution boundary permitted execution but no executor is "
+            "wired -- refusing to proceed (ADR-0050)"
+        )
+    _emit("execution_boundary", "EXECUTION_REFUSED", outcome=decision.reason)
     print(
-        "Confirmed. No real ATS adapter is wired in yet -- real submission "
-        "is separate, future work (ADR-0026). Nothing was actually sent."
+        f"Confirmed. Execution boundary: {decision.reason} -- no automated "
+        f"executor is wired (ADR-0050); real submission remains a separate, "
+        f"manual step. Nothing was actually sent."
     )
     _emit("confirmation", "RUN_COMPLETED", outcome="confirmed_not_submitted")
     return 0

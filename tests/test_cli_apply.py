@@ -277,8 +277,14 @@ async def test_run_journal_records_the_happy_path_stage_history(
         "TAILORING_COMPLETED",
         "TRUTHFULNESS_APPROVED",
         "AWAITING_CONFIRMATION",
+        "EXECUTION_REFUSED",
         "RUN_COMPLETED",
     ]
+    # Phase 24 / ADR-0050: even after a human confirms, the execution
+    # boundary refuses because no automated executor is wired -- the
+    # confirmed run still ends "not submitted".
+    execution_row = rows[event_types.index("EXECUTION_REFUSED")]
+    assert execution_row[4] == "REFUSED_NO_EXECUTOR"
     assert rows[-1][4] == "confirmed_not_submitted"
 
 
