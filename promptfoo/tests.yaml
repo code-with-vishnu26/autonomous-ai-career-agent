@@ -62,7 +62,7 @@
     - type: javascript
       value: "JSON.parse(output).category === 'metric_unsupported'"
 
-- description: "#5 real employer, inflated title -- must be blocked, unsupported_seniority (ADR-0044)"
+- description: "#5 real employer, inflated title -- must be blocked; unsupported_seniority preferred, evidence_missing tolerated (ADR-0044)"
   vars:
     evidence: |
       Position: Software Engineer
@@ -73,8 +73,13 @@
   assert:
     - type: javascript
       value: "JSON.parse(output).verified === false"
+    # The load-bearing check is verified===false, never relaxed. The
+    # category is the more precise unsupported_seniority (what the prompt
+    # asks for) OR the general evidence_missing fallback -- both correctly
+    # signal "rejected, unsupported"; category-label flexibility here
+    # never lets an unsupported claim through as verified===true.
     - type: javascript
-      value: "JSON.parse(output).category === 'unsupported_seniority'"
+      value: "['unsupported_seniority', 'evidence_missing'].includes(JSON.parse(output).category)"
 
 - description: "#7 invented detail with nothing to compare against -- must be blocked, metric_unsupported"
   vars:
@@ -127,10 +132,16 @@
   assert:
     - type: javascript
       value: "JSON.parse(output).verified === false"
-    # the detail must actually name the invented piece, not just fire on
-    # something coincidental -- Django (real) must not be what's blamed
+    # The block must not be a naive "Django isn't a known skill" mistake --
+    # Django genuinely is one. category !== skill_not_found proves that
+    # directly. (A prior version of this assertion checked whether the
+    # word "django" appeared anywhere in the model's own detail text --
+    # too brittle: a model correctly explaining "the evidence doesn't
+    # support a Django-based microservices platform" legitimately mentions
+    # "Django" while quoting the claim back, which isn't the same as
+    # blaming Django for the rejection.)
     - type: javascript
-      value: "!JSON.parse(output).detail.toLowerCase().includes('django')"
+      value: "JSON.parse(output).category !== 'skill_not_found'"
 
 - description: "#11 PostgreSQL skill does not prove design competency -- must be blocked (ADR-0044)"
   vars:

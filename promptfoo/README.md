@@ -100,3 +100,33 @@ keys on the exact prompt version by filename
 check by construction — this is not a manual step to remember, it is
 structural. A fresh live run against `truthfulness-gate-v2` is required for
 both providers before either `ClaimVerifier` may be used for real.
+
+## Result-gate hardening (ADR-0044)
+
+`verify_promptfoo_results` also requires (not just `successes >= 1` and
+`failures == 0`, as before): `errors == 0` (a provider timeout/network
+failure is a distinct promptfoo outcome from a judged rejection, and was
+previously invisible to this check entirely), `successes` equal to the
+*exact* current case count in `tests.yaml` (a partial run must not pass
+merely because nothing it did run failed), and the results file's own
+recorded `config.providers` entry matching the expected provider id for
+`provider_id` (catches a misplaced/renamed results file the filename
+convention alone can't).
+
+## A note on Groq free-tier concurrency and queue timeouts
+
+A live run may show `Request ... timed out after 300000ms in queue` on one
+or more cases without any judgment being made at all — this is a
+provider-side queueing/rate-limit symptom (Groq's free tier for
+`openai/gpt-oss-120b` is rate-limited on both requests/minute and
+tokens/minute; 4 concurrent long-reasoning calls can exceed that), not a
+truthfulness judgment, and promptfoo now counts it as an `error`, not a
+`failure` — either way it fails `verify_promptfoo_results`. If you see this,
+retry with lower concurrency before assuming anything about the model or
+the prompt:
+
+```bash
+npx promptfoo@latest eval --config promptfoo/promptfooconfig.groq.yaml \
+  --no-cache --max-concurrency 1 \
+  -o promptfoo/results/truthfulness-gate-v2--groq.json
+```
