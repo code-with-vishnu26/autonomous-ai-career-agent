@@ -1,4 +1,4 @@
-"""A free-tier, Groq-backed :class:`ClaimVerifier` (ADR-0043).
+r"""A free-tier, Groq-backed :class:`ClaimVerifier` (ADR-0043).
 
 ADR-0016 pinned the truthfulness gate's verifier to the most capable paid
 Anthropic tier and called that exemption permanent: a false-approve here
@@ -22,21 +22,27 @@ highest-stakes judgment in the system, so it gets Groq's strongest
 available free-tier reasoning model, not the same default as everything
 else.
 
-**Live promptfoo validation against the original ``max_tokens=300``
-uncovered a real configuration bug, not a model-quality failure**: Groq's
-own docs state ``gpt-oss-120b`` spends part of its token budget on hidden
-chain-of-thought reasoning before ever emitting the requested JSON, and
-that reasoning is not excluded from ``max_tokens`` by default. At 300
-tokens, reasoning alone consumed most or all of the budget on every one of
-the 12-case matrix's live-run cases, truncating the response before the
-JSON answer -- the promptfoo run's own transcripts showed the model's
-*reasoning* correctly identifying every fabrication, while the response
-never reached the point of emitting parseable JSON, so every case failed
-on ``is-json``, not on judgment quality. ``reasoning_effort="low"`` and
-``include_reasoning=False`` (Groq's documented controls for this model
-family) plus a much larger ``max_tokens`` are the fix; see
-``promptfoo/promptfooconfig.groq.yaml``, which must mirror these exactly,
-since a config that tests a different call shape than this class actually
+**Two live promptfoo runs, two distinct bugs found and fixed, neither a
+model-quality failure**:
+
+1. At ``max_tokens=300`` with no reasoning controls, hidden chain-of-thought
+   consumed the whole token budget on every one of the 12-case matrix's
+   live-run cases, truncating the response before the JSON ever appeared.
+   Fixed by ``reasoning_effort="low"``, ``include_reasoning=False``, and a
+   much larger ``max_tokens``.
+2. With that fixed, a second live run still scored 0/10: ``gpt-oss-120b``
+   prepends visible reasoning to its answer -- ``"Thinking: ...\\n{json}"``
+   -- *regardless* of ``include_reasoning=False`` (a documented upstream
+   Groq/gpt-oss quirk, not something this project's request body controls).
+   The JSON itself was correct on every case; it was never the *entire*
+   response text, which is what a bare ``json.loads(text)`` assumed. Fixed
+   by :func:`~career_agent.llm.groq_client.extract_json_object`, which pulls
+   the JSON substring out before parsing.
+
+``promptfoo/promptfooconfig.groq.yaml`` must mirror both fixes exactly --
+its ``defaultTest.transform`` re-implements the same first-``{``-to-last-
+``}`` extraction, so the eval validates the same parsing path this class
+actually uses. A config that tests a different call shape than this class
 uses would validate nothing real.
 """
 
@@ -45,7 +51,7 @@ from __future__ import annotations
 import json
 
 from career_agent.core.interfaces import ClaimVerdict
-from career_agent.llm.groq_client import groq_chat_completion
+from career_agent.llm.groq_client import extract_json_object, groq_chat_completion
 from career_agent.llm.prompts import (
     TRUTHFULNESS_GATE_PROMPT,
     TRUTHFULNESS_GATE_PROMPT_VERSION,
@@ -92,7 +98,10 @@ class GroqClaimVerifier:
             reasoning_effort=_REASONING_EFFORT,
             include_reasoning=False,
         )
-        payload = json.loads(text)  # raises on malformed response, by design
+        # raises ValueError (extraction) or JSONDecodeError (parsing) on any
+        # malformed response, by design -- both are fail-closed, never a
+        # fabricated verdict.
+        payload = json.loads(extract_json_object(text))
         return ClaimVerdict(
             verified=bool(payload["verified"]),
             confidence=float(payload["confidence"]),

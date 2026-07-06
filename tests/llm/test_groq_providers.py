@@ -24,7 +24,11 @@ from career_agent.llm import groq_client
 from career_agent.llm.claim_verifier import AnthropicClaimVerifier
 from career_agent.llm.content_drafter import AnthropicContentDrafter
 from career_agent.llm.groq_claim_verifier import GroqClaimVerifier
-from career_agent.llm.groq_client import GroqCallError, groq_chat_completion
+from career_agent.llm.groq_client import (
+    GroqCallError,
+    extract_json_object,
+    groq_chat_completion,
+)
 from career_agent.llm.groq_content_drafter import GroqContentDrafter
 from career_agent.llm.groq_semantic_matcher import GroqSemanticKeywordMatcher
 from career_agent.llm.providers import (
@@ -181,6 +185,30 @@ async def test_groq_call_never_logs_the_api_key(monkeypatch, caplog):
                 max_tokens=10,
             )
     assert "super-secret-key" not in caplog.text
+
+
+# --- extract_json_object: the second live-run bug's fix ------------------
+
+
+def test_extract_json_object_returns_pure_json_unchanged():
+    text = '{"verified": true, "confidence": 1.0}'
+    assert extract_json_object(text) == text
+
+
+def test_extract_json_object_strips_a_reasoning_preamble():
+    """The exact shape of the second live promptfoo run's output."""
+    text = 'Thinking: blah blah blah\n{"verified": false, "confidence": 0.99}'
+    assert extract_json_object(text) == '{"verified": false, "confidence": 0.99}'
+
+
+def test_extract_json_object_raises_when_no_braces_at_all():
+    with pytest.raises(ValueError, match="no JSON object found"):
+        extract_json_object("just reasoning text, no JSON anywhere")
+
+
+def test_extract_json_object_raises_when_only_a_closing_brace():
+    with pytest.raises(ValueError, match="no JSON object found"):
+        extract_json_object("text ending in a stray }")
 
 
 # --- GroqContentDrafter: raises outward, same contract as Anthropic's ------
@@ -417,15 +445,44 @@ async def test_groq_claim_verifier_sends_the_reasoning_truncation_fix(monkeypatc
 
 async def test_groq_claim_verifier_raises_on_malformed_json(monkeypatch):
     """Fail-closed, never a fabricated verdict -- identical contract to
-    AnthropicClaimVerifier."""
+    AnthropicClaimVerifier. No '{'/'}' at all -> extraction itself fails
+    (ValueError), not json.loads -- both are fail-closed either way."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return _groq_response("not json")
 
     monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
     verifier = GroqClaimVerifier(api_key="k")
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ValueError, match="no JSON object found"):
         await verifier.verify_claim("claim", "evidence")
+
+
+async def test_groq_claim_verifier_extracts_json_past_a_reasoning_preamble(
+    monkeypatch,
+):
+    """Regression for the second live-run bug: gpt-oss-120b prepends visible
+    reasoning to its answer even with include_reasoning=False. The verdict
+    must still parse correctly from "Thinking: ...\\n{json}", the exact
+    shape the live promptfoo run returned on every one of its 10 cases."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _groq_response(
+            'Thinking: We need to check claim. Evidence says X. So verified '
+            'false, category skill_not_found.\n'
+            + json.dumps(
+                {
+                    "verified": False,
+                    "confidence": 0.99,
+                    "category": "skill_not_found",
+                    "detail": "AWS is not in evidence",
+                }
+            )
+        )
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    verdict = await GroqClaimVerifier(api_key="k").verify_claim("AWS", "Python only")
+    assert verdict.verified is False
+    assert verdict.category == "skill_not_found"
 
 
 async def test_groq_claim_verifier_raises_on_network_failure_no_fallback(

@@ -23,6 +23,34 @@ class GroqCallError(Exception):
     """
 
 
+def extract_json_object(text: str) -> str:
+    r"""Return the substring from the first ``{`` to the last ``}`` in ``text``.
+
+    A second live promptfoo run (ADR-0043, after fixing the token-budget
+    truncation) showed ``openai/gpt-oss-120b`` still prepending visible
+    chain-of-thought reasoning to its answer -- ``"Thinking: ...\n{json}"``
+    -- even with ``include_reasoning=False`` set. This is a documented
+    upstream Groq/gpt-oss quirk (reasoning leaking into the visible
+    ``content`` field regardless of that flag), not something this
+    project's request body controls. The JSON itself was always correct;
+    it was never the *entire* response text, which is what a bare
+    ``json.loads(text)`` assumed.
+
+    Used only by ``GroqClaimVerifier`` -- ``llama-3.3-70b-versatile`` (the
+    other two Groq-backed ports) is not a reasoning model and has shown no
+    evidence of this behavior, so it is not applied speculatively there.
+
+    Raises ``ValueError`` if no ``{``/``}`` pair exists at all, so a
+    response that is pure reasoning with no JSON anywhere still fails
+    closed exactly as a bare ``json.loads`` would have.
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise ValueError(f"no JSON object found in Groq response: {text!r}")
+    return text[start : end + 1]
+
+
 async def groq_chat_completion(
     *,
     api_key: str,
