@@ -17,8 +17,11 @@ from career_agent.llm.promptfoo_gate import (
     _EXPECTED_CASE_COUNT,
     _EXPECTED_PROVIDER_IDS,
     PromptfooNotValidatedError,
+    diagnose_prompt_drift,
     verify_promptfoo_results,
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _write_results(
@@ -373,14 +376,9 @@ def test_prompt_drift_check_passes_when_recorded_text_matches(
 
 
 def test_prompt_drift_check_ignores_crlf_vs_lf_line_endings(tmp_path: Path) -> None:
-    """The exact false positive found from a real fresh 10/10/0 Groq run:
-    promptfoo (Node) records prompt.txt's raw bytes with whatever line
-    endings are physically on disk, while Python's Path.read_text() always
-    translates CRLF to LF on read -- so a checkout with CRLF line endings
-    (e.g. Windows git with core.autocrlf=true; this repo ships no
-    .gitattributes to prevent that) made a genuinely fresh, unmodified
-    prompt look like drift. Only the newline convention differs here, not
-    the prompt's content."""
+    """Defensive: a prompt source that (unlike promptfoo's own .txt-file
+    loader) preserved CRLF verbatim in `raw` must still not be treated as
+    drift -- CRLF/LF is never semantic content."""
     results_dir = tmp_path / "results"
     lf_text = "CLAIM: {{statement}}\nEVIDENCE: {{evidence}}\n"
     (tmp_path / "prompt.txt").write_text(lf_text)
@@ -395,6 +393,39 @@ def test_prompt_drift_check_ignores_crlf_vs_lf_line_endings(tmp_path: Path) -> N
     verify_promptfoo_results(
         "truthfulness-gate-v2", results_dir, provider_id="groq"
     )  # does not raise -- CRLF vs LF is not real drift
+
+
+def test_prompt_drift_check_ignores_promptfoos_own_trim(tmp_path: Path) -> None:
+    """The exact false positive found from a real fresh 10/10/0 Groq run,
+    reproduced against the REAL promptfoo/prompt.txt: promptfoo's actual
+    .txt-file loader (processTxtFile, promptfoo 0.121.17's
+    dist/src/graders-*.js) does `buffer.join("\\n").trim()` -- it
+    unconditionally strips leading/trailing whitespace, most
+    consequentially the trailing newline prompt.txt ends with on disk
+    (confirmed: the file is 3235 bytes ending in "\\n"; a real captured
+    promptfoo run's recorded raw is 3234 chars, not ending in "\\n"). A
+    results file recording that (correct, promptfoo-produced) trimmed text
+    must not be rejected as drift against the untrimmed file on disk."""
+    results_dir = tmp_path / "results"
+    real_prompt_text = (_REPO_ROOT / "promptfoo" / "prompt.txt").read_text()
+    assert real_prompt_text.endswith("\n"), (
+        "this test's premise (the real prompt.txt ends in a trailing "
+        "newline) no longer holds -- re-check promptfoo/prompt.txt"
+    )
+    (tmp_path / "prompt.txt").write_text(real_prompt_text)
+    _write_results(
+        results_dir,
+        "truthfulness-gate-v2",
+        "groq",
+        successes=_EXPECTED_CASE_COUNT,
+        failures=0,
+        # Exactly what promptfoo's processTxtFile would record: the same
+        # text with leading/trailing whitespace trimmed.
+        recorded_prompt_raw=real_prompt_text.strip(),
+    )
+    verify_promptfoo_results(
+        "truthfulness-gate-v2", results_dir, provider_id="groq"
+    )  # does not raise -- trailing-newline trim is not real drift
 
 
 def test_prompt_drift_check_rejects_a_mismatch(tmp_path: Path) -> None:
@@ -415,3 +446,71 @@ def test_prompt_drift_check_rejects_a_mismatch(tmp_path: Path) -> None:
         verify_promptfoo_results(
             "truthfulness-gate-v2", results_dir, provider_id="groq"
         )
+
+
+# ---------------------------------------------------------------------------
+# diagnose_prompt_drift: the zero-cost local diagnostic
+# ---------------------------------------------------------------------------
+
+
+def test_diagnose_prompt_drift_reports_match_after_canonicalization(
+    tmp_path: Path,
+) -> None:
+    results_dir = tmp_path / "results"
+    lf_text = "CLAIM: {{statement}}\n"
+    (tmp_path / "prompt.txt").write_text(lf_text)
+    _write_results(
+        results_dir,
+        "truthfulness-gate-v2",
+        "groq",
+        successes=_EXPECTED_CASE_COUNT,
+        failures=0,
+        recorded_prompt_raw=lf_text.strip(),
+    )
+    report = diagnose_prompt_drift(
+        "truthfulness-gate-v2", results_dir, provider_id="groq"
+    )
+    assert "MATCH after canonicalization" in report
+    assert "PASS" in report
+
+
+def test_diagnose_prompt_drift_reports_the_first_differing_index(
+    tmp_path: Path,
+) -> None:
+    results_dir = tmp_path / "results"
+    (tmp_path / "prompt.txt").write_text("ABCDEF\n")
+    _write_results(
+        results_dir,
+        "truthfulness-gate-v2",
+        "groq",
+        successes=_EXPECTED_CASE_COUNT,
+        failures=0,
+        recorded_prompt_raw="ABCXEF",
+    )
+    report = diagnose_prompt_drift(
+        "truthfulness-gate-v2", results_dir, provider_id="groq"
+    )
+    assert "MISMATCH after canonicalization" in report
+    assert "first differing index (canonicalized): 3" in report
+
+
+def test_diagnose_prompt_drift_never_prints_full_prompt_or_evidence_text(
+    tmp_path: Path,
+) -> None:
+    """Lengths/hashes/a short window only -- never the full text, so this
+    is always safe to paste into a bug report."""
+    results_dir = tmp_path / "results"
+    secret_looking_text = "SECRET_EVIDENCE_MARKER_1234567890"
+    (tmp_path / "prompt.txt").write_text(secret_looking_text)
+    _write_results(
+        results_dir,
+        "truthfulness-gate-v2",
+        "groq",
+        successes=_EXPECTED_CASE_COUNT,
+        failures=0,
+        recorded_prompt_raw=secret_looking_text,
+    )
+    report = diagnose_prompt_drift(
+        "truthfulness-gate-v2", results_dir, provider_id="groq"
+    )
+    assert secret_looking_text not in report

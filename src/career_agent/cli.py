@@ -66,6 +66,7 @@ from career_agent.domain.models import (
 )
 from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
+    diagnose_prompt_drift,
     verify_promptfoo_results,
 )
 from career_agent.llm.prompts import TRUTHFULNESS_GATE_PROMPT_VERSION
@@ -520,6 +521,29 @@ def run_verify_promptfoo_command(
     return 0
 
 
+def run_diagnose_promptfoo_drift_command(
+    provider_id: str, results_dir: Path | None = None
+) -> int:
+    """Report why the prompt-content drift check would accept or reject an artifact.
+
+    Never exposes résumé/claim content or secrets. Reuses the exact same
+    parsing (``_recorded_prompt_raw``) and
+    normalization (``_canonicalize_prompt_text``) the real
+    ``verify_promptfoo_results`` check uses -- this can never disagree
+    with what that check actually does, because it calls the same code,
+    not a reimplementation of it.
+    """
+    print(
+        diagnose_prompt_drift(
+            TRUTHFULNESS_GATE_PROMPT_VERSION,
+            results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR,
+            provider_id=provider_id,
+        )
+    )
+    return 0
+    return 0
+
+
 def run_export_command(database_path: Path, xlsx_path: Path) -> int:
     """Export the application audit trail to a formatted Excel workbook."""
     store = SqliteApplicationStore(database_path)
@@ -767,6 +791,23 @@ def main(argv: list[str] | None = None) -> None:
         help="Defaults to promptfoo/results at the repo root.",
     )
 
+    diagnose_promptfoo_parser = subparsers.add_parser(
+        "diagnose-promptfoo-drift",
+        help="Print exactly why the prompt-content drift check in "
+        "verify-promptfoo would accept or reject a real local results "
+        "artifact -- lengths, hashes, first differing character. No "
+        "résumé/claim content or secrets printed.",
+    )
+    diagnose_promptfoo_parser.add_argument(
+        "--provider", required=True, choices=("anthropic", "groq")
+    )
+    diagnose_promptfoo_parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=None,
+        help="Defaults to promptfoo/results at the repo root.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "discover":
@@ -834,6 +875,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "verify-promptfoo":
         raise SystemExit(
             run_verify_promptfoo_command(args.provider, args.results_dir)
+        )
+
+    if args.command == "diagnose-promptfoo-drift":
+        raise SystemExit(
+            run_diagnose_promptfoo_drift_command(args.provider, args.results_dir)
         )
 
     if args.command == "apply":

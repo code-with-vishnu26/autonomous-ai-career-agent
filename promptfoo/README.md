@@ -65,6 +65,26 @@ career-agent verify-promptfoo --provider groq
 A `PASS` here means `apply` would pass this same gate for that provider
 right now, with whatever is currently on disk.
 
+If it fails on the prompt-content drift check specifically (`"the prompt
+text promptfoo recorded running against does not match the current
+promptfoo/prompt.txt"`), run the diagnostic below before assuming your
+prompt actually changed -- two real, non-drift representation
+differences have already been found and fixed (see
+`promptfoo_gate.py`'s module docstring for the full history: promptfoo's
+own `.txt`-file loader neutralizes CRLF and strips leading/trailing
+whitespace, including the file's own trailing newline, before recording
+`raw` -- a fresh, unmodified prompt can still legitimately differ from
+the on-disk file by exactly that trim):
+
+```bash
+career-agent diagnose-promptfoo-drift --provider groq
+# reads the same results file verify-promptfoo does; prints lengths,
+# SHA-256 hashes (raw and canonicalized), BOM/trailing-newline/CRLF
+# presence on each side, and the first differing character with a small
+# context window -- never the full prompt or evidence/claim text, so
+# it's safe to paste into a bug report.
+```
+
 ## Artifact policy: local evidence, never committed
 
 `promptfoo/results/*.json` is gitignored. These files are proof that *one

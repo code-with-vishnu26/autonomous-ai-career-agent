@@ -9,7 +9,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from career_agent.cli import main, run_verify_promptfoo_command
+from career_agent.cli import (
+    main,
+    run_diagnose_promptfoo_drift_command,
+    run_verify_promptfoo_command,
+)
 from career_agent.llm.prompts import TRUTHFULNESS_GATE_PROMPT_VERSION
 
 
@@ -52,6 +56,36 @@ def test_wired_into_the_real_cli_as_a_subcommand(tmp_path: Path) -> None:
     _write_clean_results(tmp_path, "groq", "openai:chat:openai/gpt-oss-120b")
     try:
         main(["verify-promptfoo", "--provider", "groq", "--results-dir", str(tmp_path)])
+    except SystemExit as exc:
+        assert exc.code == 0
+    else:
+        raise AssertionError(
+            "main() should always raise SystemExit for a known command"
+        )
+
+
+def test_diagnose_promptfoo_drift_command_runs_offline(
+    tmp_path: Path, capsys
+) -> None:
+    """``career-agent diagnose-promptfoo-drift`` -- always returns 0 (it's
+    a report, not a gate); confirms it's wired into the CLI and doesn't
+    require an existing results file to run without crashing."""
+    assert run_diagnose_promptfoo_drift_command("groq", tmp_path) == 0
+    out = capsys.readouterr().out
+    assert "No results file" in out
+
+
+def test_diagnose_promptfoo_drift_wired_into_the_real_cli(tmp_path: Path) -> None:
+    try:
+        main(
+            [
+                "diagnose-promptfoo-drift",
+                "--provider",
+                "groq",
+                "--results-dir",
+                str(tmp_path),
+            ]
+        )
     except SystemExit as exc:
         assert exc.code == 0
     else:
