@@ -19,8 +19,14 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def load_fixture(*parts: str) -> object:
-    """Load and parse a JSON fixture under ``tests/fixtures``."""
-    return json.loads(FIXTURES.joinpath(*parts).read_text())
+    """Load and parse a JSON fixture under ``tests/fixtures``.
+
+    Explicit ``encoding="utf-8"`` -- fixtures (e.g. ``hn/whoishiring.json``)
+    carry real non-ASCII content (accented characters, CJK text), and
+    without this, ``Path.read_text()`` falls back to the platform's default
+    encoding (cp1252 on Windows), which cannot decode it at all.
+    """
+    return json.loads(FIXTURES.joinpath(*parts).read_text(encoding="utf-8"))
 
 
 class FakeHttpClient:

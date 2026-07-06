@@ -128,9 +128,15 @@ def _load_opportunity(path: Path) -> Opportunity:
 
     Raises ``OSError``/``json.JSONDecodeError``/``pydantic.ValidationError``
     on a missing, malformed, or invalid file -- the caller is responsible
-    for catching these and printing a clean message.
+    for catching these and printing a clean message. Explicit
+    ``encoding="utf-8"`` -- a real opportunity's title/description can
+    carry non-ASCII content (accented names, CJK text, emoji), and without
+    this, ``Path.read_text()`` falls back to the platform's default
+    encoding (cp1252 on Windows), which cannot decode/encode it.
     """
-    return Opportunity.model_validate(json.loads(path.read_text()))
+    return Opportunity.model_validate(
+        json.loads(path.read_text(encoding="utf-8"))
+    )
 
 
 async def _apply_pipeline(
@@ -332,7 +338,15 @@ async def run_discover_command(
                 new_count += 1
                 new_opportunities.append(opportunity)
                 handoff = out_dir / f"{opportunity.id}.json"
-                handoff.write_text(opportunity.model_dump_json(indent=2))
+                # Explicit encoding="utf-8": model_dump_json() (unlike
+                # stdlib json.dumps' ensure_ascii=True default) writes real
+                # Unicode characters verbatim -- a title/description with
+                # an emoji or non-Latin script would otherwise hit the
+                # platform's default encoding (cp1252 on Windows), which
+                # cannot represent it at all.
+                handoff.write_text(
+                    opportunity.model_dump_json(indent=2), encoding="utf-8"
+                )
         print(f"[{name}] {len(found)} fetched, {fresh} new")
     print(f"{new_count} new opportunit{'y' if new_count == 1 else 'ies'} -> {out_dir}")
     if profile is not None and scorer is not None and new_opportunities:
@@ -682,7 +696,7 @@ async def run_auto_command(
     )
     handoffs = sorted(out_dir.glob("*.json"))
     opportunities = [
-        Opportunity.model_validate(json.loads(path.read_text()))
+        Opportunity.model_validate(json.loads(path.read_text(encoding="utf-8")))
         for path in handoffs
     ]
     included, _excluded = scorer.rank(opportunities, profile)  # type: ignore[attr-defined]

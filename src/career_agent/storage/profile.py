@@ -60,8 +60,14 @@ class ProfileValidationError(ValueError):
 
 
 def load_master_profile(path: Path) -> MasterProfile:
-    """Load, id-validate, and version a master profile from a JSON Resume file."""
-    raw: dict[str, Any] = json.loads(path.read_text())
+    """Load, id-validate, and version a master profile from a JSON Resume file.
+
+    Explicit ``encoding="utf-8"`` -- a real résumé routinely carries
+    non-ASCII names/content, and without this, ``Path.read_text()`` falls
+    back to the platform's default encoding (cp1252 on Windows), which
+    cannot decode it.
+    """
+    raw: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     _validate_ids(raw)
     profile = MasterProfile(
         version="pending",
@@ -195,6 +201,11 @@ def save_legal_status(path: Path, legal_status: LegalStatusSection) -> None:
     already recorded on existing Applications -- a version bump never
     retroactively alters history (ADR-0027/0032 discipline).
     """
-    raw: dict[str, Any] = json.loads(path.read_text())
+    # Explicit encoding="utf-8" on both sides -- json.dumps' ensure_ascii
+    # default currently makes this write ASCII-only regardless, but the
+    # read must be explicit (a real profile carries non-ASCII content),
+    # and leaving the write implicit would make this boundary silently
+    # depend on an incidental default rather than a guaranteed contract.
+    raw: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     raw["legal_status"] = legal_status.model_dump(mode="json")
-    path.write_text(json.dumps(raw, indent=2) + "\n")
+    path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
