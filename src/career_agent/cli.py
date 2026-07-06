@@ -749,6 +749,7 @@ async def run_auto_cli_command(
     since_days: int,
     out_dir: Path,
     top_n: int,
+    promptfoo_results_dir: Path | None = None,
 ) -> int:
     """The real ``career-agent auto`` composition root (Phase 17, ADR-0041).
 
@@ -761,6 +762,20 @@ async def run_auto_cli_command(
     its promptfoo results before it's ever used, then select the content
     drafter -- all before ``run_auto_command`` (whose own body is
     structurally incapable of confirming or submitting) ever runs.
+
+    ``promptfoo_results_dir`` mirrors ``run_apply_command``'s existing
+    parameter of the same name -- defaults to
+    ``_DEFAULT_PROMPTFOO_RESULTS_DIR`` (real production behavior,
+    unchanged), but lets a caller (a test) point the gate at an isolated
+    directory instead of the real, machine-local ``promptfoo/results/``.
+    Omitting this was a real gap: unlike ``run_apply_command``, this
+    function offered no way for a test to prove "no valid artifact" is
+    what it's actually testing, rather than depending on the ambient
+    absence of the developer's own real, gitignored validation artifact
+    at the repository-relative default path -- which is exactly what let
+    a test asserting "blocks even with a valid API key" instead reach a
+    real Groq HTTP call on a machine that legitimately has a real, passing
+    ``promptfoo/results/truthfulness-gate-v2--groq.json`` on disk.
     """
     settings = Settings()
     since = datetime.now(UTC) - timedelta(days=since_days)
@@ -771,10 +786,11 @@ async def run_auto_cli_command(
     except NoLLMProviderConfiguredError as exc:
         print(str(exc))
         return 1
+    results_dir = promptfoo_results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR
     try:
         verify_promptfoo_results(
             claim_verifier.prompt_version,
-            _DEFAULT_PROMPTFOO_RESULTS_DIR,
+            results_dir,
             provider_id=claim_verifier.provider_id,
         )
     except PromptfooNotValidatedError as exc:

@@ -111,11 +111,7 @@ async def test_missing_api_key_exits_before_touching_promptfoo(
     assert exit_code == 1
 
 
-async def test_promptfoo_not_validated_blocks_even_with_a_valid_api_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("GROQ_API_KEY", "gsk-fake-for-test")
-    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "db.sqlite"))
+def _write_profile(tmp_path: Path) -> Path:
     profile_path = tmp_path / "profile.json"
     profile_path.write_text(
         json.dumps(
@@ -128,13 +124,77 @@ async def test_promptfoo_not_validated_blocks_even_with_a_valid_api_key(
             }
         )
     )
+    return profile_path
+
+
+async def test_promptfoo_not_validated_blocks_even_with_a_valid_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact machine-dependent bug this test used to have: it never
+    pointed the gate at an isolated directory, so it silently relied on
+    the ambient absence of a real results file at the repository-relative
+    default path. On a machine with its own real, gitignored, passing
+    ``promptfoo/results/truthfulness-gate-v2--groq.json`` (exactly what a
+    developer who has completed live Groq validation legitimately has),
+    the gate found that real artifact, passed, and execution proceeded
+    into constructing a real GroqContentDrafter -- which then made an
+    actual HTTP call to api.groq.com using this test's intentionally-fake
+    key, producing a 401 instead of the exit-1 this test asserts.
+    ``promptfoo_results_dir`` now makes what this test is actually
+    asserting explicit and machine-independent: an isolated directory
+    with no artifact in it, not "whatever happens to be at the default
+    path on whatever machine runs this"."""
+    monkeypatch.setenv("GROQ_API_KEY", "gsk-fake-for-test")
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "db.sqlite"))
     exit_code = await run_auto_cli_command(
-        profile_path=profile_path,
+        profile_path=_write_profile(tmp_path),
         since_days=7,
         out_dir=tmp_path / "opps",
         top_n=3,
+        promptfoo_results_dir=tmp_path / "empty-promptfoo-results",
     )
-    assert exit_code == 1  # no promptfoo/results/truthfulness-gate-v2--groq.json
+    assert exit_code == 1
+
+
+async def test_promptfoo_isolated_state_wins_over_a_valid_ambient_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Direct regression for the exact bug: even when the *ambient*
+    default results directory genuinely has a complete, passing artifact
+    (simulating a real developer machine with its own validated Groq run
+    -- never the actual repo-owned promptfoo/results/, which this test
+    must never touch), an explicitly isolated ``promptfoo_results_dir``
+    with no artifact in it must still be the one consulted, and the gate
+    must still block. Proves isolation wins over ambient state, not just
+    that isolation works when there's nothing ambient to conflict with."""
+    import career_agent.cli as cli_module
+
+    ambient_dir = tmp_path / "ambient-default-results"
+    ambient_dir.mkdir()
+    (ambient_dir / "truthfulness-gate-v2--groq.json").write_text(
+        json.dumps(
+            {
+                "results": {
+                    "stats": {"successes": 10, "failures": 0, "errors": 0},
+                },
+                "config": {
+                    "providers": [{"id": "openai:chat:openai/gpt-oss-120b"}]
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(cli_module, "_DEFAULT_PROMPTFOO_RESULTS_DIR", ambient_dir)
+    monkeypatch.setenv("GROQ_API_KEY", "gsk-fake-for-test")
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "db.sqlite"))
+
+    exit_code = await run_auto_cli_command(
+        profile_path=_write_profile(tmp_path),
+        since_days=7,
+        out_dir=tmp_path / "opps",
+        top_n=3,
+        promptfoo_results_dir=tmp_path / "empty-promptfoo-results",
+    )
+    assert exit_code == 1  # the isolated (empty) directory wins, not ambient
 
 
 # ---------------------------------------------------------------------------
