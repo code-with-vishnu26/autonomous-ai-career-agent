@@ -1,8 +1,9 @@
 # Offline regressions: harness bugs found during live validation
 
-Two independent, offline, no-API-key regressions -- each proving a real bug
-found during `GroqClaimVerifier`'s live validation, and its fix, without
-any network call or real model.
+Three independent, offline, no-API-key regressions -- each proving a real
+bug (or a genuinely over-constrained assertion) found during
+`GroqClaimVerifier`'s live validation, and its fix, without any network
+call or real model.
 
 ## 1. `options.transform` placement (ADR-0043)
 
@@ -49,4 +50,29 @@ npx promptfoo@latest eval --config config_prompt_render.yaml --no-cache
 # expect: 1 passed, 0 failed, 0 errors
 # a "Template render error: ... expected variable end" here means prompt.txt
 # has a stray double-brace outside of {{evidence}}/{{statement}} again
+```
+
+## 3. Compound-claim category flexibility for matrix case #7 (ADR-0044)
+
+A live `truthfulness-gate-v2` Groq run correctly rejected `"Led a team of
+8 engineers"` (`verified: false`, high confidence) but chose
+`unsupported_action_inference` where the original assertion required
+exactly `metric_unsupported`. Both are genuinely correct: the claim has
+two independently unsupported dimensions -- the metric ("8", nowhere in
+evidence) and the action ("Led", nowhere in evidence) -- and the prompt
+states no precedence between them for a claim matching both descriptions.
+This project's own deterministic Layer-1 precheck
+(`domain/truthfulness_predicates.py`) picks `metric_unsupported` first
+only because its rules happen to run in that order -- an implementation
+detail, not a semantic ruling. `promptfoo/tests.yaml`'s case #7 now accepts
+either category; `verified === false` remains unconditional and was never
+relaxed.
+
+Proves offline (canned responses standing in for a model picking either
+valid category) that the relaxed assertion accepts both:
+
+```bash
+cd promptfoo/tests/offline_transform_regression
+npx promptfoo@latest eval --config config_compound_category.yaml --no-cache
+# expect: 2 passed, 0 failed, 0 errors
 ```

@@ -81,7 +81,7 @@
     - type: javascript
       value: "['unsupported_seniority', 'evidence_missing'].includes(JSON.parse(output).category)"
 
-- description: "#7 invented detail with nothing to compare against -- must be blocked, metric_unsupported"
+- description: "#7 invented detail with nothing to compare against -- must be blocked; metric_unsupported OR unsupported_action_inference (compound claim, ADR-0044)"
   vars:
     evidence: |
       Position: Software Engineer
@@ -90,10 +90,23 @@
       Skills: Python, Django, PostgreSQL, Docker
     statement: "Led a team of 8 engineers"
   assert:
+    # The load-bearing check, never relaxed: this claim must be rejected.
     - type: javascript
       value: "JSON.parse(output).verified === false"
+    # This is a genuinely compound claim with TWO independently unsupported
+    # dimensions: the metric ("8", nowhere in evidence) and the action/
+    # ownership verb ("Led", nowhere in evidence). The prompt's own
+    # taxonomy states no precedence between them for a claim that fits
+    # both descriptions, and this project's own deterministic Layer-1
+    # reference implementation (domain/truthfulness_predicates.py) only
+    # picks metric_unsupported first because its rules happen to run in
+    # that order -- an implementation-order artifact, not a semantic
+    # ruling that the metric reason is more "correct" than the action
+    # reason. A model choosing either is equally right; category
+    # flexibility here can never turn verified===true into a pass -- that
+    # check above is unconditional.
     - type: javascript
-      value: "JSON.parse(output).category === 'metric_unsupported'"
+      value: "['metric_unsupported', 'unsupported_action_inference'].includes(JSON.parse(output).category)"
 
 - description: "#8 honest generalization/vagueness -- must be verified (false-positive guard)"
   vars:

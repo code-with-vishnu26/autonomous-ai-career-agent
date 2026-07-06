@@ -1,0 +1,38 @@
+description: "Regression: tests.yaml case #7's compound-claim category assertion accepts either valid category, offline (ADR-0044)"
+
+# A live truthfulness-gate-v2 Groq run picked unsupported_action_inference
+# for "Led a team of 8 engineers" where the original assertion required
+# exactly metric_unsupported. Both are genuinely correct: the claim has two
+# independently unsupported dimensions (the metric "8" and the action
+# "Led"), and the prompt states no precedence between them. This proves
+# offline, with canned responses (no live model, no API key), that the
+# relaxed assertion in promptfoo/tests.yaml accepts both, while
+# verified===false stays mandatory and unconditional.
+
+prompts:
+  - "CLAIM: {{statement}}"
+
+providers:
+  - file://echoProvider.js
+
+tests:
+  - vars:
+      statement: "Led a team of 8 engineers (metric variant)"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).verified === false"
+      - type: javascript
+        value: "['metric_unsupported', 'unsupported_action_inference'].includes(JSON.parse(output).category)"
+  - vars:
+      statement: "Led a team of 8 engineers (action variant)"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).verified === false"
+      - type: javascript
+        value: "['metric_unsupported', 'unsupported_action_inference'].includes(JSON.parse(output).category)"
+
+defaultTest:
+  options:
+    transform: "output.slice(output.indexOf('{'), output.lastIndexOf('}') + 1)"
+  assert:
+    - type: is-json

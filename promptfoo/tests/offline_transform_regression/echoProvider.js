@@ -15,6 +15,22 @@ const CANNED = {
     category: null,
     detail: "supported",
   },
+  // ADR-0044 compound-claim regression: "Led a team of 8 engineers" has
+  // two independently unsupported dimensions (metric "8", action "Led").
+  // These two fake statement keys stand in for a model picking either
+  // valid category, proving tests.yaml's #7 assertion accepts both.
+  "Led a team of 8 engineers (metric variant)": {
+    verified: false,
+    confidence: 0.99,
+    category: "metric_unsupported",
+    detail: "team size of 8 not supported by any profile evidence",
+  },
+  "Led a team of 8 engineers (action variant)": {
+    verified: false,
+    confidence: 0.99,
+    category: "unsupported_action_inference",
+    detail: "the evidence does not mention leading a team",
+  },
 };
 
 class EchoProvider {

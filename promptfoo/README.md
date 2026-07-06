@@ -62,13 +62,15 @@ provider is never treated as a pass for the other, by filename construction.
 - `promptfoo/tests.yaml` — the 12-case adversarial matrix, each case asserting
   the expected `verified`/`category` in the model's JSON response. Shared by
   both provider configs.
-- `promptfoo/tests/offline_transform_regression/` — two offline, no-API-key
-  regressions: (1) `defaultTest.options.transform` is at the correct YAML
-  level for the installed promptfoo version -- run this if a future
-  promptfoo upgrade makes live validation fail again with correct-looking
-  JSON visible in the transcript but every case still failing; (2) the real
-  `prompt.txt` renders through Nunjucks without a template error -- run
-  this after *any* edit to `prompt.txt` (see its own README).
+- `promptfoo/tests/offline_transform_regression/` — three offline,
+  no-API-key regressions: (1) `defaultTest.options.transform` is at the
+  correct YAML level for the installed promptfoo version -- run this if a
+  future promptfoo upgrade makes live validation fail again with
+  correct-looking JSON visible in the transcript but every case still
+  failing; (2) the real `prompt.txt` renders through Nunjucks without a
+  template error -- run this after *any* edit to `prompt.txt`; (3) case
+  #7's compound-claim category assertion accepts either valid category
+  (see its own README).
 
 ## Updating after a prompt change
 
