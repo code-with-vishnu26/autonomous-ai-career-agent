@@ -863,6 +863,34 @@ applications, not thousands," ADR-0039) justifies adding any of it yet.
 
 ---
 
+## Product usability track (Phase 25, competitive-audit-driven)
+
+A cross-repository audit against MIT-licensed
+[`MadsLorentzen/ai-job-search`](https://github.com/MadsLorentzen/ai-job-search)
+(a Claude-Code markdown/skills workspace, pinned at commit `79b1537`)
+found our architecture materially stronger on rigor and safety (their
+fit-scoring and truthfulness protection are prompt-only; their apply flow
+is an unenforced LLM reviewer loop), but weaker on **time-to-first-useful-
+result**. The verified top gap: we had no onboarding command, so a new
+user had to reverse-engineer the JSON Resume schema and hand-author a
+profile.
+
+- ✅ **Guided `setup` command -- ADR-0051 (Phase 25).** A deterministic,
+  fully-offline `career-agent setup`: scaffolds a schema-correct starter
+  profile iff none exists (never overwrites a real one), prints an offline
+  readiness report (profile loads? provider key present -- value never
+  printed? Promptfoo artifact present?), and names the single next
+  command. Zero LLM/network/cost; touches no safety gate.
+- **Deferred (evidence-backed, but not this phase):** LLM-based CV
+  extraction (must write extracted facts as an editable *unverified* draft,
+  never verified evidence); a drafter/reviewer revision loop (safe only if
+  every revision re-passes the truthfulness + ATS gates -- the reference's
+  reviewer can introduce unsupported claims with only a prompt instruction
+  as its guard); an interview-prep pack (LLM-dependent). Each is named for
+  a future phase, not built speculatively now.
+
+---
+
 ## Deferred work (named, not forgotten)
 
 Items explicitly scoped out of the numbered phases above, with a recorded reason
