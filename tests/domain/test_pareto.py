@@ -82,6 +82,66 @@ def test_low_confidence_can_defeat_a_nominal_win() -> None:
     assert not robustly_dominates(a, b)  # a's wide low-confidence band overlaps
 
 
+def test_zero_confidence_never_robustly_dominates_anything() -> None:
+    """Phase 20 audit gap (ADR-0046): confidence=0.0 was never explicitly
+    tested. At zero confidence the interval widens to the full [0,100]
+    bounds regardless of the point value, so a zero-confidence point can
+    never have a lower bound above anything's upper bound -- it cannot
+    robustly dominate, no matter how large its nominal value is."""
+    a = ObjectivePoint(id="a", objectives={"x": 100.0}, confidence=0.0)
+    b = ObjectivePoint(id="b", objectives={"x": 1.0}, confidence=1.0)
+    assert pareto_dominates(a, b)  # nominal: 100 > 1
+    assert not robustly_dominates(a, b)  # a's interval widens to [0, 100]
+
+
+def test_zero_confidence_can_still_be_robustly_dominated() -> None:
+    """The reverse direction: a confident, low point's exact value can
+    still beat a zero-confidence point's worst case, if that worst case
+    is low enough."""
+    a = ObjectivePoint(id="a", objectives={"x": 10.0}, confidence=1.0)
+    b = ObjectivePoint(id="b", objectives={"x": 5.0}, confidence=0.0)
+    # b's interval at confidence=0.0 widens to [0, 100]; b's lower bound is 0.
+    # a's exact value (10, confidence=1.0 -> interval [10,10]) is not >= b's
+    # upper bound (100), so a does NOT robustly dominate b either -- confirms
+    # zero confidence makes a point robustly incomparable in both directions
+    # on this objective, not merely "weak."
+    assert not robustly_dominates(a, b)
+    assert not robustly_dominates(b, a)
+
+
+def test_equal_confidence_reduces_to_symmetric_interval_comparison() -> None:
+    """Two points with identical (non-1.0) confidence: robust dominance
+    still requires the nominal gap to survive both points' equally-widened
+    intervals, not just a nominal comparison."""
+    a = ObjectivePoint(id="a", objectives={"x": 90.0}, confidence=0.5)
+    b = ObjectivePoint(id="b", objectives={"x": 40.0}, confidence=0.5)
+    # a's lower bound: 90 - 0.5*(90-0) = 45. b's upper bound: 40 + 0.5*(100-40) = 70.
+    # 45 < 70 -> not robust, despite a large nominal gap.
+    assert pareto_dominates(a, b)
+    assert not robustly_dominates(a, b)
+
+    c = ObjectivePoint(id="c", objectives={"x": 99.0}, confidence=0.5)
+    d = ObjectivePoint(id="d", objectives={"x": 1.0}, confidence=0.5)
+    # c's lower bound: 99 - 0.5*99 = 49.5. d's upper bound: 1 + 0.5*99 = 50.5.
+    # Still not robust -- equal confidence alone does not guarantee survival.
+    assert not robustly_dominates(c, d)
+
+
+def test_monotonic_improvement_in_evidence_quality_can_only_help_dominance() -> (
+    None
+):
+    """Improving a's confidence (all else equal) must never turn an
+    existing robust dominance into a non-dominance -- higher confidence
+    only shrinks a's own interval toward its point value, which can only
+    make its lower bound higher (better), never lower."""
+    b = ObjectivePoint(id="b", objectives={"x": 40.0}, confidence=1.0)
+    low_conf_a = ObjectivePoint(id="a", objectives={"x": 90.0}, confidence=0.3)
+    high_conf_a = ObjectivePoint(id="a", objectives={"x": 90.0}, confidence=0.9)
+
+    if robustly_dominates(low_conf_a, b):
+        assert robustly_dominates(high_conf_a, b)
+
+
 def test_robust_dominance_implies_nominal_dominance() -> None:
     """Robust dominance is strictly stronger: intervals only ever widen a
     point value, never narrow it, so a's worst case beating b's best case
