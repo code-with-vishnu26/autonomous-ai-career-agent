@@ -178,6 +178,25 @@ def test_single_dominant_point_is_the_only_frontier_member() -> None:
     assert by_id["best"].pareto_optimal is True
 
 
+def test_duplicate_objective_vectors_among_distinct_ids_are_both_optimal() -> None:
+    """Phase 21 (ADR-0047) audit: two DIFFERENT opportunities that happen
+    to carry an IDENTICAL objective vector, inside a larger set with a
+    genuinely worse third candidate -- neither duplicate dominates the
+    other (equal, not strictly better), so both must be frontier-optimal,
+    and the worse candidate must be dominated by both."""
+    points = [
+        _point("dup-1", x=80.0, y=80.0),
+        _point("dup-2", x=80.0, y=80.0),
+        _point("worse", x=20.0, y=20.0),
+    ]
+    result = analyze_frontier(points)
+    assert set(result.frontier_ids) == {"dup-1", "dup-2"}
+    by_id = {e.id: e for e in result.explanations}
+    assert set(by_id["worse"].dominated_by) == {"dup-1", "dup-2"}
+    assert by_id["dup-1"].dominated_by == []
+    assert by_id["dup-2"].dominated_by == []
+
+
 def test_mutually_non_dominated_points_are_all_on_the_frontier() -> None:
     """Classic Pareto tradeoff: neither point beats the other on every
     dimension, so both are frontier-optimal."""

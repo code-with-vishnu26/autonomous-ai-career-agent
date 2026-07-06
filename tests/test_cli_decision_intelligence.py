@@ -297,3 +297,81 @@ async def test_auto_command_path_is_unaffected_by_this_phase() -> None:
 
     assert "_dominance_annotations" not in cli_module.run_auto_command.__code__.co_names
     assert "_sensitivity_summary" not in cli_module.run_auto_command.__code__.co_names
+
+
+async def test_no_submission_path_references_decision_intelligence() -> None:
+    """Phase 21 (ADR-0047) hard-feasibility/safety audit: neither
+    _dominance_annotations nor _sensitivity_summary is referenced by any
+    function on the confirmation/submission chain -- advisory analysis has
+    no code path into a real submission decision at all, not merely "isn't
+    called today"."""
+    from career_agent import cli as cli_module
+
+    for function in (
+        cli_module.confirm_submission,
+        cli_module.run_apply_command,
+        cli_module._apply_pipeline,
+    ):
+        assert "_dominance_annotations" not in function.__code__.co_names
+        assert "_sensitivity_summary" not in function.__code__.co_names
+
+
+async def test_excluded_opportunity_with_a_dominating_vector_stays_excluded(
+    tmp_path: Path, capsys
+) -> None:
+    """Phase 21 (ADR-0047) hard-feasibility invariant: an opportunity that
+    would objectively dominate every included candidate, but is hard-
+    excluded (e.g. blacklisted), must remain excluded -- advisory analysis
+    only ever sees `included`, so it has no channel through which an
+    excellent objective vector could reclassify an excluded opportunity as
+    eligible, let alone as "Pareto-optimal"."""
+
+    class _ScorerExcludingTheBestVector:
+        def rank(self, opportunities, profile):
+            by_id = {o.id: o for o in opportunities}
+            included = [
+                (by_id["mediocre"], _score("mediocre", total=40.0, profile_match=40.0)),
+            ]
+            excluded = [
+                DecisionScore(
+                    opportunity_id="excellent-but-blacklisted",
+                    total=0.0,
+                    profile_match=100.0,
+                    source_reliability=100.0,
+                    freshness=100.0,
+                    salary_transparency=100.0,
+                    excluded=True,
+                    exclude_reasons=["company 'blocked' is blacklisted"],
+                )
+            ]
+            return included, excluded
+
+    repo = SqliteOpportunityRepository(tmp_path / "db.sqlite")
+    out_dir = tmp_path / "opps"
+    sources = [
+        (
+            "one",
+            _FakeSource(
+                [_opp("mediocre"), _opp("excellent-but-blacklisted")]
+            ),
+        )
+    ]
+    from tests.agents._profile_fixture import sample_master_profile
+
+    await run_discover_command(
+        sources,
+        repo,
+        since=datetime(2026, 1, 1, tzinfo=UTC),
+        out_dir=out_dir,
+        profile=sample_master_profile(),
+        scorer=_ScorerExcludingTheBestVector(),
+    )
+    output = capsys.readouterr().out
+    assert (
+        "EXCLUDED excellent-but-blacklisted: company 'blocked' is blacklisted"
+        in output
+    )
+    # The excluded opportunity must never be annotated as Pareto-optimal,
+    # never appear in a [dominated by: ...] list, and never appear in the
+    # ranked/advisory section at all -- it was never given to the analysis.
+    assert "excellent-but-blacklisted" not in output.split("EXCLUDED")[0]
