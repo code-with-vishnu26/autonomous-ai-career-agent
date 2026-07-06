@@ -93,6 +93,7 @@ from career_agent.storage.profile import (
     ProfileValidationError,
     load_master_profile,
     save_legal_status,
+    write_profile_scaffold,
 )
 from career_agent.storage.sqlite import (
     SqliteApplicationStore,
@@ -1101,6 +1102,106 @@ async def run_auto_cli_command(
     )
 
 
+def run_setup_command(
+    *,
+    profile_path: Path,
+    settings: Settings | None = None,
+    promptfoo_results_dir: Path | None = None,
+) -> int:
+    """The ``career-agent setup`` command: scaffold a profile + readiness report.
+
+    Phase 25 (ADR-0051). Deterministic and fully offline -- no LLM call, no
+    network, no secret ever printed. Its single job is to get a new user
+    from zero to a first useful run, which the audit found to be this
+    project's biggest friction: (1) if no profile exists at ``profile_path``,
+    write a schema-correct JSON Resume scaffold to edit -- never overwriting
+    an existing file, so a real profile is never destroyed; (2) print a
+    readiness report of what is and isn't configured; (3) name the single
+    next command to run. Returns 0 always -- ``setup`` is advisory, not a
+    gate; nothing here can fail an unrelated flow.
+    """
+    settings = settings or Settings()
+    results_dir = promptfoo_results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR
+
+    print("career-agent setup\n==================\n")
+
+    # (1) Profile scaffold / load status.
+    profile_ready = False
+    profile_detail: str
+    if write_profile_scaffold(profile_path):
+        profile_detail = (
+            f"wrote a starter profile to {profile_path} -- open it and "
+            f"replace every placeholder with your real, truthful details"
+        )
+    else:
+        try:
+            load_master_profile(profile_path)
+            profile_ready = True
+            profile_detail = f"{profile_path} loads cleanly"
+        except (
+            OSError,
+            json.JSONDecodeError,
+            ProfileValidationError,
+            ValidationError,
+        ) as exc:
+            profile_detail = f"{profile_path} exists but does not load yet: {exc}"
+
+    # (2) Provider key presence (never printed, only presence).
+    has_groq = bool(settings.groq_api_key)
+    has_anthropic = bool(settings.anthropic_api_key)
+    key_ready = has_groq or has_anthropic
+    if has_groq:
+        key_detail = "GROQ_API_KEY is set (free-tier verifier, ADR-0043)"
+    elif has_anthropic:
+        key_detail = "ANTHROPIC_API_KEY is set (paid fallback verifier)"
+    else:
+        key_detail = "no GROQ_API_KEY or ANTHROPIC_API_KEY found in the environment"
+
+    # (3) Promptfoo artifact presence (offline, presence-only).
+    artifacts = sorted(results_dir.glob("*.json")) if results_dir.is_dir() else []
+    promptfoo_ready = bool(artifacts)
+    promptfoo_detail = (
+        f"{len(artifacts)} results artifact(s) present in {results_dir}"
+        if promptfoo_ready
+        else f"no promptfoo results artifact found in {results_dir}"
+    )
+
+    checks = [
+        ("Profile", profile_ready, profile_detail),
+        ("LLM provider key", key_ready, key_detail),
+        ("Promptfoo validation", promptfoo_ready, promptfoo_detail),
+    ]
+    for label, ok, detail in checks:
+        marker = "[ready]" if ok else "[todo] "
+        print(f"  {marker} {label}: {detail}")
+
+    print(
+        f"\n  (data paths: database={settings.database_path}, "
+        f"artifacts={settings.artifacts_dir})"
+    )
+
+    # (4) The single next action, chosen deterministically from the state.
+    if not profile_ready:
+        nxt = (
+            f"Edit {profile_path} with your real details, then re-run "
+            f"career-agent setup."
+        )
+    elif not key_ready:
+        nxt = (
+            "Set GROQ_API_KEY (free tier) or ANTHROPIC_API_KEY, then re-run "
+            "career-agent setup."
+        )
+    elif not promptfoo_ready:
+        nxt = (
+            "Run the promptfoo suite (see promptfoo/README), then "
+            "career-agent verify-promptfoo --provider groq."
+        )
+    else:
+        nxt = f"You're ready. Try: career-agent discover --profile {profile_path}"
+    print(f"\nNext: {nxt}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     """Parse CLI arguments and dispatch, or print the Phase 1 placeholder banner.
 
@@ -1113,6 +1214,18 @@ def main(argv: list[str] | None = None) -> None:
     """
     parser = argparse.ArgumentParser(prog="career-agent")
     subparsers = parser.add_subparsers(dest="command")
+
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Get started: scaffold a starter profile if you have none, and "
+        "print an offline readiness report with your next step.",
+    )
+    setup_parser.add_argument(
+        "--profile",
+        type=Path,
+        default=Path("profile.json"),
+        help="Where your JSON Resume master profile is (or should be scaffolded).",
+    )
 
     apply_parser = subparsers.add_parser(
         "apply",
@@ -1264,6 +1377,9 @@ def main(argv: list[str] | None = None) -> None:
             )
         )
         raise SystemExit(exit_code)
+
+    if args.command == "setup":
+        raise SystemExit(run_setup_command(profile_path=args.profile))
 
     if args.command == "capture-legal-status":
         raise SystemExit(run_capture_legal_status_command(args.profile))

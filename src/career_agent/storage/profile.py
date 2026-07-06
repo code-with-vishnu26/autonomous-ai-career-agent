@@ -59,6 +59,93 @@ class ProfileValidationError(ValueError):
     """
 
 
+def example_profile_dict() -> dict[str, Any]:
+    """A minimal, schema-correct JSON Resume scaffold with placeholder values.
+
+    Phase 25 (ADR-0051): the exact shape :func:`load_master_profile` accepts
+    -- JSON Resume with this project's required ``id`` extension on every
+    ``work``/``education``/``skills``/``projects`` entry, plus the optional
+    ``legal_status`` block. Every value is an obvious placeholder ("Your
+    Name", "you@example.com"); nothing here is real evidence, and the
+    scaffold's whole purpose is to be *edited* into real facts by the user.
+    Kept in lockstep with the loader by a round-trip test, so it can never
+    silently drift into an unloadable shape.
+    """
+    return {
+        "basics": {
+            "name": "Your Name",
+            "email": "you@example.com",
+            "phone": "+00 000 000 000",
+            "location": "City, Country",
+            "summary": (
+                "One or two sentences describing who you are professionally. "
+                "Replace this with your own summary -- it is the grounding "
+                "for every tailored resume."
+            ),
+        },
+        "work": [
+            {
+                "id": "work-1",
+                "name": "Example Company",
+                "position": "Your Job Title",
+                "startDate": "2022-01-01",
+                # Omit "endDate" for a current role; add "endDate": "2024-06-30"
+                # (YYYY-MM-DD) for a past one.
+                "highlights": [
+                    "A concrete, truthful accomplishment with a real metric.",
+                    "Another accomplishment -- only claims you can substantiate.",
+                ],
+            }
+        ],
+        "education": [
+            {
+                "id": "education-1",
+                "institution": "Example University",
+                "area": "Your Field of Study",
+                "studyType": "BSc",
+                "startDate": "2018-09-01",
+                "endDate": "2021-06-01",
+            }
+        ],
+        "skills": [
+            {
+                "id": "skill-1",
+                "name": "Example Skill Group",
+                "level": "Advanced",
+                "keywords": ["Python", "SQL", "A tool you actually use"],
+            }
+        ],
+        "projects": [
+            {
+                "id": "project-1",
+                "name": "Example Project",
+                "description": "What the project was and your role in it.",
+                "highlights": ["A truthful, specific outcome."],
+                "keywords": ["A relevant technology"],
+            }
+        ],
+    }
+
+
+def write_profile_scaffold(path: Path) -> bool:
+    """Write the example profile to ``path`` if absent; never overwrite.
+
+    Returns ``True`` if the scaffold was written, ``False`` if a file
+    already exists at ``path`` (in which case it is left completely
+    untouched -- this never destroys a user's real profile). Explicit
+    ``encoding="utf-8"`` for the same reason :func:`load_master_profile`
+    reads that way.
+    """
+    if path.exists():
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(example_profile_dict(), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return True
+
+
 def load_master_profile(path: Path) -> MasterProfile:
     """Load, id-validate, and version a master profile from a JSON Resume file.
 
