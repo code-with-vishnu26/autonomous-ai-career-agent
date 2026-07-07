@@ -937,6 +937,24 @@ profile.
   external action exists today. **Recommended Phase 29:** a user-run
   manual live smoke-test harness (real Groq validation, one real tailored
   resume), outside the automated suite, still stopping at prepared.
+- ✅ **Bounded real-provider release policy -- ADR-0055 (Phase 29).**
+  Audited the real LLM path (exact models: verifier `openai/gpt-oss-120b`
+  Promptfoo-gated / `claude-opus-4-8`; drafter `llama-3.3-70b-versatile` /
+  `claude-opus-4-8`; matcher `llama-3.3-70b-versatile` /
+  `claude-haiku-4-5-20251001`; Groq-preferred) and bounded its cost/calls
+  (`_MAX_ATS_RETRIES=2`, Layer-1 precheck resolves clear claims with zero
+  calls, reasoning capped). **This environment has no key/artifact, so a
+  live run is BLOCKED_BY_CONFIGURATION -- not performed, not faked.**
+  **Decision: Option A** -- no smoke harness (`apply` already is the
+  bounded prepare-only path); adds drift-guard tests (exact model-id pins,
+  token/retry bounds, empty/whitespace-key edges, verifier-only Promptfoo
+  scope) and documents the user-run controlled-smoke procedure + evidence-
+  invalidation triggers. **Release decision: RELEASE_READY_WITH_
+  LIMITATIONS** -- safety proven offline; real-output quality + live
+  integration require the user's own local smoke run. **Recommended Phase
+  30:** the user runs that controlled smoke locally and records the
+  claim-ledger + quality verdict (safety failure = any unsupported claim
+  surviving the gates, judged separately from quality).
 
 ---
 
