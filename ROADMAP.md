@@ -921,6 +921,22 @@ profile.
   a *deterministic* typed advisory reviewer (never a free-form LLM one),
   only if real usage shows the ATS-driven retailor leaves an observed
   quality gap.
+- ✅ **Production-readiness release gate -- ADR-0054 (Phase 28).**
+  Validation phase. **Decision: Option A** (tests + ADR, no production
+  code): the architecture already satisfies the requirement, so a
+  `doctor` command was rejected as a duplicate of `setup`'s readiness
+  report. Documents the reconstructed end-to-end state machine (external
+  submission and outcome-unknown/recovery states are **unreachable** -- no
+  executor is wired), a capability matrix, a fail-closed failure matrix,
+  and the I1-I22 release-invariant contract. Adds a composed end-to-end
+  dry-run (setup → import-cv → promote-cv → auto → prepared, +
+  restart-idempotency + UTF-8 survival with a synthetic Aarav-Rao fixture)
+  and a cross-cutting contract test (no submission reachable from the CLI,
+  Promptfoo gate enforced offline, network guard active). **Finding:**
+  release-ready as a supervised **prepare-only** product; no irreversible
+  external action exists today. **Recommended Phase 29:** a user-run
+  manual live smoke-test harness (real Groq validation, one real tailored
+  resume), outside the automated suite, still stopping at prepared.
 
 ---
 
