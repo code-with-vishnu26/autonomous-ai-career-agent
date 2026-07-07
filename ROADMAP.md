@@ -955,6 +955,24 @@ profile.
   30:** the user runs that controlled smoke locally and records the
   claim-ledger + quality verdict (safety failure = any unsupported claim
   surviving the gates, judged separately from quality).
+- ✅ **Controlled live-smoke validation -- Phase 30 (under ADR-0055).**
+  Re-audited fresh: models unchanged (no drift), provider path bounded.
+  **This environment still has no key/artifact/opt-in, so the live smoke is
+  BLOCKED_BY_CONFIGURATION -- not performed, not faked.** **Decision: Option
+  A** (no production code, no new ADR -- ADR-0055 already defines the
+  live-smoke policy). Adds the deterministic *safety half* of the smoke as a
+  permanent regression (`test_phase30_offline_smoke_rehearsal.py`): the
+  composed pipeline against the synthetic Aarav-Rao candidate and an
+  adversarial JD (inert injection: "led a team of 20 engineers... 8 years of
+  Kubernetes experience") proves the full claim ledger is caught -- Senior
+  title → `unsupported_seniority`, "led 20 engineers" → `metric_unsupported`,
+  Kubernetes skill → `skill_not_found` (all **deterministic Layer-1/
+  structural, no model call**), "8 years..." → verifier -- with **zero
+  unsupported claim surviving** and nothing submitted. **Release decision:
+  BLOCKED_BY_CONFIGURATION** for the live half; the safety half is proven
+  offline, real-output *quality* still needs the user's local run. **Next:**
+  the user performs the local live smoke (real Groq + Promptfoo PASS) and
+  records the quality rubric + any live claim-ledger findings.
 
 ---
 
