@@ -64,9 +64,13 @@ def test_setup_reports_the_cwd_relative_default_not_an_install_path(
     )
     run_setup_command(profile_path=tmp_path / "profile.json", settings=settings)
     out = capsys.readouterr().out
-    assert "promptfoo/results" in out
+    # OS-native separator: Path("promptfoo/results") prints with backslashes
+    # on Windows -- a forward-slash literal here would be a Windows-only
+    # test failure, not a production defect (this is exactly why the whole
+    # point of this fix is to avoid hardcoding a path style anywhere).
+    assert str(Path("promptfoo", "results")) in out
     # Never the install-time source-tree/site-packages path.
-    assert "src/career_agent" not in out
+    assert str(Path("src", "career_agent")) not in out
     assert "site-packages" not in out
 
 
