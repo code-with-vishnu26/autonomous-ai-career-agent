@@ -1054,6 +1054,60 @@ profile.
 
 ## Deferred work (named, not forgotten)
 
+### v1.1 backlog (Phase 39 post-release operability audit)
+
+Evidence-based, not speculative -- each was reproduced or found by direct
+code/doc inspection during Phase 39's first-run/installation audit.
+
+- **P1 — Promptfoo/results-dir resolution breaks for any non-editable
+  install.** `_DEFAULT_PROMPTFOO_RESULTS_DIR` (`cli.py`) is computed from
+  `Path(__file__).resolve().parent.parent.parent`, which only lands on the
+  real repo root for an **editable** install (`pip install -e .`); a wheel
+  or a plain `pip install .` copies the package into `site-packages`, so
+  the path resolves to a nonsensical `site-packages/promptfoo/results`
+  location -- and `promptfoo/` (the configs `npx promptfoo` needs) isn't
+  packaged in the wheel at all (confirmed: `career_agent/llm/
+  promptfoo_gate.py` is the only `promptfoo`-named wheel entry). Not
+  currently release-blocking -- the only supported, documented install
+  path today is editable-from-source-checkout, which this doesn't affect
+  -- but it will break the moment a wheel/PyPI/GitHub-Release-asset
+  install path is published (§20 of Phase 39: no such channel exists yet,
+  confirmed). Smallest likely fix: an explicit `--results-dir` CLI
+  override plus a documented default (e.g. an XDG-style user config dir)
+  that doesn't depend on `__file__`'s install-time location. Needs a small
+  design decision, not a blind path change; no ADR expected (implementation
+  detail, not a policy reversal).
+- **P2 — Canonical profile JSON shape was undocumented until this phase.**
+  Root-caused: the real loader (`load_master_profile` -> `_map_work`)
+  expects JSON Resume's camelCase `startDate`/`endDate`; the Pydantic
+  model's own fields are snake_case `start_date`/`end_date`. Nothing
+  shipped an example showing the (correct) camelCase shape -- this exact
+  gap caused real, extended trial-and-error during the Phase 36 live smoke
+  (both the user's and this agent's own synthetic-fixture debugging).
+  **Fixed in this phase**: README now ships a loader-verified example
+  (`test_readme_work_entry_example_loads_through_the_real_cli_loader`).
+  Tracked here in case a fuller "profile authoring guide" is ever
+  warranted beyond the one example.
+- **P2 — No opportunity-file authoring example.** The primary supported
+  path (`discover --out-dir` writing handoff files `apply` consumes
+  directly) doesn't require a user to hand-author one, so this is lower
+  priority than originally suspected -- but no example exists for the
+  synthetic/manual-testing case documented in ADR-0058/Phase 36. Consider
+  a short example alongside the profile one if manual opportunity
+  authoring turns out to be a real user path.
+- **P3 — macOS remains untested.** Unchanged deliberate gap (ADR-0056/0057,
+  10x CI runner-minute multiplier). Revisit only if a macOS-specific defect
+  is ever actually reported.
+- **P3 — Whitespace-only provider key is truthy and selects a provider.**
+  Unchanged, low-severity, already documented and pinned by test since
+  Phase 29 (`test_whitespace_only_key_is_treated_as_present_documented_
+  limitation`) -- fails closed at the live call (401), never a silent
+  truthfulness bypass. Not re-prioritized by this audit; no new evidence
+  changes its severity.
+- **P3 — GitHub Release publication.** Confirmed `RELEASE_PENDING` (real
+  404, not inferred) as of Phase 38/39. A manual, separate maintainer
+  action once GitHub's API rate limit resets -- not a repository defect.
+
 Items explicitly scoped out of the numbered phases above, with a recorded reason
 — tracked here so they don't quietly reopen an already-"done" phase.
 
