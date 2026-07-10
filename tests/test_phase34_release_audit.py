@@ -1,11 +1,12 @@
 """Phase 34 (ADR-0056): v1.0 release-audit drift guards.
 
-These pin the facts the v1.0.0-rc1 *release decision* depends on, so a silent
-change that would invalidate the CONDITIONAL_GO -- a version bump, a wired
-executor, a README that starts overclaiming again, or a missing release
-artifact -- fails a test instead of shipping unnoticed. They make **no** live
-call and change **no** safety semantics; they only read package metadata, run
-the pure execution boundary offline, and scan committed docs.
+These pin the facts the v1.0.0 *release decision* depends on (the version
+pin itself was advanced from `1.0.0rc1` to `1.0.0` by ADR-0059/Phase 37 on
+real evidence), so a silent regression -- a version bump, a wired executor,
+a README that starts overclaiming again, or a missing release artifact --
+fails a test instead of shipping unnoticed. They make **no** live call and
+change **no** safety semantics; they only read package metadata, run the
+pure execution boundary offline, and scan committed docs.
 """
 
 from __future__ import annotations

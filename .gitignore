@@ -71,3 +71,12 @@ browser_state*.json
 # ---- Logs ----
 *.log
 logs/
+
+# ---- Local Phase 36 controlled-smoke evidence/fixtures (never committed) ----
+# Named exactly, not by wildcard, so this can never silently hide an
+# unrelated legitimate file -- see docs/adr/0058-confirmation-lifecycle-and-retry-semantics.md.
+/phase36_evidence.txt
+/phase36_local_smoke.ps1
+/phase36_smoke/
+/synthetic_opportunity.json
+/synthetic_profile.json
