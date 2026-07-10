@@ -1086,6 +1086,29 @@ profile.
   (wheel-install already exercised on both Ubuntu and Windows, confirmed
   from existing green CI).
 
+- ✅ **Fresh-machine onboarding validation (Phase 42).** Revalidated the
+  whole zero-to-first-run path against freshly built, independently
+  installed artifacts: editable + wheel installs (run from outside the
+  source tree, source-tree independent), the `setup` readiness state matrix
+  (no-key / key-present / no-artifact / artifact-present, key value never
+  printed), profile onboarding through the real `load_master_profile`
+  (camelCase mapping, not raw `model_validate`), and apply-journey safety
+  on synthetic `.invalid` domains (fail-closed at every gate; no real
+  submission reachable). One doc-accuracy defect found and fixed: the README
+  falsely framed its example as the literal scaffold output. 3 new tests. No
+  production/dependency/safety/ADR change.
+
+- ✅ **v1.1 production-readiness audit + version decision -- ADR-0062
+  (Phase 43).** Audited eight categories against directly-observed
+  evidence and decided the release version by SemVer reasoning. The only
+  runtime change since the `v1.0.0` tag is the new `promptfoo_results_dir`
+  `Settings` field (backward-compatible functionality); no LLM-facing code
+  changed. **Decision:** target **v1.1.0** (MINOR); release gate
+  **CONDITIONAL_GO**, pending Phase 44 mechanics (version bump in lockstep
+  with the three v1.0.0 drift-guard tests + release notes + fresh green CI)
+  and owner authorization for the tag. No P0/P1 blocker; `v1.0.0` tag
+  immutable. Records the decision only -- no version bump, no tag.
+
 ---
 
 ## Deferred work (named, not forgotten)
