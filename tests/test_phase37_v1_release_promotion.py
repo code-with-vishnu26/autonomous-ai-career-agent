@@ -17,9 +17,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_has_no_prerelease_suffix() -> None:
-    """v1.0.0 is a stable release, not a release candidate."""
+    """The current release is stable, not a release candidate. Advanced from
+    v1.0.0 to v1.1.0 by Phase 44/ADR-0062 (still no ``-rc`` suffix)."""
     installed = version("career-agent")
-    assert installed == "1.0.0"
+    assert installed == "1.1.0"
     assert "rc" not in installed
 
 

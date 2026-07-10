@@ -1109,6 +1109,17 @@ profile.
   and owner authorization for the tag. No P0/P1 blocker; `v1.0.0` tag
   immutable. Records the decision only -- no version bump, no tag.
 
+- ✅ **v1.1.0 release promotion (Phase 44, ADR-0062).** Executed the
+  CONDITIONAL_GO conditions: bumped `pyproject` `1.0.0 → 1.1.0` in lockstep
+  with the three v1.0.0 drift-guard tests (`test_phase34/37/38` -- updated
+  to guard the new version, never weakened), added
+  `docs/release/v1.1.0-notes.md`, and added a Phase 44 promotion-guard test.
+  Full suite + fresh build + artifact verification + wheel smoke green on
+  the bumped version. The git tag and GitHub Release remain a **manual
+  maintainer step** (exact `git tag`/`push` commands are in the v1.1.0
+  notes) -- the agent never creates or pushes the tag itself. `v1.0.0` tag
+  immutable throughout.
+
 ---
 
 ## Deferred work (named, not forgotten)
