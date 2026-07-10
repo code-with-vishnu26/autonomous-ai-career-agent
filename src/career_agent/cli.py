@@ -113,9 +113,6 @@ from career_agent.storage.sqlite import (
 
 _YES = {"y", "yes"}
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_DEFAULT_PROMPTFOO_RESULTS_DIR = _REPO_ROOT / "promptfoo" / "results"
-
 
 def confirm_submission(
     preview: SubmissionPreview,
@@ -392,7 +389,7 @@ async def run_apply_command(
         print(str(exc))
         return 1
 
-    results_dir = promptfoo_results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR
+    results_dir = promptfoo_results_dir or Path(settings.promptfoo_results_dir)
     try:
         verify_promptfoo_results(
             claim_verifier.prompt_version,
@@ -789,7 +786,7 @@ def run_verify_promptfoo_command(
     try:
         verify_promptfoo_results(
             TRUTHFULNESS_GATE_PROMPT_VERSION,
-            results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR,
+            results_dir or Path(Settings().promptfoo_results_dir),
             provider_id=provider_id,
         )
     except PromptfooNotValidatedError as exc:
@@ -820,11 +817,10 @@ def run_diagnose_promptfoo_drift_command(
     print(
         diagnose_prompt_drift(
             TRUTHFULNESS_GATE_PROMPT_VERSION,
-            results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR,
+            results_dir or Path(Settings().promptfoo_results_dir),
             provider_id=provider_id,
         )
     )
-    return 0
     return 0
 
 
@@ -1069,10 +1065,10 @@ async def run_auto_cli_command(
     structurally incapable of confirming or submitting) ever runs.
 
     ``promptfoo_results_dir`` mirrors ``run_apply_command``'s existing
-    parameter of the same name -- defaults to
-    ``_DEFAULT_PROMPTFOO_RESULTS_DIR`` (real production behavior,
-    unchanged), but lets a caller (a test) point the gate at an isolated
-    directory instead of the real, machine-local ``promptfoo/results/``.
+    parameter of the same name -- defaults to ``settings.
+    promptfoo_results_dir`` (real production behavior, unchanged), but lets
+    a caller (a test) point the gate at an isolated directory instead of
+    the real, machine-local ``promptfoo/results/``.
     Omitting this was a real gap: unlike ``run_apply_command``, this
     function offered no way for a test to prove "no valid artifact" is
     what it's actually testing, rather than depending on the ambient
@@ -1091,7 +1087,7 @@ async def run_auto_cli_command(
     except NoLLMProviderConfiguredError as exc:
         print(str(exc))
         return 1
-    results_dir = promptfoo_results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR
+    results_dir = promptfoo_results_dir or Path(settings.promptfoo_results_dir)
     try:
         verify_promptfoo_results(
             claim_verifier.prompt_version,
@@ -1145,7 +1141,7 @@ def run_setup_command(
     gate; nothing here can fail an unrelated flow.
     """
     settings = settings or Settings()
-    results_dir = promptfoo_results_dir or _DEFAULT_PROMPTFOO_RESULTS_DIR
+    results_dir = promptfoo_results_dir or Path(settings.promptfoo_results_dir)
 
     print("career-agent setup\n==================\n")
 
@@ -1499,7 +1495,10 @@ def main(argv: list[str] | None = None) -> None:
         "--results-dir",
         type=Path,
         default=None,
-        help="Defaults to promptfoo/results at the repo root.",
+        help=(
+            "Defaults to promptfoo/results relative to the current working "
+            "directory (Settings.promptfoo_results_dir, .env-overridable)."
+        ),
     )
 
     diagnose_promptfoo_parser = subparsers.add_parser(
@@ -1516,7 +1515,10 @@ def main(argv: list[str] | None = None) -> None:
         "--results-dir",
         type=Path,
         default=None,
-        help="Defaults to promptfoo/results at the repo root.",
+        help=(
+            "Defaults to promptfoo/results relative to the current working "
+            "directory (Settings.promptfoo_results_dir, .env-overridable)."
+        ),
     )
 
     args = parser.parse_args(argv)
