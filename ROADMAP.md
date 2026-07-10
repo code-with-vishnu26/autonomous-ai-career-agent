@@ -1033,6 +1033,23 @@ profile.
   containment all held under a real live model call -- see ADR-0058 for the
   full defect writeup and PR #58 for the fix.
 
+- ✅ **v1.0.0 release promotion -- ADR-0059 (Phase 37).** Fresh audit
+  confirmed `origin/main` at `833c5db` (real PR #58 merge) and independently
+  checked the GitHub Actions API directly -- both `verify (ubuntu-latest)`
+  and `verify (windows-latest)` on that exact commit are `completed`/
+  `success`, resolving Phase 36's unconfirmed-CI gap with a real result.
+  Local baseline reconfirmed: **682 passed/0 skipped/0 failed**, ruff clean,
+  imports 4/4. Re-inspected the maintainer's real Phase 36 live-Groq
+  transcript directly: no injection-derived claim appears anywhere in the
+  real rendered resume; ATS `78.125` and `truthfulness_approved=1` are real
+  values, not asserted. **Decision: GO** -- all four of ADR-0056's
+  `CONDITIONAL_GO` conditions are now closed by real evidence; macOS remains
+  a named, deliberate gap, not a blocker. Promotes version `1.0.0rc1 →
+  1.0.0`; adds `docs/release/v1.0.0-notes.md` (rc1 notes kept, unedited,
+  marked superseded); adds `tests/test_phase37_v1_release_promotion.py`. No
+  production code changed; no safety semantics changed; no git tag created;
+  nothing published -- both left for the maintainer.
+
 ---
 
 ## Deferred work (named, not forgotten)

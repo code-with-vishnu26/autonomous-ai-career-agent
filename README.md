@@ -59,12 +59,12 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design and
 | Discover, rank, ingest, confirm, promote, tailor, gate, ATS, render, journal, report, export | **SUPPORTED** |
 | PDF CV import / OCR | **NOT_SUPPORTED** (`.docx` / `.txt` / `.md` only) |
 | Browser submission / email-to-apply / autonomous external submission | **NOT_SUPPORTED** — code exists but is **unwired and unreachable** from the CLI |
-| Live LLM output *quality* | Validated only by the user's local controlled smoke run — CI never has an API key, so it can make **no** real LLM call |
+| Live LLM output *quality* | Validated by a real controlled live-Groq smoke run (Phase 36) — CI itself never has an API key, so it can make **no** real LLM call |
 | CI | Runs on every push/PR to `main`: lint, architecture contracts, full test suite, packaging, clean-install, and an offline CLI smoke — on **Linux and Windows** |
 | macOS | **Untested** — a deliberate, documented gap, not silently dropped |
 
 The full capability matrix and known limitations live in
-[`docs/release/v1.0.0-rc1-notes.md`](docs/release/v1.0.0-rc1-notes.md).
+[`docs/release/v1.0.0-notes.md`](docs/release/v1.0.0-notes.md).
 
 ## Tech stack
 
@@ -108,8 +108,9 @@ git-ignored and never committed or packaged (see [`SECURITY.md`](SECURITY.md)).
 
 ## Status
 
-Preparing **v1.0.0-rc1** — a supervised, prepare-only release candidate. See
-[`ROADMAP.md`](ROADMAP.md) and
+**v1.0.0** — a supervised, prepare-only release, promoted from `1.0.0rc1`
+after a real controlled live-Groq validation and green CI on Linux and
+Windows (Phase 37). See [`ROADMAP.md`](ROADMAP.md) and
 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
 
 ## License
