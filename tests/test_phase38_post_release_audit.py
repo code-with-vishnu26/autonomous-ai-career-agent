@@ -3,9 +3,10 @@
 Pins the two small, real findings from the post-release audit: local
 Phase-36 smoke-evidence filenames are now git-ignored by name (so an
 accidental ``git add .`` in the repo root can never stage them), and the
-installed package version is exactly ``1.0.0`` with no pre-release suffix
-anywhere reachable from a clean install. No live call; no network; no tag
-mutation (this file never touches ``v1.0.0``).
+installed package version has no pre-release suffix anywhere reachable from
+a clean install (advanced from ``1.0.0`` to ``1.1.0`` by Phase 44/ADR-0062).
+No live call; no network; no tag mutation (this file never touches the
+immutable ``v1.0.0`` git tag).
 """
 
 from __future__ import annotations
@@ -45,9 +46,9 @@ def test_smoke_directory_is_gitignored() -> None:
     assert result.returncode == 0
 
 
-def test_installed_version_is_stable_v1_0_0() -> None:
+def test_installed_version_is_stable_v1_1_0() -> None:
     installed = version("career-agent")
-    assert installed == "1.0.0"
+    assert installed == "1.1.0"
     assert "rc" not in installed
     assert "dev" not in installed
 

@@ -25,12 +25,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_candidate_version_is_pinned() -> None:
-    """The release metadata is exactly v1.0.0 (ADR-0056 policy; promoted from
-    1.0.0rc1 by ADR-0059/Phase 37 on real live-Groq + CI evidence).
+    """The release metadata is exactly v1.1.0 (advanced from v1.0.0 by
+    Phase 44/ADR-0062 on the CONDITIONAL_GO v1.1 readiness decision; v1.0.0
+    itself was promoted from 1.0.0rc1 by ADR-0059/Phase 37).
 
     Advancing this is a deliberate release-promotion decision that must re-run
-    the RELEASE_CHECKLIST, not an incidental edit."""
-    assert version("career-agent") == "1.0.0"
+    the RELEASE_CHECKLIST, not an incidental edit -- exactly what Phase 44
+    did to reach 1.1.0 (see docs/release/v1.1.0-notes.md)."""
+    assert version("career-agent") == "1.1.0"
 
 
 def test_external_submission_is_unreachable_no_executor_wired() -> None:
