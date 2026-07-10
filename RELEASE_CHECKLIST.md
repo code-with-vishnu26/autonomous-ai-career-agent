@@ -58,19 +58,25 @@ and must be re-run from a clean tree. Record exact results, not summaries.
 ## 8. Packaging
 
 - [ ] `python -m build` produces wheel + sdist.
-- [ ] Wheel contains no secrets, `.env`, results, DBs, exports, or tests.
-- [ ] Clean-venv install succeeds; `career-agent --help` works; `setup` smoke works.
+- [ ] `python scripts/verify_release_artifacts.py` passes (wheel contains no
+      secrets/`.env`/results/DBs/exports/tests; sdist contains no
+      secrets/`.env`/results/DBs/exports — `tests/` is expected there).
+- [ ] `python scripts/smoke_test_wheel.py` passes (clean-venv install,
+      `career-agent --help`, `setup` smoke).
 
 ## 9. Cross-platform
 
-- [ ] Linux: full suite green.
-- [ ] Windows UTF-8: enforced statically (explicit `encoding="utf-8"`); actual
-      Windows/macOS execution — record as tested or **untested**.
+- [ ] Linux: full suite green (CI, every push/PR, ADR-0057).
+- [ ] Windows: full suite + packaging + smoke green (CI, every push/PR,
+      ADR-0057) — no longer inferred from static UTF-8 reasoning alone.
+- [ ] macOS: **untested** (deliberate, cost-driven gap; ADR-0056/0057).
 
 ## 10. CI
 
-- [ ] If CI exists, inspect the latest actual check runs (do not infer from YAML).
-- [ ] If CI does not exist, record it as a release limitation.
+- [ ] Inspect the **actual** latest check-run conclusions for the commit being
+      released (`.github/workflows/ci.yml`, ADR-0057) — do not infer from the
+      YAML alone or assume a run passed without checking it.
+- [ ] Both matrix legs (`ubuntu-latest`, `windows-latest`) are green.
 
 ## 11. Sign-off
 

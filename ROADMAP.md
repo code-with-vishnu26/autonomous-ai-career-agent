@@ -990,6 +990,28 @@ profile.
   quality unvalidated, live Promptfoo BLOCKED_BY_CONFIGURATION, no in-repo CI,
   and Windows/macOS execution untested. No safety semantics changed.
 
+- ✅ **CI and cross-platform release hardening -- ADR-0057 (Phase 35).** Fresh
+  audit reconfirmed the one gap Phase 34 named: no `.github/` directory, no CI.
+  Baseline unchanged: **672 passed/0 skipped/0 failed**, ruff clean, imports
+  4/4. Adds `.github/workflows/ci.yml` -- matrix `ubuntu-latest`x`windows-
+  latest`, Python 3.11, `permissions: contents: read`, no secret ever
+  referenced (structurally cannot make a live/paid LLM call), no
+  `continue-on-error` -- running lint, architecture contracts, the full test
+  suite, a real `python -m build`, a wheel+sdist content check, and a
+  clean-venv install + CLI smoke on **every push/PR**. Adds two dependency-free
+  release-tooling scripts: `scripts/verify_release_artifacts.py` (checks wheel
+  **and** sdist; fixed two false positives while building it -- `.env.example`
+  is a safe template, and `tests/` legitimately belongs in the sdist, only
+  forbidden in the wheel) and `scripts/smoke_test_wheel.py` (one OS-branch-free
+  script proving install+`--help`+`setup` identically on both OSes, rather than
+  duplicated conditional YAML). Amends ADR-0056's platform table from *static
+  reasoning* to *evidence*: Windows is now actually exercised in CI, not
+  inferred from explicit-UTF-8 alone; macOS stays a named, deliberate gap
+  (10x runner-cost multiplier, no evidence of a macOS-specific defect).
+  `tests/test_phase35_ci_release_tooling.py` (6 tests) pins the scripts' pure
+  logic and the workflow's fail-closed shape. No production code, no safety
+  semantics changed, no external submission newly reachable.
+
 ---
 
 ## Deferred work (named, not forgotten)
