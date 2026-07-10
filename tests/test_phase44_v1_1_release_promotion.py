@@ -42,9 +42,11 @@ def test_v1_1_0_release_notes_exist_and_state_the_decision() -> None:
     )
     assert "**GO**" in notes
     assert "v1.0.0" in notes  # documents what it was promoted from
-    # The notes must be honest that the tag is a separate manual step, not
-    # something already done or performed by the agent.
-    assert "pending owner authorization" in notes
+    # Phase 45 reconciled these notes once the tag + Release genuinely
+    # existed: the pre-release "pending owner authorization" wording must be
+    # gone, replaced by the released state.
+    assert "pending owner authorization" not in notes
+    assert "RELEASED" in notes
 
 
 def test_v1_0_0_notes_preserved_and_not_rewritten() -> None:

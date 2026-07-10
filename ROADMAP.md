@@ -1120,6 +1120,20 @@ profile.
   notes) -- the agent never creates or pushes the tag itself. `v1.0.0` tag
   immutable throughout.
 
+- ✅ **v1.1.0 post-release reconciliation -- ADR-0063 (Phase 45).** After the
+  maintainer manually pushed the annotated `v1.1.0` tag and published the
+  GitHub Release, reconciled the repository against that reality: verified
+  tag integrity (`v1.1.0` peels to `a563dbe…` = `origin/main`; `v1.0.0`
+  untouched) and the GitHub Release via API (id `352138767`, `draft=false`,
+  `prerelease=false`). Corrected stale pre-release wording in the v1.1.0
+  notes and README Status, drawing an explicit line between **software
+  release state = `RELEASED`** and **product posture = `PREPARE_ONLY`**.
+  **Artifact decision: `KEEP_SOURCE_ARCHIVES_ONLY`** -- Releases publish
+  source archives only; no binary assets attached (a fresh `1.1.0`
+  wheel/sdist was built + verified as evidence, not uploaded), matching the
+  README's editable-install-only policy. No version bump, no safety change,
+  no tag mutation.
+
 ---
 
 ## Deferred work (named, not forgotten)
