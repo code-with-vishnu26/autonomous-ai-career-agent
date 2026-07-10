@@ -112,8 +112,9 @@ career-agent setup     # scaffolds a starter profile + prints an offline readine
 Then edit `profile.json` with your real, truthful details and re-run
 `career-agent setup`. The profile follows the
 [JSON Resume](https://jsonresume.org/) schema — dates use its camelCase
-convention (`startDate` / `endDate`, not `start_date`); a scaffolded work
-entry looks like:
+convention (`startDate` / `endDate`, not `start_date`). An example work
+entry (illustrating the shape — including an `endDate` for a past role,
+which the scaffold omits for a current one) looks like:
 
 ```json
 {
