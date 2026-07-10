@@ -138,6 +138,41 @@ async def test_rejected_draft_exits_nonzero_and_never_asks_for_confirmation() ->
     assert exit_code == 1
 
 
+async def test_rejected_draft_is_recorded_and_does_not_block_retry(
+    tmp_path: Path,
+) -> None:
+    """The rejected-draft record() call still fires (audit trail for the
+    funnel report, ADR-0039) after being moved to fire once the terminal
+    status is known (Phase 36 refactor) -- and, unchanged from before,
+    "rejected" never blocks a fresh attempt (ADR-0048)."""
+    from career_agent.domain.models import Opportunity
+    from career_agent.storage.sqlite import SqliteApplicationStore
+
+    generator = LLMResumeGenerator(
+        FakeContentDrafter(DraftedTailoring(skills=["Kubernetes"]))
+    )
+    gate = LLMTruthfulnessGate(FakeClaimVerifier({}))
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    store = SqliteApplicationStore(tmp_path / "db.sqlite")
+
+    def _fail_if_called(_: str) -> str:
+        raise AssertionError("confirm_submission must not be reached")
+
+    exit_code = await _apply_pipeline(
+        _honest_profile(),
+        opportunity,
+        generator,
+        gate,
+        input_fn=_fail_if_called,
+        application_store=store,
+    )
+    assert exit_code == 1
+    rows = store.all_rows()
+    assert len(rows) == 1
+    assert rows[0]["status"] == "rejected"
+    assert store.prior_attempt_status(opportunity.id) is None
+
+
 async def test_missing_summary_exits_nonzero_without_crashing() -> None:
     generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
     gate = LLMTruthfulnessGate(FakeClaimVerifier({}))
@@ -218,6 +253,60 @@ async def test_prior_non_rejected_attempt_refuses_to_tailor_again(
         application_store=store,
     )
     assert exit_code == 1
+
+
+async def test_declined_confirmation_does_not_permanently_block_retry(
+    tmp_path: Path,
+) -> None:
+    """Phase 36 (real-world Windows evidence): a user who types 'n' at the
+    confirmation prompt made zero real-world submission attempt -- no
+    executor was ever reached (ADR-0050). The application-attempt
+    idempotency guard (ADR-0048) exists to block a *risky* repeat attempt;
+    a declined run carries the same "no side effect occurred" property as
+    a truthfulness rejection, so it must not permanently soft-lock the
+    opportunity the way a real submitted/paused_for_human/failed attempt
+    legitimately would."""
+    from career_agent.domain.models import Opportunity
+    from career_agent.storage.sqlite import SqliteApplicationStore
+
+    generator = LLMResumeGenerator(FakeContentDrafter(_honest_drafted()))
+    gate = LLMTruthfulnessGate(
+        FakeClaimVerifier(
+            {
+                "Software Engineer": ClaimVerdict(verified=True, confidence=1.0),
+                "Built REST APIs serving 2M requests/day": ClaimVerdict(
+                    verified=True, confidence=0.95
+                ),
+            }
+        )
+    )
+    opportunity = Opportunity.model_validate(_opportunity_payload())
+    store = SqliteApplicationStore(tmp_path / "db.sqlite")
+
+    first_exit = await _apply_pipeline(
+        _honest_profile(),
+        opportunity,
+        generator,
+        gate,
+        input_fn=lambda _: "n",
+        application_store=store,
+    )
+    assert first_exit == 0
+
+    # The declined attempt is recorded (audit trail preserved) but must not
+    # read back as a blocking prior attempt.
+    assert store.prior_attempt_status(opportunity.id) is None
+
+    # A fresh attempt for the same opportunity must not be refused.
+    second_exit = await _apply_pipeline(
+        _honest_profile(),
+        opportunity,
+        generator,
+        gate,
+        input_fn=lambda _: "y",
+        application_store=store,
+    )
+    assert second_exit == 0
 
 
 def _all_journal_rows(db_path: Path) -> list[tuple]:

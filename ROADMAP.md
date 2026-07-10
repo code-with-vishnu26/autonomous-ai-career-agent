@@ -1012,6 +1012,27 @@ profile.
   logic and the workflow's fail-closed shape. No production code, no safety
   semantics changed, no external submission newly reachable.
 
+- ✅ **Controlled live Groq validation and a real declined-confirmation
+  defect fix -- ADR-0058 (Phase 36).** The user ran the first genuinely live
+  Groq smoke on their real Windows machine (real `GROQ_API_KEY`, real
+  `verify-promptfoo --provider groq` PASS): the pipeline tailored, gated,
+  ATS-scored (**78.125**), and rendered a real DOCX from real Groq output.
+  Declining the confirmation prompt (`N`) exposed a real defect: the
+  application-store row was written `status="pending"` **before**
+  confirmation and never corrected afterward, so a declined run permanently
+  refused every future retry with a message wrongly asserting real-world-
+  submission risk. Reproduced deterministically offline first (no live call
+  needed) with a failing regression test, then fixed with the smallest safe
+  change: `Application.status` gains `"declined"` (means "zero external
+  side effect," same as `"rejected"`); `_apply_pipeline` now records once
+  per run, at the correct terminal branch; `prior_attempt_status()` excludes
+  `"declined"` alongside `"rejected"`. Genuinely risky statuses remain fully
+  blocking (proven by a dedicated test); external submission remains
+  **UNREACHABLE**; no schema migration; 4 new tests. **Release evidence:**
+  the real-provider path, truthfulness gate, ATS gate, and injection
+  containment all held under a real live model call -- see ADR-0058 for the
+  full defect writeup and PR #58 for the fix.
+
 ---
 
 ## Deferred work (named, not forgotten)

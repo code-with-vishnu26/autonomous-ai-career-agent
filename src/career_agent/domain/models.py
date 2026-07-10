@@ -503,7 +503,9 @@ class Application(BaseModel):
     applicant: BasicsSection
     legal_status: LegalStatusSection
     tier_used: Literal["ats_api", "browser", "email"] | None = None
-    status: Literal["pending", "paused_for_human", "submitted", "failed", "rejected"]
+    status: Literal[
+        "pending", "paused_for_human", "submitted", "failed", "rejected", "declined"
+    ]
     submitted_at: datetime | None = None
 
 

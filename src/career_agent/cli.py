@@ -70,6 +70,7 @@ from career_agent.domain.execution import (
 )
 from career_agent.domain.ingestion import ADD, IngestionDraft
 from career_agent.domain.models import (
+    Application,
     HumanConfirmation,
     LegalStatusSection,
     MasterProfile,
@@ -264,15 +265,24 @@ async def _apply_pipeline(
         return 1
     _emit("tailoring", "TAILORING_COMPLETED")
 
-    if application_store is not None:
-        application_store.record(
-            result.application,
-            company=opportunity.canonical_company,
-            source=opportunity.source,
-            ats_total=result.ats_report.total if result.ats_report else None,
-        )
+    def _record(application: Application, *, ats_total: float | None) -> None:
+        # Recorded once per run, only after this run's true terminal status
+        # is known (Phase 36/ADR-0058): a rejected or declined attempt made
+        # zero real-world side effect, so its row must read back that way to
+        # ``prior_attempt_status`` -- never the placeholder "pending" a
+        # since-declined run would otherwise be stuck at forever.
+        if application_store is not None:
+            application_store.record(
+                application,
+                company=opportunity.canonical_company,
+                source=opportunity.source,
+                ats_total=ats_total,
+            )
+
+    ats_total = result.ats_report.total if result.ats_report else None
 
     if result.submittable is None:
+        _record(result.application, ats_total=ats_total)
         print("The truthfulness gate rejected this draft:")
         for rejection in result.application.resume.truthfulness.rejections:
             print(f"  - [{rejection.category}] {rejection.detail}")
@@ -295,6 +305,10 @@ async def _apply_pipeline(
     _emit("confirmation", "AWAITING_CONFIRMATION")
     confirmation = confirm_submission(preview, input_fn=input_fn)
     if confirmation is None:
+        _record(
+            result.application.model_copy(update={"status": "declined"}),
+            ats_total=ats_total,
+        )
         print("Not confirmed. Exiting without submitting.")
         _emit("confirmation", "RUN_COMPLETED", outcome="declined")
         return 0
@@ -329,6 +343,7 @@ async def _apply_pipeline(
             "execution boundary permitted execution but no executor is "
             "wired -- refusing to proceed (ADR-0050)"
         )
+    _record(result.application, ats_total=ats_total)
     _emit("execution_boundary", "EXECUTION_REFUSED", outcome=decision.reason)
     print(
         f"Confirmed. Execution boundary: {decision.reason} -- no automated "
