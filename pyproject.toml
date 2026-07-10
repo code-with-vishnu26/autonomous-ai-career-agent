@@ -12,7 +12,7 @@ license = { file = "LICENSE" }
 authors = [{ name = "Autonomous AI Career Agent contributors" }]
 keywords = ["job-search", "automation", "agent", "claude", "career"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",

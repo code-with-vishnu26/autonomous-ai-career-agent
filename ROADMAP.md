@@ -1066,6 +1066,26 @@ profile.
   gate semantics changed, no new dependency, no external submission
   newly reachable.
 
+- ✅ **Installed-package and distribution hardening -- ADR-0061 (Phase 41).**
+  Built a fresh sdist and found a real leak: `.claude/` (this agent's own
+  local session state) and `.import_linter_cache/` -- both untracked but
+  not `.gitignore`d -- appeared as top-level sdist entries (hatchling's
+  default sdist packaging includes anything not explicitly `.gitignore`d).
+  Fixed by adding both to `.gitignore` and, durably, by adding a
+  **positive top-level allowlist** to `scripts/verify_release_artifacts.py`
+  -- a suffix/fragment blocklist can never catch an unanticipated
+  directory. Also fixed two stale metadata facts: the `Development Status`
+  classifier (`2 - Pre-Alpha` -> `5 - Production/Stable`, matching the
+  actual tagged v1.0.0 state) and `requirements.txt`'s comment (abandoned
+  "Haiku->Sonnet->Opus cascade" -> actual Groq-preferred policy). Confirmed
+  live: fresh wheel **and** sdist installs, each in an independent clean
+  venv, run from outside the repo -- `--help`/`setup`/`verify-promptfoo`/
+  import/metadata all correct; distribution name (`career-agent`) confirmed
+  distinct from repo name and import package name. 5 new tests. No safety
+  semantics changed, no dependency version changed, no new CI platform
+  (wheel-install already exercised on both Ubuntu and Windows, confirmed
+  from existing green CI).
+
 ---
 
 ## Deferred work (named, not forgotten)

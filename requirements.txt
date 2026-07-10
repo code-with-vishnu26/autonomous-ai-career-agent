@@ -3,7 +3,7 @@
 # for packaging. Phase 1 keeps this intentionally minimal — additional pins land
 # with the phase that first needs them (see ROADMAP.md).
 
-# --- LLM (Anthropic Claude; Haiku -> Sonnet -> Opus cost cascade) ---
+# --- LLM (Anthropic Claude, paid fallback when GROQ_API_KEY is unset) ---
 anthropic>=0.40
 
 # --- Orchestration ---
