@@ -974,6 +974,22 @@ profile.
   the user performs the local live smoke (real Groq + Promptfoo PASS) and
   records the quality rubric + any live claim-ledger findings.
 
+- ✅ **Final v1.0 release audit -- ADR-0056 (Phase 34).** Fresh reality audit
+  (the brief's "Phase 33/Phase 31/ADR-0059" do **not** exist; real state is the
+  Phase 30 merge `46d267a`, highest ADR 0055, baseline **667 passed/0 skipped/0
+  failed**, ruff clean, imports 4/4, clean-install + `--help` + `setup` smoke
+  pass). Re-proved the safety architecture intact and external submission
+  **UNREACHABLE**. One release-blocking gap: the README **overclaimed** (said it
+  "submits", was "scaffolding only / not yet runnable", Anthropic-only cascade).
+  **Decision: Option B** (docs + release artifacts + drift-guard tests, no
+  production code). Rewrote the README truthfully; added `SECURITY.md`,
+  `RELEASE_CHECKLIST.md`, `docs/release/v1.0.0-rc1-notes.md` (capability matrix +
+  known limitations), `test_phase34_release_audit.py`; bumped version `0.1.0 →
+  1.0.0rc1`. **Release decision: CONDITIONAL_GO** for v1.0.0-rc1 supervised
+  prepare-only -- no critical invariant violated; conditions are live-output
+  quality unvalidated, live Promptfoo BLOCKED_BY_CONFIGURATION, no in-repo CI,
+  and Windows/macOS execution untested. No safety semantics changed.
+
 ---
 
 ## Deferred work (named, not forgotten)

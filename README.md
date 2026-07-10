@@ -1,77 +1,115 @@
 # Autonomous AI Career Agent
 
-> A single-user, self-hosted automation that discovers, decides on, applies to,
-> and learns from job opportunities on your behalf — using **your** accounts and
-> **your** data, running on **your** machine.
+> A single-user, self-hosted assistant that discovers job openings, ranks them,
+> ingests your CV as evidence, and **prepares** truthful, ATS-tuned application
+> materials for your review — using **your** accounts, **your** data, and
+> **your** machine.
 
 This is **not** a mass job-application bot and **not** a multi-tenant SaaS. It is
 a personal agent you own end-to-end. Its guiding principle is **quality over
 volume**: fewer, sharper, *truthful* applications.
 
+**Release position (v1.0): `PREPARE_ONLY`.** The agent prepares everything up to
+a human confirmation and then **stops** — it does **not** submit applications to
+any external system. See [Scope & limitations](#scope--limitations) and
+[ADR-0056](docs/adr/0056-v1-prepare-only-release-scope.md).
+
 ---
 
 ## What it does
 
-The agent delivers four product capabilities — **Discover → Decide → Apply →
-Learn** — coordinated by a central **Planner Agent** that decides what to do
-next, dispatches work to specialized agents, and handles failures, retries, and
-prioritization.
-
-| Capability | Agent | Responsibility |
-|------------|-------|----------------|
-| **Discover** | Discovery Agent | Find real openings from open ATS APIs, YC, Hacker News, company career pages, and a provider-abstracted web-search layer. |
-| **Decide** | Planner Agent | Score and prioritize opportunities; decide what's worth pursuing. |
-| **Apply** | Apply Agent | Tailor a truthful résumé and submit through a tiered, human-in-the-loop applicator. |
-| **Learn** | Learning Agent | Track outcomes and improve scoring, targeting, and résumé tailoring over time. |
+| Capability | Responsibility |
+|------------|----------------|
+| **Discover** | Find real openings from open ATS APIs (Greenhouse / Lever / Ashby), YC `hiring.json`, Hacker News "Who's Hiring," company career pages, and a provider-abstracted web-search layer. Dedup and persist them. |
+| **Decide** | Score and rank opportunities deterministically (Pareto + sensitivity analysis, hard exclusions); decide what's worth pursuing. |
+| **Ingest** | Parse a CV (`.docx` / `.txt` / `.md`) into **unverified**, source-bound fact proposals. You confirm each one; only confirmed facts are promoted into your profile. |
+| **Prepare** | Tailor a résumé from your profile, enforce a fabrication-detection **truthfulness gate**, run an **ATS score gate** with a bounded revision loop, render artifacts, and ask for a real human confirmation — then stop. |
+| **Learn** | Track outcomes and funnel counts to inform future targeting. |
 
 ## Core commitments
 
 - **Truthfulness is non-negotiable.** Résumé tailoring may only use facts present
   in your structured master profile (JSON Resume schema). A **fabrication-detection
-  gate** blocks any application whose content isn't grounded in that profile.
-- **Open-ended discovery.** Public ATS JSON APIs (Greenhouse / Lever / Ashby)
-  first, then YC `hiring.json` + Hacker News "Who's Hiring," then company career
-  pages (via a Career Page Finder + ATS Detector), then a provider-abstracted web
-  search (Exa + Google CSE with failover). Job boards only within their ToS.
-- **Supervised, human-in-the-loop applying.** A tiered applicator (direct ATS API
-  → driven browser → email-to-apply via Gmail) that *pauses for you* to clear any
-  CAPTCHA or verification. Throttled, reuses a session from a manual login, and
-  never automates Google OAuth itself.
+  gate** blocks any application whose content isn't grounded in that profile — the
+  job description is never treated as evidence. Unsupported skills, seniority,
+  metrics, and action claims are rejected.
+- **CV facts are untrusted until you confirm them.** Imported CV content becomes
+  *proposals*, never silent profile edits. Promotion is fail-closed and never
+  overwrites a different verified value (see
+  [ADR-0052](docs/adr/0052-evidence-grounded-cv-ingestion.md)).
+- **Prepare-only, by construction.** No automated executor is wired. Every
+  `apply`/`auto` run ends at a confirmation boundary that refuses execution and
+  reports "nothing was actually sent" (see
+  [ADR-0050](docs/adr/0050-execution-safety-boundary.md) and
+  [ADR-0054](docs/adr/0054-production-readiness-release-gate.md)).
+- **Idempotent and recoverable.** A prior non-rejected attempt for the same
+  opportunity is detected and skipped; runs are recorded in an append-only
+  execution journal (ADR-0048 / ADR-0049).
 - **Agent-oriented, not a fixed pipeline.** Capabilities register through a
-  **plugin registry + event bus**, so new ATS adapters, opportunity sources, and
-  search providers plug in without core rewrites.
+  plugin registry + event bus, so new sources and adapters plug in without core
+  rewrites.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design and
 [`docs/adr/`](docs/adr/) for the decisions behind it.
 
+## Scope & limitations
+
+| Area | v1.0 status |
+|------|-------------|
+| Discover, rank, ingest, confirm, promote, tailor, gate, ATS, render, journal, report, export | **SUPPORTED** |
+| PDF CV import / OCR | **NOT_SUPPORTED** (`.docx` / `.txt` / `.md` only) |
+| Browser submission / email-to-apply / autonomous external submission | **NOT_SUPPORTED** — code exists but is **unwired and unreachable** from the CLI |
+| Live LLM output *quality* | Validated only by the user's local controlled smoke run — CI runs make **no** real LLM calls |
+| CI / Windows / macOS execution | Not exercised in this repository; Windows UTF-8 handling is enforced statically (explicit `encoding="utf-8"`) |
+
+The full capability matrix and known limitations live in
+[`docs/release/v1.0.0-rc1-notes.md`](docs/release/v1.0.0-rc1-notes.md).
+
 ## Tech stack
 
 - **Language:** Python 3.11+
-- **LLM:** Anthropic Claude with a **Haiku → Sonnet → Opus** cost cascade
-- **Orchestration:** LangGraph
+- **LLM providers:** Groq free tier (**preferred**: `openai/gpt-oss-120b` verifier,
+  `llama-3.3-70b-versatile` drafter/matcher) with Anthropic Claude as a paid
+  fallback (`claude-opus-4-8` / `claude-haiku-4-5-20251001`). Selection is
+  fail-closed when no key is configured.
 - **Storage:** SQLite + openpyxl (spreadsheet exports)
-- **Browser automation:** Playwright + Browser-Use
-- **Email:** Gmail connector
-- **Prompt engineering:** git-based prompt versioning + promptfoo regression tests
-
-## Status
-
-🚧 **Early development.** The project is being built in discrete phases — see
-[`ROADMAP.md`](ROADMAP.md). This commit establishes the project scaffolding
-(Phase 1).
+- **Prompt validation:** git-based prompt versioning + a fail-closed promptfoo
+  regression gate keyed by prompt version and provider
 
 ## Quick start
-
-> Not yet runnable — scaffolding only. Setup instructions will land as the
-> phases below are implemented.
 
 ```bash
 git clone <this-repo>
 cd autonomous-ai-career-agent
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-cp .env.example .env   # then fill in your keys
+cp .env.example .env   # then add GROQ_API_KEY (preferred) or ANTHROPIC_API_KEY
+
+career-agent setup     # scaffolds a starter profile + prints an offline readiness report
 ```
+
+Then edit `profile.json` with your real, truthful details and re-run
+`career-agent setup`. Core commands:
+
+```
+career-agent setup | import-cv | promote-cv | discover | apply | auto
+career-agent outcome | report | export | verify-promptfoo | diagnose-promptfoo-drift
+```
+
+`career-agent --help` lists them all. `apply` and `auto` prepare materials and
+stop at confirmation; neither submits.
+
+## Privacy
+
+Your profile, CV proposals, SQLite database, spreadsheet exports, rendered
+résumés, and any promptfoo result artifacts stay on your machine. They are
+git-ignored and never committed or packaged (see [`SECURITY.md`](SECURITY.md)).
+
+## Status
+
+Preparing **v1.0.0-rc1** — a supervised, prepare-only release candidate. See
+[`ROADMAP.md`](ROADMAP.md) and
+[`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
 
 ## License
 

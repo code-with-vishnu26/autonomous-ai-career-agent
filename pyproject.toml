@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "career-agent"
-version = "0.1.0"
-description = "A single-user, self-hosted Autonomous AI Career Agent: discover, decide, apply, and learn — truthfully."
+version = "1.0.0rc1"
+description = "A single-user, self-hosted Autonomous AI Career Agent: discover, decide, ingest, and prepare truthful applications (supervised, prepare-only)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
