@@ -59,8 +59,9 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design and
 | Discover, rank, ingest, confirm, promote, tailor, gate, ATS, render, journal, report, export | **SUPPORTED** |
 | PDF CV import / OCR | **NOT_SUPPORTED** (`.docx` / `.txt` / `.md` only) |
 | Browser submission / email-to-apply / autonomous external submission | **NOT_SUPPORTED** — code exists but is **unwired and unreachable** from the CLI |
-| Live LLM output *quality* | Validated only by the user's local controlled smoke run — CI runs make **no** real LLM calls |
-| CI / Windows / macOS execution | Not exercised in this repository; Windows UTF-8 handling is enforced statically (explicit `encoding="utf-8"`) |
+| Live LLM output *quality* | Validated only by the user's local controlled smoke run — CI never has an API key, so it can make **no** real LLM call |
+| CI | Runs on every push/PR to `main`: lint, architecture contracts, full test suite, packaging, clean-install, and an offline CLI smoke — on **Linux and Windows** |
+| macOS | **Untested** — a deliberate, documented gap, not silently dropped |
 
 The full capability matrix and known limitations live in
 [`docs/release/v1.0.0-rc1-notes.md`](docs/release/v1.0.0-rc1-notes.md).
