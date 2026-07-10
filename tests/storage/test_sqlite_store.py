@@ -201,3 +201,34 @@ def test_prior_attempt_status_reports_non_rejected_statuses(tmp_path: Path) -> N
         ats_total=None,
     )
     assert store.prior_attempt_status("opp-1") == "submitted"
+
+
+def test_prior_attempt_status_ignores_declined_attempts(tmp_path: Path) -> None:
+    """Phase 36/ADR-0058: a human-declined confirmation had no external side
+    effect either -- no executor was ever reached (ADR-0050) -- so it must
+    not permanently block a fresh attempt, the same as "rejected"."""
+    store = SqliteApplicationStore(tmp_path / "db.sqlite")
+    store.record(
+        _application_with("app-1", "opp-1", "declined"),
+        company="acme",
+        source="job_board",
+        ats_total=None,
+    )
+    assert store.prior_attempt_status("opp-1") is None
+
+
+def test_prior_attempt_status_still_blocks_on_genuinely_risky_statuses(
+    tmp_path: Path,
+) -> None:
+    """Unchanged: statuses that mean a real or ambiguous submission attempt
+    reached/passed the confirmation boundary remain blocking."""
+    store = SqliteApplicationStore(tmp_path / "db.sqlite")
+    for status in ("pending", "paused_for_human", "submitted", "failed"):
+        opportunity_id = f"opp-{status}"
+        store.record(
+            _application_with(f"app-{status}", opportunity_id, status),
+            company="acme",
+            source="job_board",
+            ats_total=None,
+        )
+        assert store.prior_attempt_status(opportunity_id) == status

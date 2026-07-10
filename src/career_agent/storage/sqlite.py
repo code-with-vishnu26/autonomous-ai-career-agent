@@ -197,23 +197,28 @@ class SqliteApplicationStore:
             )
 
     def prior_attempt_status(self, opportunity_id: str) -> str | None:
-        """Most recent non-``"rejected"`` attempt status for this opportunity.
+        """Most recent blocking-status attempt for this opportunity.
 
         Returns ``None`` when no such attempt exists. ``"rejected"`` (the
-        truthfulness gate blocked the draft, ADR-0003) is excluded because
-        it produced no external side effect -- a fresh attempt after fixing
-        the profile/content is legitimate and must not be blocked. Every
-        other recorded status (``"pending"``, ``"paused_for_human"``,
+        truthfulness gate blocked the draft, ADR-0003) and ``"declined"``
+        (the human confirmation step said no, ADR-0050/Phase 36) are both
+        excluded, for the same reason: neither produced any external side
+        effect -- confirmation was either never reached or was explicitly
+        refused, and in this build no executor is ever reachable regardless
+        (ADR-0050) -- so a fresh attempt after fixing the profile/JD
+        understanding is legitimate and must not be blocked. Every other
+        recorded status (``"pending"``, ``"paused_for_human"``,
         ``"submitted"``, ``"failed"``) means a prior attempt at least
-        reached tailoring/gating, and possibly a real submission attempt --
-        a second attempt risks a duplicate real-world side effect, so it
-        must be a human's explicit decision, never automatic (Phase 22,
-        ADR-0048).
+        reached or passed the confirmation boundary, and possibly a real
+        submission attempt -- a second attempt risks a duplicate real-world
+        side effect, so it must be a human's explicit decision, never
+        automatic (Phase 22, ADR-0048).
         """
         with _connect(self._path) as connection:
             row = connection.execute(
                 "SELECT status FROM applications WHERE opportunity_id = ?"
-                " AND status != 'rejected' ORDER BY recorded_at DESC LIMIT 1",
+                " AND status NOT IN ('rejected', 'declined')"
+                " ORDER BY recorded_at DESC LIMIT 1",
                 (opportunity_id,),
             ).fetchone()
         return row["status"] if row is not None else None
