@@ -168,8 +168,6 @@ async def test_promptfoo_isolated_state_wins_over_a_valid_ambient_artifact(
     with no artifact in it must still be the one consulted, and the gate
     must still block. Proves isolation wins over ambient state, not just
     that isolation works when there's nothing ambient to conflict with."""
-    import career_agent.cli as cli_module
-
     ambient_dir = tmp_path / "ambient-default-results"
     ambient_dir.mkdir()
     (ambient_dir / "truthfulness-gate-v2--groq.json").write_text(
@@ -184,7 +182,7 @@ async def test_promptfoo_isolated_state_wins_over_a_valid_ambient_artifact(
             }
         )
     )
-    monkeypatch.setattr(cli_module, "_DEFAULT_PROMPTFOO_RESULTS_DIR", ambient_dir)
+    monkeypatch.setenv("PROMPTFOO_RESULTS_DIR", str(ambient_dir))
     monkeypatch.setenv("GROQ_API_KEY", "gsk-fake-for-test")
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "db.sqlite"))
 

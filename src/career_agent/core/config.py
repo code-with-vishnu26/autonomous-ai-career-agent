@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     database_path: str = "data/career_agent.db"
     #: Where generated resume files (DOCX/PDF, Phase 9/ADR-0033) are written.
     artifacts_dir: str = "data/artifacts"
+    #: Where a real Promptfoo results artifact is looked for/reported
+    #: (Phase 40/ADR-0060). Relative to the current working directory, like
+    #: ``database_path``/``artifacts_dir`` above -- never repo-tree-relative
+    #: (``__file__``-based resolution breaks for a wheel/non-editable
+    #: install, since the package is copied into ``site-packages``).
+    promptfoo_results_dir: str = "promptfoo/results"
     # Worldwide job-board discovery (Phase 12/ADR-0036). A source is wired
     # by the composition root only when its credentials are present; the
     # keyless boards have explicit enabled flags.

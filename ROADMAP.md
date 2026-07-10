@@ -1050,6 +1050,22 @@ profile.
   production code changed; no safety semantics changed; no git tag created;
   nothing published -- both left for the maintainer.
 
+- ✅ **Promptfoo runtime path portability -- ADR-0060 (Phase 40).** Fixed
+  the v1.1-backlog P1 Phase 39 found: the Promptfoo results-directory
+  default was `__file__`/install-tree-relative, only correct for an
+  editable install -- reproduced live (a fresh wheel install, run from
+  outside the repo, reported the broken path before the fix). Fixed by
+  consistency, not new design: `Settings` gains `promptfoo_results_dir`
+  (CWD-relative, `.env`-overridable), mirroring `database_path`/
+  `artifacts_dir` exactly; `_REPO_ROOT`/`_DEFAULT_PROMPTFOO_RESULTS_DIR`
+  deleted; every command (`setup`/`apply`/`auto`/`verify-promptfoo`/
+  `diagnose-promptfoo-drift`) now resolves from the same field. Records a
+  durable policy (ADR-0060): no future runtime path may be `__file__`/
+  install-tree-relative. 6 new tests; re-verified live on both an editable
+  install and a fresh wheel install from outside the repo. No Promptfoo
+  gate semantics changed, no new dependency, no external submission
+  newly reachable.
+
 ---
 
 ## Deferred work (named, not forgotten)
@@ -1059,24 +1075,21 @@ profile.
 Evidence-based, not speculative -- each was reproduced or found by direct
 code/doc inspection during Phase 39's first-run/installation audit.
 
-- **P1 — Promptfoo/results-dir resolution breaks for any non-editable
-  install.** `_DEFAULT_PROMPTFOO_RESULTS_DIR` (`cli.py`) is computed from
-  `Path(__file__).resolve().parent.parent.parent`, which only lands on the
-  real repo root for an **editable** install (`pip install -e .`); a wheel
-  or a plain `pip install .` copies the package into `site-packages`, so
-  the path resolves to a nonsensical `site-packages/promptfoo/results`
-  location -- and `promptfoo/` (the configs `npx promptfoo` needs) isn't
-  packaged in the wheel at all (confirmed: `career_agent/llm/
-  promptfoo_gate.py` is the only `promptfoo`-named wheel entry). Not
-  currently release-blocking -- the only supported, documented install
-  path today is editable-from-source-checkout, which this doesn't affect
-  -- but it will break the moment a wheel/PyPI/GitHub-Release-asset
-  install path is published (§20 of Phase 39: no such channel exists yet,
-  confirmed). Smallest likely fix: an explicit `--results-dir` CLI
-  override plus a documented default (e.g. an XDG-style user config dir)
-  that doesn't depend on `__file__`'s install-time location. Needs a small
-  design decision, not a blind path change; no ADR expected (implementation
-  detail, not a policy reversal).
+- ✅ **P1 — Promptfoo/results-dir resolution breaks for any non-editable
+  install. RESOLVED Phase 40 (ADR-0060).** `_DEFAULT_PROMPTFOO_RESULTS_DIR`
+  (`cli.py`) was computed from `Path(__file__).resolve().parent.parent
+  .parent`, which only landed on the real repo root for an **editable**
+  install; a wheel or a plain `pip install .` copies the package into
+  `site-packages`, so the path resolved to a nonsensical
+  `site-packages/promptfoo/results` location -- reproduced live: a fresh
+  wheel install run from outside the repo confirmed the broken path.
+  Fixed by consistency with `database_path`/`artifacts_dir`'s existing
+  pattern: `Settings` gains `promptfoo_results_dir` (CWD-relative,
+  `.env`-overridable); `_REPO_ROOT`/`_DEFAULT_PROMPTFOO_RESULTS_DIR`
+  deleted; every command (`setup`/`apply`/`auto`/`verify-promptfoo`/
+  `diagnose-promptfoo-drift`) resolves from the same `Settings` field.
+  Re-verified live on both an editable install and a fresh wheel install
+  from outside the repo -- both now report the correct CWD-relative path.
 - **P2 — Canonical profile JSON shape was undocumented until this phase.**
   Root-caused: the real loader (`load_master_profile` -> `_map_work`)
   expects JSON Resume's camelCase `startDate`/`endDate`; the Pydantic
