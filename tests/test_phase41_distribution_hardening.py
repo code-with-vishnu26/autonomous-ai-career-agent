@@ -55,8 +55,15 @@ def test_claude_and_import_linter_cache_are_gitignored() -> None:
     import subprocess
 
     for path in (".claude", ".import_linter_cache"):
+        # Trailing slash is required: both .gitignore entries are
+        # directory-only patterns, and git check-ignore cannot confirm a
+        # directory-only match for a path that doesn't exist on disk in
+        # the current checkout unless the query path itself ends in "/".
+        # Locally this directory may exist (agent session state); on a
+        # fresh CI checkout it never does, so the bare name silently
+        # fails to match even though the pattern is correct.
         result = subprocess.run(
-            ["git", "check-ignore", "--quiet", path],
+            ["git", "check-ignore", "--quiet", f"{path}/"],
             cwd=_REPO_ROOT,
             check=False,
         )
