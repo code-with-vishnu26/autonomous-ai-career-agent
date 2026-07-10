@@ -9,9 +9,11 @@ This is **not** a mass job-application bot and **not** a multi-tenant SaaS. It i
 a personal agent you own end-to-end. Its guiding principle is **quality over
 volume**: fewer, sharper, *truthful* applications.
 
-**Release position (v1.0): `PREPARE_ONLY`.** The agent prepares everything up to
+**Product safety posture: `PREPARE_ONLY`.** The agent prepares everything up to
 a human confirmation and then **stops** — it does **not** submit applications to
-any external system. See [Scope & limitations](#scope--limitations) and
+any external system. This is the product's submission capability (unchanged
+across v1.0 and v1.1), independent of the software release state. See
+[Scope & limitations](#scope--limitations) and
 [ADR-0056](docs/adr/0056-v1-prepare-only-release-scope.md).
 
 ---
@@ -151,9 +153,15 @@ git-ignored and never committed or packaged (see [`SECURITY.md`](SECURITY.md)).
 
 ## Status
 
-**v1.0.0** — a supervised, prepare-only release, promoted from `1.0.0rc1`
-after a real controlled live-Groq validation and green CI on Linux and
-Windows (Phase 37). See [`ROADMAP.md`](ROADMAP.md) and
+**v1.1.0** — released (annotated `v1.1.0` tag pushed and a published GitHub
+Release). It is a minor, supervised, prepare-only release on top of
+[`v1.0.0`](docs/release/v1.0.0-notes.md): a portability, packaging, and
+onboarding hardening pass with one new backward-compatible config field and
+**no LLM-facing change** (Phases 40–45). Software release state is
+`RELEASED`; the product's `PREPARE_ONLY` submission posture — it never
+submits to any external system — is unchanged. See
+[`docs/release/v1.1.0-notes.md`](docs/release/v1.1.0-notes.md),
+[`ROADMAP.md`](ROADMAP.md), and
 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
 
 ## License
