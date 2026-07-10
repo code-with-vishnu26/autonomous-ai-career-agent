@@ -79,18 +79,60 @@ The full capability matrix and known limitations live in
 
 ## Quick start
 
+**Only editable install from a cloned source checkout is currently verified.**
+There is no PyPI package and no published GitHub Release asset yet — do not
+`pip install` this from anywhere except a local clone.
+
+Linux / macOS (bash/zsh):
+
 ```bash
-git clone <this-repo>
+git clone https://github.com/code-with-vishnu26/autonomous-ai-career-agent
 cd autonomous-ai-career-agent
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env   # then add GROQ_API_KEY (preferred) or ANTHROPIC_API_KEY
 
 career-agent setup     # scaffolds a starter profile + prints an offline readiness report
 ```
 
+Windows (PowerShell):
+
+```powershell
+git clone https://github.com/code-with-vishnu26/autonomous-ai-career-agent
+cd autonomous-ai-career-agent
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+Copy-Item .env.example .env   # then add GROQ_API_KEY (preferred) or ANTHROPIC_API_KEY
+
+career-agent setup     # scaffolds a starter profile + prints an offline readiness report
+```
+
 Then edit `profile.json` with your real, truthful details and re-run
-`career-agent setup`. Core commands:
+`career-agent setup`. The profile follows the
+[JSON Resume](https://jsonresume.org/) schema — dates use its camelCase
+convention (`startDate` / `endDate`, not `start_date`); a scaffolded work
+entry looks like:
+
+```json
+{
+  "id": "w1",
+  "name": "Acme Corp",
+  "position": "Software Engineer",
+  "startDate": "2023-01-01",
+  "endDate": "2024-06-01",
+  "highlights": ["Built and shipped a real feature"]
+}
+```
+
+For a real Groq/Anthropic key to pass truthfulness validation, you also need
+a local Promptfoo evidence run — see
+[`promptfoo/README.md`](promptfoo/README.md) for the exact command;
+`career-agent verify-promptfoo` checks the result it produces before `apply`
+will use a real provider.
+
+Core commands:
 
 ```
 career-agent setup | import-cv | promote-cv | discover | apply | auto
