@@ -22,7 +22,11 @@ ENV/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.import_linter_cache/
 .coverage
+
+# ---- Agent/editor session state (never intended to ship, Phase 41) ----
+.claude/
 .coverage.*
 htmlcov/
 .tox/

@@ -14,6 +14,15 @@ The **wheel** (built distribution) is not, so ``tests/`` is only flagged
 there. ``.env.example`` is an intentionally committed, secret-free template
 (placeholder keys only) and is explicitly exempted from the ``.env`` check;
 a real ``.env`` file is not.
+
+Phase 41 added the sdist top-level allowlist below after a real leak: an
+untracked, non-``.gitignore``d local tool directory (``.claude/``,
+Claude Code's own session state) ended up in a built sdist because
+hatchling's default sdist packaging includes anything not explicitly
+git-ignored -- untracked-but-not-ignored is not the same as excluded. A
+suffix/fragment blocklist can never catch an unanticipated *directory*;
+only a positive allowlist can, so a genuinely new top-level source file
+requires a deliberate one-line addition here rather than silently passing.
 """
 
 from __future__ import annotations
@@ -26,6 +35,33 @@ from pathlib import Path
 _FORBIDDEN_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".xlsx")
 _FORBIDDEN_NAME_FRAGMENTS = ("promptfoo/results",)
 _WHEEL_ONLY_FORBIDDEN_PATH_PARTS = ("tests", "test")
+
+# Every top-level entry a legitimate sdist may contain (Phase 41). Anything
+# else -- most plausibly a leaked local/untracked directory that isn't
+# covered by .gitignore -- fails closed instead of silently shipping.
+_SDIST_ALLOWED_TOP_LEVEL = frozenset(
+    {
+        ".env.example",
+        ".github",
+        ".gitignore",
+        "ARCHITECTURE.md",
+        "CONTRIBUTING.md",
+        "LICENSE",
+        "PKG-INFO",
+        "README.md",
+        "RELEASE_CHECKLIST.md",
+        "ROADMAP.md",
+        "SECURITY.md",
+        "docs",
+        "promptfoo",
+        "pyproject.toml",
+        "requirements.txt",
+        "research",
+        "scripts",
+        "src",
+        "tests",
+    }
+)
 
 
 def _is_real_env_file(lower_name: str) -> bool:
@@ -65,6 +101,21 @@ def _sdist_names(path: Path) -> list[str]:
         return tf.getnames()
 
 
+def _sdist_top_level_violations(names: list[str]) -> list[str]:
+    """Every top-level entry not in the explicit allowlist.
+
+    Strips the sdist's own wrapper directory (e.g. ``career_agent-1.0.0/``)
+    before comparing against ``_SDIST_ALLOWED_TOP_LEVEL``.
+    """
+    seen: set[str] = set()
+    for name in names:
+        parts = name.split("/")
+        if len(parts) < 2:
+            continue  # the wrapper directory entry itself
+        seen.add(parts[1])
+    return sorted(seen - _SDIST_ALLOWED_TOP_LEVEL)
+
+
 def main() -> int:
     """Check the latest built wheel and sdist for forbidden content."""
     dist = Path("dist")
@@ -85,18 +136,29 @@ def main() -> int:
 
     exit_code = 0
     targets = (
-        (wheels[-1], _wheel_names, True),
-        (sdists[-1], _sdist_names, False),
+        (wheels[-1], _wheel_names, True, False),
+        (sdists[-1], _sdist_names, False, True),
     )
-    for path, loader, check_test_paths in targets:
+    for path, loader, check_test_paths, check_top_level in targets:
         names = loader(path)
         bad = _forbidden_entries(names, check_test_paths=check_test_paths)
+        unexpected = _sdist_top_level_violations(names) if check_top_level else []
+        if unexpected:
+            exit_code = 1
+            print(
+                f"FAIL: unexpected top-level entries in {path.name} (not in "
+                "the sdist allowlist -- likely a leaked local/untracked "
+                "directory):",
+                file=sys.stderr,
+            )
+            for entry in unexpected:
+                print(f"  {entry}", file=sys.stderr)
         if bad:
             exit_code = 1
             print(f"FAIL: forbidden entries in {path.name}:", file=sys.stderr)
             for entry in bad:
                 print(f"  {entry}", file=sys.stderr)
-        else:
+        if not bad and not unexpected:
             print(f"OK: {path.name} -- {len(names)} entries, none forbidden")
 
     return exit_code
