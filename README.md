@@ -157,13 +157,15 @@ wizard says so at each such prompt.
 Core commands:
 
 ```
-career-agent setup | preferences | import-cv | promote-cv | discover | apply | auto | prepare
+career-agent setup | preferences | import-cv | promote-cv | discover | apply | auto | prepare | review
 career-agent outcome | report | export | verify-promptfoo | diagnose-promptfoo-drift
 ```
 
 `career-agent --help` lists them all. `apply` and `auto` prepare materials and
 stop at confirmation; `prepare` additionally fills out a real application
-form in a live browser and stops before Submit. None of them submits.
+form in a live browser and stops before Submit; `review` is the only place
+a prepared application can be marked approved, and only by your own
+explicit decision. None of them submits.
 
 ## Browser automation (foundation, not yet user-facing)
 
@@ -281,6 +283,40 @@ stored `ApplicationSession` (status `READY_FOR_REVIEW`/`BLOCKED`/
 `LOGIN_REQUIRED_TIMEOUT`/`UNSUPPORTED_PROVIDER`) with every filled field,
 every uploaded file, every field still needing your attention, and any
 warnings — for you to review. Nothing is ever submitted by this command.
+`prepare` also writes the session to `<artifacts_dir>/sessions/<id>.json`
+so you can hand it to `review` (below).
+
+## Human Review (`career-agent review`)
+
+```bash
+career-agent review --session <artifacts_dir>/sessions/<id>.json
+```
+
+The **only** place a prepared application can be marked `APPROVED` — and
+it only ever happens by your own explicit "y" answer. Prints a
+deterministic summary (company, role, provider, uploaded files, filled
+fields, **every** warning, **every** missing field — nothing is ever
+hidden) and asks:
+
+```
+Approve? [y/N]:
+```
+
+Anything other than an explicit "y"/"yes" — including a blank answer — is
+recorded as `REJECTED`, never treated as approval. Interrupting the
+prompt (Ctrl+C) records `CANCELLED`. Every decision is written, append-only,
+to your local database via `SqliteReviewSessionStore` (never overwritten,
+never deleted).
+
+`ReviewEngine` — the code behind this command — has **zero** dependency on
+this project's browser automation: it never imports
+`career_agent.integrations.browser` and never calls anything resembling a
+click, proven by an automated source scan (ADR-0070), the same discipline
+`prepare`'s no-submit-click guarantee already uses. It only ever records
+what you decided. There is no Submission Engine in this codebase yet — an
+`APPROVED` review changes nothing about what's reachable from the CLI
+today; building the (separately, explicitly authorized) component that
+could act on an approval is future work.
 
 ## Privacy
 

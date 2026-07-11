@@ -43,6 +43,7 @@ from career_agent.domain.identity import canonical_fingerprint
 from career_agent.domain.journal import RunEvent
 from career_agent.domain.models import Application, Opportunity
 from career_agent.domain.resume_variants import ResumeVariant
+from career_agent.domain.review import ReviewSession
 
 _OPPORTUNITY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS opportunities (
@@ -118,6 +119,18 @@ CREATE TABLE IF NOT EXISTS application_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_application_sessions_opportunity
     ON application_sessions (opportunity_id);
+"""
+
+_REVIEW_SESSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS review_sessions (
+    id TEXT PRIMARY KEY,
+    application_session_id TEXT NOT NULL,
+    approval_status TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_review_sessions_application_session
+    ON review_sessions (application_session_id);
 """
 
 
@@ -481,4 +494,61 @@ class SqliteApplicationSessionStore:
         return [
             ApplicationSession.model_validate(json.loads(row["payload"]))
             for row in rows
+        ]
+
+
+class SqliteReviewSessionStore:
+    """Append-only human-review-decision audit trail (Phase 52, ADR-0070).
+
+    Same discipline as every other store in this file: ``save`` never
+    updates an existing row, and there is no update/delete method on this
+    class at all -- a review decision, once recorded, is permanent
+    history, the same never-mutate-history discipline
+    ``SqliteApplicationStore``/``SqliteResumeVariantStore`` already apply.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_REVIEW_SESSION_SCHEMA)
+
+    def save(self, review: ReviewSession) -> None:
+        """Persist ``review``. Never overwrites an existing row (append-only)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO review_sessions"
+                " (id, application_session_id, approval_status, payload, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    review.id,
+                    review.application_session_id,
+                    review.approval_status,
+                    review.model_dump_json(),
+                    review.created_at.isoformat(),
+                ),
+            )
+
+    def by_application_session(
+        self, application_session_id: str
+    ) -> list[ReviewSession]:
+        """Every stored review for ``application_session_id``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM review_sessions"
+                " WHERE application_session_id = ? ORDER BY created_at DESC",
+                (application_session_id,),
+            ).fetchall()
+        return [
+            ReviewSession.model_validate(json.loads(row["payload"])) for row in rows
+        ]
+
+    def all_reviews(self) -> list[ReviewSession]:
+        """Every stored review, newest first, across all application sessions."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM review_sessions ORDER BY created_at DESC"
+            ).fetchall()
+        return [
+            ReviewSession.model_validate(json.loads(row["payload"])) for row in rows
         ]
