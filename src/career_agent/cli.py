@@ -55,6 +55,7 @@ from career_agent.agents.resume.gate import LLMTruthfulnessGate
 from career_agent.agents.resume.generator import LLMResumeGenerator, MissingSummaryError
 from career_agent.agents.resume.materials import ResumeVariantEngine
 from career_agent.agents.resume.pipeline import ResumeTailoringPipeline
+from career_agent.agents.review.review_engine import ReviewEngine
 from career_agent.core.bus import EventBus
 from career_agent.core.config import Settings
 from career_agent.core.interfaces import (
@@ -62,6 +63,7 @@ from career_agent.core.interfaces import (
     SemanticKeywordMatcher,
     TruthfulnessGate,
 )
+from career_agent.domain.application_session import ApplicationSession
 from career_agent.domain.ats_scoring import AtsScoreBelowThresholdError
 from career_agent.domain.ats_urls import resolve_ats_kind
 from career_agent.domain.execution import (
@@ -84,6 +86,7 @@ from career_agent.domain.models import (
     SubmissionPreview,
 )
 from career_agent.domain.pareto import ObjectivePoint, analyze_frontier
+from career_agent.domain.review import build_review_session
 from career_agent.integrations.adapters.base import FeatureUnavailableError
 from career_agent.integrations.browser.browser_manager import BrowserManager
 from career_agent.integrations.browser.session_manager import SessionManager
@@ -127,6 +130,7 @@ from career_agent.storage.sqlite import (
     SqliteApplicationStore,
     SqliteOpportunityRepository,
     SqliteResumeVariantStore,
+    SqliteReviewSessionStore,
     SqliteRunJournal,
 )
 
@@ -559,6 +563,9 @@ async def run_prepare_command(
         await browser_manager.close()
 
     SqliteApplicationSessionStore(Path(settings.database_path)).save(session)
+    session_file = _write_application_session_handoff(
+        session, Path(settings.artifacts_dir)
+    )
 
     print(f"Application prepared. Status: {session.status}")
     if session.filled_fields:
@@ -570,6 +577,73 @@ async def run_prepare_command(
     for warning in session.warnings:
         print(f"Warning: {warning}")
     print("Nothing was submitted.")
+    print(
+        f"Session written to: {session_file} -- review it with: "
+        f"career-agent review --session {session_file}"
+    )
+    return 0
+
+
+def _write_application_session_handoff(
+    session: ApplicationSession, artifacts_dir: Path
+) -> Path:
+    """Write ``session`` as a JSON handoff.
+
+    Mirrors ``discover``'s own opportunity-file handoff convention
+    (ADR-0026) -- ``review`` (Phase 52) is the consumer, the same
+    relationship ``apply`` has to ``discover``.
+    """
+    sessions_dir = artifacts_dir / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    path = sessions_dir / f"{session.id}.json"
+    path.write_text(session.model_dump_json(indent=2), encoding="utf-8")
+    return path
+
+
+def _load_application_session(path: Path) -> ApplicationSession:
+    """Load an :class:`ApplicationSession` from a plain JSON file.
+
+    Raises ``OSError``/``json.JSONDecodeError``/``pydantic.ValidationError``
+    on a missing, malformed, or invalid file -- mirrors ``_load_opportunity``
+    exactly, including explicit ``encoding="utf-8"``.
+    """
+    return ApplicationSession.model_validate(
+        json.loads(path.read_text(encoding="utf-8"))
+    )
+
+
+def run_review_command(
+    *, session_path: Path, input_fn: Callable[[str], str] = input
+) -> int:
+    """The real ``career-agent review`` entry point (Phase 52, ADR-0070).
+
+    Loads a prepared, unsubmitted :class:`ApplicationSession` from disk
+    (written by ``prepare``), presents its deterministic summary, and
+    records exactly one explicit human decision. Never touches a browser,
+    never constructs an ``Applicator``, never submits anything -- see
+    ``ReviewEngine`` for the structural guarantee.
+    """
+    try:
+        session = _load_application_session(session_path)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        print(f"Could not load application session from {session_path}: {exc}")
+        return 1
+
+    settings = Settings()
+    result = ReviewEngine().review(session, input_fn=input_fn)
+
+    review = build_review_session(str(uuid.uuid4()), session, result)
+    SqliteReviewSessionStore(Path(settings.database_path)).save(review)
+
+    print(f"Decision: {result.status}")
+    if result.approved:
+        print(
+            "Approved. Nothing was submitted -- only a Submission Engine "
+            "(not yet built) could ever act on this, and only after this "
+            "explicit approval."
+        )
+    else:
+        print("Not approved. Nothing was submitted.")
     return 0
 
 
@@ -1891,6 +1965,21 @@ def main(argv: list[str] | None = None) -> None:
         help="Path to a JSON file describing the Opportunity to prepare.",
     )
 
+    review_parser = subparsers.add_parser(
+        "review",
+        help=(
+            "Present a prepared application session for human approval and "
+            "record the decision (Phase 52, ADR-0070). Never submits "
+            "anything; never touches a browser."
+        ),
+    )
+    review_parser.add_argument(
+        "--session",
+        type=Path,
+        required=True,
+        help="Path to the session JSON file written by `prepare`.",
+    )
+
     discover_parser = subparsers.add_parser(
         "discover",
         help="Poll every configured source, dedup, persist, and write "
@@ -2100,6 +2189,9 @@ def main(argv: list[str] | None = None) -> None:
             )
         )
         raise SystemExit(exit_code)
+
+    if args.command == "review":
+        raise SystemExit(run_review_command(session_path=args.session))
 
     print(f"Autonomous AI Career Agent v{__version__} — scaffolding (Phase 1).")
     print("Not yet runnable; see ROADMAP.md for the build plan.")

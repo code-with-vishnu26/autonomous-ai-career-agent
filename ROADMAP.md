@@ -1300,6 +1300,40 @@ profile.
   `BrowserApplicator`/`TieredApplicator`/the execution-safety boundary, no
   new dependency, no version bump.
 
+- ✅ **Human Review Center -- ADR-0070 (Phase 52).** The sole
+  `READY_FOR_REVIEW` -> `APPROVED` transition boundary. `ApplicationSession`
+  already carries everything a human needs to decide (Phase 51); this
+  phase adds the decision. `domain/review.py::ReviewSession` references
+  `application_session_id` plus a few cheap denormalized display fields
+  rather than duplicating warnings/missing-fields/filled-fields/uploaded-
+  files/résumé-variant/cover-letter content -- the same "denormalize
+  identity fields, not full content" precedent `SqliteApplicationStore`'s
+  own `company`/`title` columns already set, proven structurally (a test
+  asserts those fields don't exist on `ReviewSession` at all).
+  `format_review_summary` is pure, deterministic formatting (no AI, no
+  filtering -- every warning and missing field always shown) living in
+  `domain/` alongside `ReviewResult`, not split into separate
+  `review_summary.py`/`review_result.py` files as the brief suggested (no
+  capability behind the split). `agents/review/review_engine.py::ReviewEngine`
+  has zero browser dependency -- proven by two AST-based source-scan tests
+  (no `integrations.browser` import, no `.click(` call), the identical
+  structural-guarantee discipline `ApplicationPreparationEngine`'s own
+  no-click test already established. Only an explicit "y"/"yes" answer
+  produces `APPROVED` (reusing `confirm_submission`'s no-default-to-yes
+  discipline); `CANCELLED`/`TIMEOUT` are reachable via an
+  injectable-exception seam on `input_fn`, since a portable stdin timeout
+  is a real, separate, `SIGALRM`-is-POSIX-only problem this phase doesn't
+  need to solve to prove the states exist and are handled correctly.
+  `career-agent prepare` now also writes a JSON session-file handoff
+  (mirroring `discover`'s own opportunity-file-handoff convention exactly)
+  that the new `career-agent review --session <path>` command consumes. No
+  new `review_storage.py` either -- `SqliteReviewSessionStore` joins the
+  existing one-file `storage/sqlite.py` convention. Checked against Phase
+  51's found `.prepare(`-collision release-invariant test explicitly; no
+  second collision. 36 new tests; 947 total. No Submit, no browser
+  mutation, no AI review, no résumé/field editing, no Submission Engine,
+  no new dependency, no version bump.
+
 ---
 
 ## Deferred work (named, not forgotten)
