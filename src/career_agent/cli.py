@@ -69,6 +69,10 @@ from career_agent.domain.execution import (
     resolve_source_policy,
 )
 from career_agent.domain.ingestion import ADD, IngestionDraft
+from career_agent.domain.job_preferences import (
+    JobPreferences,
+    generate_search_queries,
+)
 from career_agent.domain.models import (
     Application,
     HumanConfirmation,
@@ -99,6 +103,10 @@ from career_agent.storage.cv_ingest import (
     read_document,
 )
 from career_agent.storage.excel import export_applications
+from career_agent.storage.job_preferences import (
+    load_job_preferences,
+    save_job_preferences,
+)
 from career_agent.storage.profile import (
     ProfileValidationError,
     load_master_profile,
@@ -602,8 +610,23 @@ async def run_discover_command(
     return 0
 
 
-def build_discovery_sources(settings: Settings) -> list[tuple[str, object]]:
-    """Wire every source whose config is present (composition root)."""
+def build_discovery_sources(
+    settings: Settings, preferences: JobPreferences | None = None
+) -> list[tuple[str, object]]:
+    """Wire every source whose config is present (composition root).
+
+    Phase 46 (ADR-0064): when ``preferences`` is given and
+    :func:`~career_agent.domain.job_preferences.generate_search_queries`
+    yields at least one query, each keyword-capable source (Adzuna/Reed/
+    USAJobs/Jooble) is instantiated once *per generated query* instead of
+    once with the static ``settings.discovery_keywords`` default --
+    "Software Engineer Remote India", "Backend Developer India", ... each
+    becomes its own discovery pass, fanned out across the same
+    already-existing source classes rather than a new discovery mechanism.
+    Falls back to exactly the prior single-keyword behavior when
+    ``preferences`` is ``None`` or generates no queries (e.g. no titles
+    configured yet) -- current discovery is extended, never removed.
+    """
     from career_agent.integrations.http import HttpxClient
     from career_agent.plugins.sources.job_boards import (
         AdzunaSource,
@@ -617,7 +640,12 @@ def build_discovery_sources(settings: Settings) -> list[tuple[str, object]]:
     )
 
     client = HttpxClient()
-    keywords = settings.discovery_keywords
+    generated_queries = generate_search_queries(preferences) if preferences else []
+    keyword_queries = generated_queries or [settings.discovery_keywords]
+
+    def _label(base: str, query: str) -> str:
+        return base if len(keyword_queries) == 1 else f"{base}[{query}]"
+
     sources: list[tuple[str, object]] = []
     if settings.adzuna_app_id and settings.adzuna_app_key:
         countries = [
@@ -625,51 +653,55 @@ def build_discovery_sources(settings: Settings) -> list[tuple[str, object]]:
             for country in settings.adzuna_countries.split(",")
             if country.strip()
         ]
-        sources.append(
-            (
-                "adzuna",
-                AdzunaSource(
-                    app_id=settings.adzuna_app_id,
-                    app_key=settings.adzuna_app_key,
-                    countries=countries,
-                    keywords=keywords,
-                    client=client,
-                ),
+        for query in keyword_queries:
+            sources.append(
+                (
+                    _label("adzuna", query),
+                    AdzunaSource(
+                        app_id=settings.adzuna_app_id,
+                        app_key=settings.adzuna_app_key,
+                        countries=countries,
+                        keywords=query,
+                        client=client,
+                    ),
+                )
             )
-        )
     if settings.reed_api_key:
-        sources.append(
-            (
-                "reed",
-                ReedSource(
-                    api_key=settings.reed_api_key, keywords=keywords, client=client
-                ),
+        for query in keyword_queries:
+            sources.append(
+                (
+                    _label("reed", query),
+                    ReedSource(
+                        api_key=settings.reed_api_key, keywords=query, client=client
+                    ),
+                )
             )
-        )
     if settings.usajobs_api_key and settings.usajobs_user_agent:
-        sources.append(
-            (
-                "usajobs",
-                UsaJobsSource(
-                    api_key=settings.usajobs_api_key,
-                    user_agent=settings.usajobs_user_agent,
-                    keywords=keywords,
-                    client=client,
-                ),
+        for query in keyword_queries:
+            sources.append(
+                (
+                    _label("usajobs", query),
+                    UsaJobsSource(
+                        api_key=settings.usajobs_api_key,
+                        user_agent=settings.usajobs_user_agent,
+                        keywords=query,
+                        client=client,
+                    ),
+                )
             )
-        )
     if settings.jooble_api_key:
-        sources.append(
-            (
-                "jooble",
-                JoobleSource(
-                    api_key=settings.jooble_api_key,
-                    keywords=keywords,
-                    location=settings.jooble_location,
-                    client=client,
-                ),
+        for query in keyword_queries:
+            sources.append(
+                (
+                    _label("jooble", query),
+                    JoobleSource(
+                        api_key=settings.jooble_api_key,
+                        keywords=query,
+                        location=settings.jooble_location,
+                        client=client,
+                    ),
+                )
             )
-        )
     if settings.arbeitnow_enabled:
         sources.append(("arbeitnow", ArbeitnowSource(client=client)))
     if settings.themuse_enabled:
@@ -679,6 +711,22 @@ def build_discovery_sources(settings: Settings) -> list[tuple[str, object]]:
     if settings.remoteok_enabled:
         sources.append(("remoteok", RemoteOkSource(client=client)))
     return sources
+
+
+def _load_preferences_if_present(settings: Settings) -> JobPreferences | None:
+    """Load Job Search Preferences if the file exists; ``None`` if absent.
+
+    Absence is normal (no wizard has been run yet) and falls back to
+    ``build_discovery_sources``'s prior static-keyword behavior. Malformed
+    *existing* content is a real error, not silently ignored -- a user's
+    configured preferences must not silently stop applying with no
+    indication why -- so it propagates for the caller to catch with the
+    same clean-message contract every other loader in this module follows.
+    """
+    path = Path(settings.job_preferences_path)
+    if not path.exists():
+        return None
+    return load_job_preferences(path)
 
 
 def _build_decide_scorer(settings: Settings) -> object:
@@ -761,6 +809,247 @@ def run_capture_legal_status_command(
         f"(profile version will change on next load)."
     )
     return 0
+
+
+def _ask_list(
+    input_fn: Callable[[str], str], prompt: str, current: list[str]
+) -> list[str]:
+    """Comma-separated list prompt; blank input keeps the current value."""
+    shown = ", ".join(current) if current else "none"
+    answer = input_fn(f"{prompt} (currently: {shown}; comma-separated): ").strip()
+    if not answer:
+        return current
+    return [item.strip() for item in answer.split(",") if item.strip()]
+
+
+def _ask_optional_str(
+    input_fn: Callable[[str], str], prompt: str, current: str | None
+) -> str | None:
+    """Free-text prompt; blank keeps current, literal '-' clears it to None."""
+    shown = current if current is not None else "not set"
+    answer = input_fn(f"{prompt} (currently: {shown}): ").strip()
+    if not answer:
+        return current
+    if answer == "-":
+        return None
+    return answer
+
+
+def _ask_optional_bool(
+    input_fn: Callable[[str], str], prompt: str, current: bool | None
+) -> bool | None:
+    """yes/no/unset prompt; blank keeps current.
+
+    Same discipline as ``run_capture_legal_status_command``: unrecognized
+    input never becomes an answer, in either polarity.
+    """
+    shown = "not set" if current is None else ("yes" if current else "no")
+    answer = input_fn(f"{prompt} (currently: {shown}) [yes/no/unset]: ").strip().lower()
+    if not answer:
+        return current
+    if answer == "yes":
+        return True
+    if answer == "no":
+        return False
+    if answer == "unset":
+        return None
+    print(f"Unrecognized answer {answer!r} -- keeping current value.")
+    return current
+
+
+def _ask_bool(input_fn: Callable[[str], str], prompt: str, current: bool) -> bool:
+    """yes/no prompt with a required default; blank keeps current."""
+    shown = "yes" if current else "no"
+    answer = input_fn(f"{prompt} (currently: {shown}) [yes/no]: ").strip().lower()
+    if not answer:
+        return current
+    if answer in _YES:
+        return True
+    if answer in {"n", "no"}:
+        return False
+    print(f"Unrecognized answer {answer!r} -- keeping current value.")
+    return current
+
+
+def _ask_optional_int(
+    input_fn: Callable[[str], str], prompt: str, current: int | None
+) -> int | None:
+    shown = current if current is not None else "not set"
+    answer = input_fn(f"{prompt} (currently: {shown}): ").strip()
+    if not answer:
+        return current
+    if answer == "-":
+        return None
+    try:
+        return int(answer)
+    except ValueError:
+        print(f"{answer!r} is not a whole number -- keeping current value.")
+        return current
+
+
+def _ask_optional_float(
+    input_fn: Callable[[str], str], prompt: str, current: float | None
+) -> float | None:
+    shown = current if current is not None else "not set"
+    answer = input_fn(f"{prompt} (currently: {shown}): ").strip()
+    if not answer:
+        return current
+    if answer == "-":
+        return None
+    try:
+        return float(answer)
+    except ValueError:
+        print(f"{answer!r} is not a number -- keeping current value.")
+        return current
+
+
+def run_preferences_command(
+    *,
+    path: Path | None = None,
+    settings: Settings | None = None,
+    input_fn: Callable[[str], str] = input,
+) -> int:
+    """The ``career-agent preferences`` command.
+
+    An interactive Job Search Preferences wizard (Phase 46, ADR-0064) --
+    a separate file from the master profile, by design; see ADR-0064.
+    Loads the existing preferences (or a fresh default set if none exist
+    yet), asks about every field, and saves. Every prompt shows the current
+    value and keeps it on a blank answer, so re-running this command to
+    tweak one field never requires re-entering everything else. Never
+    touches ``profile.json`` and makes no network/LLM call.
+    """
+    settings = settings or Settings()
+    prefs_path = path or Path(settings.job_preferences_path)
+
+    if prefs_path.exists():
+        try:
+            current = load_job_preferences(prefs_path)
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            print(f"Could not load preferences from {prefs_path}: {exc}")
+            return 1
+    else:
+        current = JobPreferences()
+
+    print("career-agent preferences\n=========================\n")
+
+    try:
+        updated = _build_preferences_from_wizard(input_fn, current)
+    except ValidationError as exc:
+        print(f"\nInvalid input -- nothing was saved: {exc}")
+        return 1
+
+    save_job_preferences(prefs_path, updated)
+    print(f"\nSaved job search preferences to {prefs_path}.")
+    queries = generate_search_queries(updated)
+    if queries:
+        print("These preferences would generate discovery queries such as:")
+        for query in queries[:5]:
+            print(f"  - {query}")
+    return 0
+
+
+def _build_preferences_from_wizard(
+    input_fn: Callable[[str], str], current: JobPreferences
+) -> JobPreferences:
+    """The prompt sequence.
+
+    Split out so ``run_preferences_command`` can wrap it in one try/except
+    for a single, clean validation-error message instead of an uncaught
+    traceback on bad input (e.g. an unrecognized seniority value).
+    """
+    return JobPreferences(
+        preferred_titles=_ask_list(
+            input_fn, "What roles are you looking for?", current.preferred_titles
+        ),
+        alternative_titles=_ask_list(
+            input_fn, "Alternative/related titles?", current.alternative_titles
+        ),
+        seniority=_ask_optional_str(  # type: ignore[arg-type]
+            input_fn,
+            "Seniority (intern/entry/junior/mid/senior/lead/principal/staff)",
+            current.seniority,
+        ),
+        experience_years_min=_ask_optional_int(
+            input_fn, "Minimum years of experience?", current.experience_years_min
+        ),
+        experience_years_max=_ask_optional_int(
+            input_fn, "Maximum years of experience?", current.experience_years_max
+        ),
+        employment_types=_ask_list(  # type: ignore[arg-type]
+            input_fn,
+            "Employment types (full_time/part_time/contract/internship/temporary)",
+            list(current.employment_types),
+        ),
+        work_mode=_ask_list(  # type: ignore[arg-type]
+            input_fn, "Work mode (remote/hybrid/onsite)", list(current.work_mode)
+        ),
+        countries=_ask_list(input_fn, "Countries?", current.countries),
+        states=_ask_list(input_fn, "States?", current.states),
+        cities=_ask_list(input_fn, "Cities?", current.cities),
+        salary_min=_ask_optional_float(
+            input_fn, "Minimum salary?", current.salary_min
+        ),
+        salary_max=_ask_optional_float(
+            input_fn, "Maximum salary?", current.salary_max
+        ),
+        salary_currency=_ask_optional_str(
+            input_fn, "Salary currency/unit (e.g. USD, LPA)?", current.salary_currency
+        ),
+        preferred_companies=_ask_list(
+            input_fn, "Preferred companies?", current.preferred_companies
+        ),
+        blacklisted_companies=_ask_list(
+            input_fn, "Blacklisted companies?", current.blacklisted_companies
+        ),
+        industries=_ask_list(input_fn, "Industries?", current.industries),
+        visa_sponsorship_required=_ask_optional_bool(
+            input_fn,
+            "Do you require visa sponsorship?",
+            current.visa_sponsorship_required,
+        ),
+        work_authorization=_ask_optional_str(
+            input_fn, "Work authorization (free text)?", current.work_authorization
+        ),
+        preferred_technologies=_ask_list(
+            input_fn, "Preferred technologies/skills?", current.preferred_technologies
+        ),
+        keywords_include=_ask_list(
+            input_fn, "Keywords to include?", current.keywords_include
+        ),
+        keywords_exclude=_ask_list(
+            input_fn, "Keywords to exclude?", current.keywords_exclude
+        ),
+        max_applications_per_day=_ask_optional_int(
+            input_fn,
+            "Maximum applications per day (stored only -- not yet enforced)?",
+            current.max_applications_per_day,
+        ),
+        require_human_confirmation=_ask_bool(
+            input_fn,
+            "Require human confirmation? (informational -- the real "
+            "confirmation boundary is always required regardless)",
+            current.require_human_confirmation,
+        ),
+        auto_tailor_resume=_ask_bool(
+            input_fn,
+            "Auto-tailor resume? (stored only -- not yet wired)",
+            current.auto_tailor_resume,
+        ),
+        auto_generate_cover_letter=_ask_bool(
+            input_fn,
+            "Auto-generate cover letter? (stored only -- not yet implemented)",
+            current.auto_generate_cover_letter,
+        ),
+        preferred_ats_providers=_ask_list(  # type: ignore[arg-type]
+            input_fn,
+            "Preferred ATS providers (greenhouse/lever/ashby/workday)?",
+            list(current.preferred_ats_providers),
+        ),
+        time_zone=_ask_optional_str(
+            input_fn, "Time zone (IANA name, e.g. Asia/Kolkata)?", current.time_zone
+        ),
+    )
 
 
 def run_verify_promptfoo_command(
@@ -1081,6 +1370,14 @@ async def run_auto_cli_command(
     settings = Settings()
     since = datetime.now(UTC) - timedelta(days=since_days)
     profile = load_master_profile(profile_path)
+    try:
+        preferences = _load_preferences_if_present(settings)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        print(
+            f"Could not load job preferences from "
+            f"{settings.job_preferences_path}: {exc}"
+        )
+        return 1
     scorer = _build_decide_scorer(settings)
     try:
         claim_verifier = select_claim_verifier(settings)
@@ -1105,7 +1402,7 @@ async def run_auto_cli_command(
     generator = LLMResumeGenerator(content_drafter)
     gate = LLMTruthfulnessGate(claim_verifier)
     return await run_auto_command(
-        build_discovery_sources(settings),
+        build_discovery_sources(settings, preferences),
         SqliteOpportunityRepository(Path(settings.database_path)),
         profile,
         scorer,
@@ -1371,6 +1668,21 @@ def main(argv: list[str] | None = None) -> None:
         help="Where your JSON Resume master profile is (or should be scaffolded).",
     )
 
+    preferences_parser = subparsers.add_parser(
+        "preferences",
+        help="Interactive Job Search Preferences wizard -- what roles, "
+        "locations, and companies to look for. Separate from your master "
+        "profile (ADR-0064); never touches profile.json.",
+    )
+    preferences_parser.add_argument(
+        "--path",
+        type=Path,
+        default=None,
+        help="Defaults to job_preferences.json relative to the current "
+        "working directory (Settings.job_preferences_path, "
+        ".env-overridable).",
+    )
+
     import_cv_parser = subparsers.add_parser(
         "import-cv",
         help="Parse a CV (.docx/.txt/.md) into an UNVERIFIED draft of "
@@ -1529,10 +1841,18 @@ def main(argv: list[str] | None = None) -> None:
         profile = (
             load_master_profile(args.profile) if args.profile is not None else None
         )
+        try:
+            preferences = _load_preferences_if_present(settings)
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            print(
+                f"Could not load job preferences from "
+                f"{settings.job_preferences_path}: {exc}"
+            )
+            raise SystemExit(1) from exc
         scorer = _build_decide_scorer(settings)
         exit_code = asyncio.run(
             run_discover_command(
-                build_discovery_sources(settings),
+                build_discovery_sources(settings, preferences),
                 SqliteOpportunityRepository(Path(settings.database_path)),
                 since=since,
                 out_dir=args.out_dir,
@@ -1541,6 +1861,9 @@ def main(argv: list[str] | None = None) -> None:
             )
         )
         raise SystemExit(exit_code)
+
+    if args.command == "preferences":
+        raise SystemExit(run_preferences_command(path=args.path))
 
     if args.command == "auto":
         exit_code = asyncio.run(

@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     #: (``__file__``-based resolution breaks for a wheel/non-editable
     #: install, since the package is copied into ``site-packages``).
     promptfoo_results_dir: str = "promptfoo/results"
+    #: Where the Job Search Preferences file is looked for (Phase 46/
+    #: ADR-0064). CWD-relative, ``.env``-overridable, same pattern as
+    #: ``database_path``/``artifacts_dir``/``promptfoo_results_dir`` above --
+    #: never repo-tree-relative.
+    job_preferences_path: str = "job_preferences.json"
     # Worldwide job-board discovery (Phase 12/ADR-0036). A source is wired
     # by the composition root only when its credentials are present; the
     # keyless boards have explicit enabled flags.

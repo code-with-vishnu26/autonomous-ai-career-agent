@@ -57,6 +57,13 @@ exports/
 *.xlsx
 master_profile.json
 !examples/**/master_profile.json
+# The actual default master-profile filename every command/README uses
+# (Phase 46 finding: only the unused "master_profile.json" pattern above
+# was ever ignored -- this real default was never covered).
+/profile.json
+# Job Search Preferences (Phase 46, ADR-0064): the user's own search
+# configuration, same "stays local" treatment as the master profile.
+/job_preferences.json
 
 # ---- promptfoo live-validation evidence (machine-local, never committed) ----
 # See promptfoo/README.md: these are the artifacts verify_promptfoo_results
