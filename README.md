@@ -394,42 +394,61 @@ consuming this API is documented next.
 ```bash
 # Terminal 1 -- the API this frontend consumes
 pip install 'career-agent[web]'
-career-agent serve
+JWT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" career-agent serve
 
 # Terminal 2 -- the dashboard itself
 cd frontend
 npm install
-npm run dev   # http://localhost:5173, proxies /api to 127.0.0.1:8000
+npm run dev   # http://localhost:5173, proxies /api, /auth, /user to 127.0.0.1:8000
 ```
 
-A React 19 + TypeScript + Vite dashboard (Phase 55, [ADR-0073](docs/adr/0073-react-dashboard-frontend.md))
-over the Phase 54 API above — TailwindCSS + hand-written shadcn-style
-primitives, TanStack Query, React Router, React Hook Form, Recharts, Lucide
-icons. Eight pages: Dashboard, Search Jobs, Applications, Review Queue,
-Submission Queue, History, Analytics, Settings. Responsive (sidebar
+A React 19 + TypeScript + Vite dashboard (Phase 55, [ADR-0073](docs/adr/0073-react-dashboard-frontend.md);
+accounts added in Phase 56, [ADR-0074](docs/adr/0074-authentication-and-multi-user-platform.md))
+over the API above — TailwindCSS + hand-written shadcn-style primitives,
+TanStack Query, React Router, React Hook Form, Recharts, Lucide icons.
+Eight pages: Dashboard, Search Jobs, Applications, Review Queue,
+Submission Queue, History, Analytics, Settings, plus Login/Register/
+Forgot-Password/Reset-Password/Profile/Account. Responsive (sidebar
 collapses to a mobile drawer) and dark-mode aware (persisted, defaults to
-the OS preference).
+the OS preference, applied on every page including the public auth ones).
 
-**Every number on every page comes from one of the six existing `GET`
-routes** — no client-side fabrication, no duplicated backend logic. Where a
-page needs data joined across routes (e.g. Review Queue showing a résumé
-preview next to its approval decision), the join is a pure function over
-the already-fetched responses (`frontend/src/lib/derive.ts`), the same
+**Every number on every dashboard page comes from an authenticated
+caller's own data** — no client-side fabrication, no duplicated backend
+logic, no cross-account leakage (every route filters by the caller's
+`user_id`, proven by a dedicated isolation test). Where a page needs data
+joined across routes (e.g. Review Queue showing a résumé preview next to
+its approval decision), the join is a pure function over the
+already-fetched responses (`frontend/src/lib/derive.ts`), the same
 "aggregation is presentation logic" precedent the API's own
 `analytics.py` already established server-side.
 
-**Actions with no backing endpoint are named, not faked.** Search Jobs'
-Search button, Review Queue's Approve/Reject, and Submission Queue's Submit
-all render as disabled buttons naming the exact CLI command to run instead
-(`career-agent discover`/`review`/`submit`) — approving a review and
-submitting an application stay exclusively CLI actions, preserving
-ADR-0071's terminal-only countdown/confirmation gate untouched. Submission
-Queue explicitly has no live browser state or countdown to show, for the
-same reason.
+**Actions with no backing endpoint are still named, not faked.** Search
+Jobs' Search button, Review Queue's Approve/Reject, and Submission
+Queue's Submit all render as disabled buttons naming the exact CLI
+command to run instead (`career-agent discover`/`review`/`submit`) —
+approving a review and submitting an application stay exclusively CLI
+actions, preserving ADR-0071's terminal-only countdown/confirmation gate
+untouched.
 
 Build for production with `npm run build` (output in `frontend/dist/`);
 test with `npm test` (Vitest + React Testing Library); type-check with
 `npx tsc -b`; lint with `npm run lint`.
+
+## Authentication & accounts
+
+`career-agent serve` refuses to start signing tokens without
+`JWT_SECRET_KEY` set (fail-closed — no shared default secret). Register
+via the dashboard (`/register`) or `POST /auth/register`; access tokens
+(15 min) are held in memory by the browser (never `localStorage`),
+refresh tokens (30 days, rotate on every use) live in an httpOnly cookie.
+Every dashboard route requires a session; each account sees only its own
+applications/reviews/submissions/résumé variants/preferences. The CLI is
+unaffected — `career-agent prepare`/`review`/`submit` have no login flow
+and continue to operate as a single, real, auto-provisioned "local
+operator" account (`CLI_LOCAL_USER_EMAIL`, `.env`-overridable). Password
+resets issue a real token but don't email it yet (no transport is wired —
+a future phase); ask whoever runs the install for the token in the
+meantime.
 
 ## Privacy
 

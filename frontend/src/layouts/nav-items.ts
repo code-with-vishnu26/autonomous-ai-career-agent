@@ -8,6 +8,8 @@ import {
   History,
   BarChart3,
   Settings as SettingsIcon,
+  UserCircle,
+  ShieldCheck,
 } from "lucide-react";
 
 export interface NavItem {
@@ -25,4 +27,9 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/history", label: "History", icon: History },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
+];
+
+export const ACCOUNT_NAV_ITEMS: NavItem[] = [
+  { to: "/profile", label: "Profile", icon: UserCircle },
+  { to: "/account", label: "Account", icon: ShieldCheck },
 ];

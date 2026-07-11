@@ -112,3 +112,56 @@ export interface HealthStatus {
   status: string;
   version: string;
 }
+
+export type UserRole = "user" | "admin";
+
+export interface User {
+  id: string;
+  email: string;
+  display_name: string | null;
+  role: UserRole;
+  created_at: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+/**
+ * Mirrors `domain/job_preferences.py::JobPreferences` field-for-field.
+ * Only `preferred_titles`/`alternative_titles`/`work_mode`/`countries`/
+ * `keywords_exclude` are actually consumed by discovery today -- the rest
+ * are captured configuration surface, not yet enforced (see the backend
+ * docstring for the exact list).
+ */
+export interface JobPreferences {
+  preferred_titles: string[];
+  alternative_titles: string[];
+  seniority: string | null;
+  experience_years_min: number | null;
+  experience_years_max: number | null;
+  employment_types: string[];
+  work_mode: string[];
+  countries: string[];
+  states: string[];
+  cities: string[];
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  preferred_companies: string[];
+  blacklisted_companies: string[];
+  industries: string[];
+  visa_sponsorship_required: boolean | null;
+  work_authorization: string | null;
+  preferred_technologies: string[];
+  keywords_include: string[];
+  keywords_exclude: string[];
+  max_applications_per_day: number | null;
+  require_human_confirmation: boolean;
+  auto_tailor_resume: boolean;
+  auto_generate_cover_letter: boolean;
+  preferred_ats_providers: string[];
+  time_zone: string | null;
+}

@@ -29,14 +29,14 @@ def _review(
 def test_save_then_by_application_session_round_trips(tmp_path: Path) -> None:
     store = SqliteReviewSessionStore(tmp_path / "db.sqlite")
     review = _review("review-1")
-    store.save(review)
+    store.save(review, user_id="u1")
     assert store.by_application_session("sess-1") == [review]
 
 
 def test_by_application_session_only_returns_matching(tmp_path: Path) -> None:
     store = SqliteReviewSessionStore(tmp_path / "db.sqlite")
-    store.save(_review("review-1", application_session_id="sess-1"))
-    store.save(_review("review-2", application_session_id="sess-2"))
+    store.save(_review("review-1", application_session_id="sess-1"), user_id="u1")
+    store.save(_review("review-2", application_session_id="sess-2"), user_id="u1")
     assert [r.id for r in store.by_application_session("sess-1")] == ["review-1"]
     assert [r.id for r in store.by_application_session("sess-2")] == ["review-2"]
 
@@ -49,9 +49,9 @@ def test_by_application_session_unknown_returns_empty(tmp_path: Path) -> None:
 def test_save_is_append_only_never_overwrites(tmp_path: Path) -> None:
     store = SqliteReviewSessionStore(tmp_path / "db.sqlite")
     original = _review("review-1", approval_status="APPROVED")
-    store.save(original)
+    store.save(original, user_id="u1")
     mutated = original.model_copy(update={"approval_status": "REJECTED"})
-    store.save(mutated)
+    store.save(mutated, user_id="u1")
     result = store.by_application_session("sess-1")
     assert len(result) == 1
     assert result[0].approval_status == "APPROVED"
@@ -59,15 +59,15 @@ def test_save_is_append_only_never_overwrites(tmp_path: Path) -> None:
 
 def test_all_reviews_returns_every_application_session(tmp_path: Path) -> None:
     store = SqliteReviewSessionStore(tmp_path / "db.sqlite")
-    store.save(_review("review-1", application_session_id="sess-1"))
-    store.save(_review("review-2", application_session_id="sess-2"))
+    store.save(_review("review-1", application_session_id="sess-1"), user_id="u1")
+    store.save(_review("review-2", application_session_id="sess-2"), user_id="u1")
     ids = {r.id for r in store.all_reviews()}
     assert ids == {"review-1", "review-2"}
 
 
 def test_survives_close_and_reopen(tmp_path: Path) -> None:
     path = tmp_path / "db.sqlite"
-    SqliteReviewSessionStore(path).save(_review("review-1"))
+    SqliteReviewSessionStore(path).save(_review("review-1"), user_id="u1")
     reopened = SqliteReviewSessionStore(path)
     assert [r.id for r in reopened.by_application_session("sess-1")] == ["review-1"]
 
@@ -75,7 +75,7 @@ def test_survives_close_and_reopen(tmp_path: Path) -> None:
 def test_rejected_review_survives_round_trip(tmp_path: Path) -> None:
     store = SqliteReviewSessionStore(tmp_path / "db.sqlite")
     review = _review("review-1", approval_status="REJECTED", review_notes="not a fit")
-    store.save(review)
+    store.save(review, user_id="u1")
     result = store.by_application_session("sess-1")[0]
     assert result.approval_status == "REJECTED"
     assert result.review_notes == "not a fit"

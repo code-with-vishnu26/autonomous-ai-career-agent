@@ -83,3 +83,23 @@ class Settings(BaseSettings):
     #: at gate-evaluation time, never compiled in (matrix case D3).
     ats_threshold: float = 75.0
     log_level: str = "INFO"
+
+    # Multi-user platform auth (Phase 56/ADR-0074). No default secret is
+    # baked in -- an unset ``jwt_secret_key`` fails closed (the API refuses
+    # to start signing tokens) rather than silently signing with a
+    # guessable value every install would otherwise share.
+    jwt_secret_key: str | None = None
+    jwt_access_token_expire_minutes: int = 15
+    jwt_refresh_token_expire_days: int = 30
+    #: The CLI has no login flow (it's a local terminal, not a browser
+    #: session) -- it always operates as this single, real, auto-
+    #: provisioned account, auto-created on first use if absent. Multiple
+    #: distinct humans sharing one CLI install is out of scope; multiple
+    #: humans using the *dashboard* is exactly what Phase 56 adds.
+    cli_local_user_email: str = "local@career-agent.local"
+    #: The refresh-token cookie's ``Secure`` flag -- browsers refuse to
+    #: send a ``Secure`` cookie over plain HTTP, so this defaults ``False``
+    #: to match ``career-agent serve``'s own default (``127.0.0.1``, no
+    #: TLS). A production deployment behind HTTPS (Phase 59) should set
+    #: this ``True`` via the environment.
+    jwt_cookie_secure: bool = False

@@ -30,14 +30,14 @@ def _session(
 def test_save_then_by_opportunity_round_trips(tmp_path: Path) -> None:
     store = SqliteApplicationSessionStore(tmp_path / "db.sqlite")
     session = _session("sess-1")
-    store.save(session)
+    store.save(session, user_id="u1")
     assert store.by_opportunity("opp-1") == [session]
 
 
 def test_by_opportunity_only_returns_matching_opportunity(tmp_path: Path) -> None:
     store = SqliteApplicationSessionStore(tmp_path / "db.sqlite")
-    store.save(_session("sess-1", opportunity_id="opp-1"))
-    store.save(_session("sess-2", opportunity_id="opp-2"))
+    store.save(_session("sess-1", opportunity_id="opp-1"), user_id="u1")
+    store.save(_session("sess-2", opportunity_id="opp-2"), user_id="u1")
     assert [s.id for s in store.by_opportunity("opp-1")] == ["sess-1"]
     assert [s.id for s in store.by_opportunity("opp-2")] == ["sess-2"]
 
@@ -50,9 +50,9 @@ def test_by_opportunity_unknown_returns_empty(tmp_path: Path) -> None:
 def test_save_is_append_only_never_overwrites(tmp_path: Path) -> None:
     store = SqliteApplicationSessionStore(tmp_path / "db.sqlite")
     original = _session("sess-1", status="READY_FOR_REVIEW")
-    store.save(original)
+    store.save(original, user_id="u1")
     mutated = original.model_copy(update={"status": "BLOCKED"})
-    store.save(mutated)
+    store.save(mutated, user_id="u1")
     result = store.by_opportunity("opp-1")
     assert len(result) == 1
     assert result[0].status == "READY_FOR_REVIEW"
@@ -60,14 +60,14 @@ def test_save_is_append_only_never_overwrites(tmp_path: Path) -> None:
 
 def test_all_sessions_returns_every_opportunity(tmp_path: Path) -> None:
     store = SqliteApplicationSessionStore(tmp_path / "db.sqlite")
-    store.save(_session("sess-1", opportunity_id="opp-1"))
-    store.save(_session("sess-2", opportunity_id="opp-2"))
+    store.save(_session("sess-1", opportunity_id="opp-1"), user_id="u1")
+    store.save(_session("sess-2", opportunity_id="opp-2"), user_id="u1")
     ids = {s.id for s in store.all_sessions()}
     assert ids == {"sess-1", "sess-2"}
 
 
 def test_survives_close_and_reopen(tmp_path: Path) -> None:
     path = tmp_path / "db.sqlite"
-    SqliteApplicationSessionStore(path).save(_session("sess-1"))
+    SqliteApplicationSessionStore(path).save(_session("sess-1"), user_id="u1")
     reopened = SqliteApplicationSessionStore(path)
     assert [s.id for s in reopened.by_opportunity("opp-1")] == ["sess-1"]
