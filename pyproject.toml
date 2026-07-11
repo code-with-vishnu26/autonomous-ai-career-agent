@@ -151,3 +151,15 @@ forbidden_modules = [
     "career_agent.llm.claim_verifier",
     "career_agent.llm.groq_claim_verifier",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Browser Automation Foundation has zero knowledge of jobs/résumés/applications (Phase 47, ADR-0065)"
+type = "forbidden"
+source_modules = ["career_agent.integrations.browser"]
+forbidden_modules = [
+    "career_agent.domain",
+    "career_agent.agents",
+    "career_agent.storage",
+    "career_agent.plugins",
+    "career_agent.llm",
+]
