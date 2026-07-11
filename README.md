@@ -209,6 +209,20 @@ yet, no form-filling, and no login automation anywhere in this package
 Register it with `AdapterRegistry`, and add its capability flags only
 once verified against a real, live posting — never guessed.
 
+## Search Planner (foundation, not yet user-facing)
+
+`career_agent.agents.planner.planner.build_execution_plan` turns your Job
+Search Preferences into an `ExecutionPlan` — an ordered, budget-bounded
+list of (provider, query, limit, priority) search tasks — *before*
+discovery runs, rather than searching every configured provider blindly.
+It prioritizes providers you named in `preferred_ats_providers`,
+diversifies across providers so no single one consumes the whole budget,
+and deduplicates identical planned tasks. Purely deterministic: no LLM
+call, no network, no adapter call (nothing here has ever seen a
+`playwright` or `httpx` import — enforced by a test, not just claimed).
+Nothing in this codebase executes the plan yet — that's future work; this
+phase only builds the plan.
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered
