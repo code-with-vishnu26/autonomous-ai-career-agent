@@ -164,6 +164,19 @@ career-agent outcome | report | export | verify-promptfoo | diagnose-promptfoo-d
 `career-agent --help` lists them all. `apply` and `auto` prepare materials and
 stop at confirmation; neither submits.
 
+## Browser automation (foundation, not yet user-facing)
+
+`career_agent.integrations.browser` provides low-level building blocks a
+future browser-driven workflow will use: launching a real Chromium
+instance (a persistent profile, or an ephemeral context seeded from an
+already-saved, encrypted session), waiting for a human to log in (this
+project **never** automates a login — it only observes whether one has
+happened), and multi-tab tracking. There is no `career-agent` command that
+uses this yet; it has no knowledge of jobs, résumés, or applications at
+all (enforced by an import-linter contract, ADR-0065). Running it
+requires a local Chromium build — `playwright install chromium` — and its
+tests are skipped automatically if none is found.
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered

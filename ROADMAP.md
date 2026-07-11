@@ -1167,6 +1167,30 @@ profile.
   adding `/job_preferences.json`. 41 new tests; 762 total. No browser
   automation in this phase -- that begins Phase 47.
 
+- ✅ **Browser Automation Foundation -- ADR-0065 (Phase 47).** Launch
+  Chrome (persistent profile or an ephemeral context seeded from an
+  encrypted saved session), reuse/persist sessions, detect login, wait for
+  -- never automate -- a human login, multi-tab support. The audit found
+  this wasn't greenfield: `agents/apply/browser_applicator.py` already
+  drives real Chromium (unwired from the CLI) and
+  `integrations/browser_session.py`'s `EncryptedSessionStore` already
+  persists sessions encrypted at rest -- both reused, not duplicated. New
+  `BrowserManager`/`SessionManager`/`TabManager` under
+  `integrations/browser/` (not a new top-level package -- consistent with
+  `storage`/`integrations` as this project's existing unlayered I/O
+  branches). `SessionManager.wait_for_login` is structurally incapable of
+  typing a credential -- an AST-based test scans for any
+  `.fill()`/`.type()`/`.press()` call, not a fragile text search. A fifth
+  import-linter contract + purity test enforce that this layer has zero
+  knowledge of jobs/résumés/applications, mirroring `domain/`'s existing
+  zero-I/O enforcement. 28 new tests, all driven against a real local
+  Chromium instance, not mocks; 790 total. No CLI command yet (nothing to
+  invoke -- future adapter/planner phases are the consumers), no change to
+  `BrowserApplicator` or the execution-safety boundary
+  (`executor_available=False` still hardcoded), no website-specific logic
+  (Phase 48), no automated login of any kind on any site. No new
+  dependency, no version bump.
+
 ---
 
 ## Deferred work (named, not forgotten)
