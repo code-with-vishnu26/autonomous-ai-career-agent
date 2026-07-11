@@ -12,9 +12,13 @@ from pathlib import Path
 from career_agent.core.config import Settings
 from career_agent.storage.sqlite import (
     SqliteApplicationSessionStore,
+    SqlitePasswordResetTokenStore,
+    SqliteRefreshTokenStore,
     SqliteResumeVariantStore,
     SqliteReviewSessionStore,
     SqliteSubmissionResultStore,
+    SqliteUserPreferencesStore,
+    SqliteUserStore,
 )
 
 
@@ -54,3 +58,23 @@ def get_submission_result_store() -> SqliteSubmissionResultStore:
 def get_resume_variant_store() -> SqliteResumeVariantStore:
     """Store backing the résumé variants ``career-agent prepare`` builds."""
     return SqliteResumeVariantStore(_database_path())
+
+
+def get_user_store() -> SqliteUserStore:
+    """Account store (Phase 56, ADR-0074)."""
+    return SqliteUserStore(_database_path())
+
+
+def get_refresh_token_store() -> SqliteRefreshTokenStore:
+    """Refresh-token store (Phase 56, ADR-0074)."""
+    return SqliteRefreshTokenStore(_database_path())
+
+
+def get_password_reset_token_store() -> SqlitePasswordResetTokenStore:
+    """Password-reset-token store (Phase 56, ADR-0074)."""
+    return SqlitePasswordResetTokenStore(_database_path())
+
+
+def get_user_preferences_store() -> SqliteUserPreferencesStore:
+    """Per-user Job Search Preferences store (Phase 56, ADR-0074)."""
+    return SqliteUserPreferencesStore(_database_path())

@@ -136,6 +136,7 @@ from career_agent.storage.sqlite import (
     SqliteReviewSessionStore,
     SqliteRunJournal,
     SqliteSubmissionResultStore,
+    migrate_to_multi_user,
 )
 
 _YES = {"y", "yes"}
@@ -481,6 +482,10 @@ async def run_prepare_command(
         return 1
 
     settings = Settings()
+    operator_user_id = migrate_to_multi_user(
+        Path(settings.database_path),
+        default_operator_email=settings.cli_local_user_email,
+    )
     try:
         claim_verifier = select_claim_verifier(settings)
     except NoLLMProviderConfiguredError as exc:
@@ -539,7 +544,7 @@ async def run_prepare_command(
             print(f"  - [{rejection.category}] {rejection.detail}")
         return 1
     if materials.new_variant is not None:
-        variant_store.save(materials.new_variant)
+        variant_store.save(materials.new_variant, user_id=operator_user_id)
 
     print(f"Provider detected: {resolve_ats_kind(opportunity.source_url)}")
     print("Opening browser...")
@@ -566,7 +571,9 @@ async def run_prepare_command(
     finally:
         await browser_manager.close()
 
-    SqliteApplicationSessionStore(Path(settings.database_path)).save(session)
+    SqliteApplicationSessionStore(Path(settings.database_path)).save(
+        session, user_id=operator_user_id
+    )
     session_file = _write_application_session_handoff(
         session, Path(settings.artifacts_dir)
     )
@@ -634,10 +641,16 @@ def run_review_command(
         return 1
 
     settings = Settings()
+    operator_user_id = migrate_to_multi_user(
+        Path(settings.database_path),
+        default_operator_email=settings.cli_local_user_email,
+    )
     result = ReviewEngine().review(session, input_fn=input_fn)
 
     review = build_review_session(str(uuid.uuid4()), session, result)
-    SqliteReviewSessionStore(Path(settings.database_path)).save(review)
+    SqliteReviewSessionStore(Path(settings.database_path)).save(
+        review, user_id=operator_user_id
+    )
     review_file = _write_review_session_handoff(review, Path(settings.artifacts_dir))
 
     print(f"Decision: {result.status}")
@@ -760,6 +773,10 @@ async def run_submit_command(
         return 1
 
     settings = Settings()
+    operator_user_id = migrate_to_multi_user(
+        Path(settings.database_path),
+        default_operator_email=settings.cli_local_user_email,
+    )
     application_sessions = SqliteApplicationSessionStore(
         Path(settings.database_path)
     ).by_opportunity(opportunity.id)
@@ -860,7 +877,7 @@ async def run_submit_command(
         print(str(exc))
         return 1
 
-    submission_store.save(result)
+    submission_store.save(result, user_id=operator_user_id)
 
     print(f"Status: {result.status}")
     if result.submitted:

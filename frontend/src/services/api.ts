@@ -6,12 +6,15 @@
  * `analytics.py`'s own aggregation is presentation logic over the same
  * stores, not a new source of truth.
  *
- * Every route here is a GET. There is no `postX`/`patchX` in this file
- * because the backend exposes none (Phase 54 is deliberately read-only) --
- * see `src/components/CliOnlyAction.tsx` for how write actions are
- * surfaced honestly instead.
+ * Every route here is a GET, and every one requires authentication
+ * (Phase 56, ADR-0074) -- `apiFetchJson` attaches the access token and
+ * transparently refreshes it once on a 401. There is no `postX`/`patchX`
+ * in this file because the dashboard-data backend exposes none (Phase 54
+ * is deliberately read-only) -- see `src/components/CliOnlyAction.tsx`
+ * for how write actions are surfaced honestly instead.
  */
 
+import { apiFetchJson } from "./http";
 import type {
   AnalyticsSummary,
   ApplicationSession,
@@ -22,21 +25,13 @@ import type {
   SubmissionResult,
 } from "@/types/api";
 
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path);
-  if (!response.ok) {
-    throw new Error(`${path} -> HTTP ${response.status}`);
-  }
-  return (await response.json()) as T;
-}
-
 export const api = {
-  health: () => getJson<HealthStatus>("/api/health"),
-  applications: () => getJson<ApplicationSession[]>("/api/applications"),
-  reviews: () => getJson<ReviewSession[]>("/api/reviews"),
-  pendingReviews: () => getJson<ReviewSession[]>("/api/reviews/pending"),
-  submissions: () => getJson<SubmissionResult[]>("/api/submissions"),
-  resumeVariants: () => getJson<ResumeVariant[]>("/api/resume-variants"),
-  analyticsSummary: () => getJson<AnalyticsSummary>("/api/analytics/summary"),
-  settings: () => getJson<RedactedSettings>("/api/settings"),
+  health: () => apiFetchJson<HealthStatus>("/api/health"),
+  applications: () => apiFetchJson<ApplicationSession[]>("/api/applications"),
+  reviews: () => apiFetchJson<ReviewSession[]>("/api/reviews"),
+  pendingReviews: () => apiFetchJson<ReviewSession[]>("/api/reviews/pending"),
+  submissions: () => apiFetchJson<SubmissionResult[]>("/api/submissions"),
+  resumeVariants: () => apiFetchJson<ResumeVariant[]>("/api/resume-variants"),
+  analyticsSummary: () => apiFetchJson<AnalyticsSummary>("/api/analytics/summary"),
+  settings: () => apiFetchJson<RedactedSettings>("/api/settings"),
 };

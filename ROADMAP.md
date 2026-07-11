@@ -1446,6 +1446,66 @@ profile.
   viewport. Zero backend files changed; full backend suite re-confirmed
   unmodified (990 passed).
 
+- ✅ **Authentication & Multi-User Platform -- ADR-0074 (Phase 56).**
+  Turns the dashboard from single-user to real multi-user: JWT access
+  tokens (15 min, in-memory on the frontend, never `localStorage`) +
+  opaque rotate-on-use refresh tokens (30 days, httpOnly `SameSite=Lax`
+  cookie, SHA-256-hashed server-side, never a JWT). `user_id` lives as a
+  SQL column (a new required keyword-only argument on each store's
+  `save()`, no default) on `application_sessions`/`review_sessions`/
+  `submission_results`/`resume_variants` -- **not** a domain-model field,
+  keeping `ApplicationSession`/`ReviewSession`/`SubmissionResult`/
+  `ResumeVariant` themselves and all ~40 of Phases 50-53's existing tests
+  completely unchanged. Password hashing (bcrypt) and JWT encode/decode
+  live in new `core/security.py`, not `domain/` -- `domain/auth.py` was
+  the first draft, moved after `tests/domain/test_purity.py` (rightly)
+  rejected `bcrypt`/`jwt` imports there; `domain/user.py::User` stays pure
+  data. New `SqliteUserStore`/`SqliteRefreshTokenStore`/
+  `SqlitePasswordResetTokenStore`/`SqliteUserPreferencesStore` (the last
+  reusing `JobPreferences`, ADR-0064, unmodified, as a per-dashboard-user
+  payload alongside the CLI's untouched file-based store) plus
+  `migrate_to_multi_user()` -- idempotent, `ALTER TABLE`s the `user_id`
+  column into a pre-Phase-56 database and backfills every ownerless row to
+  one real, auto-provisioned "local operator" account. The CLI has no
+  login flow and never will -- `prepare`/`review`/`submit` now call that
+  migration function once per command and always act as that one account;
+  multi-user is a dashboard concept only. All six existing dashboard
+  routes gained `Depends(get_current_user)` and switched from `all_*()` to
+  `by_user(current_user.id)`, proven by a real cross-account isolation
+  test; `/api/settings` gained `jwt_secret_key` to its redaction list (a
+  real leak caught while wiring this phase -- leaking the signing key
+  would let a caller forge a token for any user). `Settings.jwt_secret_key`
+  has no default and fails closed with a `500` if unset. New `/auth/*`
+  (register/login/logout/refresh/me/forgot-password/reset-password) and
+  `/user/*` (profile/preferences) routers -- the only write-capable
+  routers this API has ever had, proven structurally (every other route
+  stays `GET`-only). `forgot-password` always returns `202` regardless of
+  whether the email exists and issues a real hashed token, but sends no
+  email -- no transport exists yet (Phase 58); faking delivery was
+  refused. A process-local, in-memory fixed-window rate limiter guards
+  register/login/forgot-password (Redis deferred to the eventual
+  multi-instance deployment story, Phase 59). Frontend: `AuthProvider` +
+  `ProtectedRoute` + a refresh-aware `apiFetch` (attaches the token,
+  retries once via `/auth/refresh` on 401, dispatches a
+  `session-expired` event on final failure -> `SessionExpiredScreen`);
+  Login/Register/ForgotPassword/ResetPassword/Profile/Account pages. Two
+  real bugs found and fixed only by driving a live browser against a live
+  backend (not caught by any mocked-fetch unit test): (1) React Strict
+  Mode's dev-mode double-invoked effects raced refresh-token rotation and
+  lost a just-restored session -- fixed with a `useRef`-memoized in-flight
+  promise, now covered by a Strict-Mode regression test; (2) dark mode
+  never applied on the public auth pages at all, since Phase 55's
+  `useTheme()` call lived only inside `Navbar` -- fixed by lifting theme
+  state to a root-level `ThemeProvider`. 79 new backend tests (1069
+  total), 13 new frontend tests (29 total); manually verified end-to-end
+  with Playwright (register -> per-user empty dashboard -> profile update
+  -> reload preserves session -> logout -> redirect), light/dark and
+  mobile confirmed. No Postgres (one SQLite file with per-row ownership
+  fully satisfies the actual requirement), no admin capability wired
+  (`User.role`/`require_admin` exist, nothing grants elevated access yet),
+  no in-app change-password (reset-token flow only), no organizations/
+  billing (Phase 60).
+
 ---
 
 ## Deferred work (named, not forgotten)

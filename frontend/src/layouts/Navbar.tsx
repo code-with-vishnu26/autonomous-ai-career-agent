@@ -1,16 +1,25 @@
 import { useState } from "react";
-import { Menu, Moon, Sun, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { LogOut, Menu, Moon, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useTheme } from "@/hooks/useTheme";
+import { useThemeContext } from "@/hooks/useThemeContext";
+import { useAuth } from "@/hooks/useAuth";
 import { SidebarContent } from "./Sidebar";
 
 export function Navbar() {
-  const { theme, toggle } = useTheme();
+  const { theme, toggle } = useThemeContext();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <>
-      <header className="flex h-14 items-center justify-between border-b border-border px-4">
+      <header className="flex h-14 items-center justify-between gap-2 border-b border-border px-4">
         <Button
           variant="ghost"
           size="icon"
@@ -20,17 +29,27 @@ export function Navbar() {
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <span className="text-sm font-medium text-muted-foreground">
+        <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
           Autonomous AI Career Agent
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Toggle dark mode"
-          onClick={toggle}
-        >
-          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-        </Button>
+        <div className="flex items-center gap-2">
+          {user && (
+            <span className="hidden text-sm text-muted-foreground sm:inline">
+              {user.display_name ?? user.email}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Toggle dark mode"
+            onClick={toggle}
+          >
+            {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </Button>
+          <Button variant="ghost" size="icon" aria-label="Log out" onClick={handleLogout}>
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </div>
       </header>
 
       {mobileOpen && (

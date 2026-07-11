@@ -19,8 +19,13 @@ application row, the same never-mutate-history discipline as
 ``MasterProfile.version``.
 
 Plain stdlib ``sqlite3``, synchronous under the async methods: this is a
-single-user, local, personal-scale store -- an async driver would add a
-dependency for contention that cannot occur here. Documented, not hidden.
+single-*install*, local, personal-scale store -- an async driver would add
+a dependency for contention that cannot occur here. Documented, not
+hidden. Phase 56 (ADR-0074) adds multi-*user* data ownership within that
+one install (a ``user_id`` column on every user-owned table, plus
+``users``/``refresh_tokens``/``password_reset_tokens``/``user_preferences``)
+without changing this: still one SQLite file, still synchronous, still no
+concurrent-writer contention problem to solve.
 
 ``SqliteRunJournal`` (Phase 23, ADR-0049) is an append-only execution
 journal: one row per stage-transition event for one ``run_id``, used to
@@ -33,18 +38,22 @@ state machine is not justified yet).
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from career_agent.core.security import hash_password
 from career_agent.domain.application_session import ApplicationSession
 from career_agent.domain.identity import canonical_fingerprint
+from career_agent.domain.job_preferences import JobPreferences
 from career_agent.domain.journal import RunEvent
 from career_agent.domain.models import Application, Opportunity
 from career_agent.domain.resume_variants import ResumeVariant
 from career_agent.domain.review import ReviewSession
 from career_agent.domain.submission import SubmissionResult
+from career_agent.domain.user import User
 
 _OPPORTUNITY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS opportunities (
@@ -104,10 +113,13 @@ CREATE TABLE IF NOT EXISTS resume_variants (
     id TEXT PRIMARY KEY,
     category TEXT NOT NULL,
     payload TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    user_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_resume_variants_category
     ON resume_variants (category);
+CREATE INDEX IF NOT EXISTS idx_resume_variants_user
+    ON resume_variants (user_id);
 """
 
 _APPLICATION_SESSION_SCHEMA = """
@@ -116,10 +128,13 @@ CREATE TABLE IF NOT EXISTS application_sessions (
     opportunity_id TEXT NOT NULL,
     status TEXT NOT NULL,
     payload TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    user_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_application_sessions_opportunity
     ON application_sessions (opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_application_sessions_user
+    ON application_sessions (user_id);
 """
 
 _REVIEW_SESSION_SCHEMA = """
@@ -128,10 +143,13 @@ CREATE TABLE IF NOT EXISTS review_sessions (
     application_session_id TEXT NOT NULL,
     approval_status TEXT NOT NULL,
     payload TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    user_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_review_sessions_application_session
     ON review_sessions (application_session_id);
+CREATE INDEX IF NOT EXISTS idx_review_sessions_user
+    ON review_sessions (user_id);
 """
 
 _SUBMISSION_RESULT_SCHEMA = """
@@ -141,10 +159,60 @@ CREATE TABLE IF NOT EXISTS submission_results (
     opportunity_id TEXT NOT NULL,
     status TEXT NOT NULL,
     payload TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    user_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_submission_results_opportunity
     ON submission_results (opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_submission_results_user
+    ON submission_results (user_id);
+"""
+
+_USER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    hashed_password TEXT NOT NULL,
+    display_name TEXT,
+    role TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+_REFRESH_TOKEN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user
+    ON refresh_tokens (user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash
+    ON refresh_tokens (token_hash);
+"""
+
+_PASSWORD_RESET_TOKEN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user
+    ON password_reset_tokens (user_id);
+"""
+
+_USER_PREFERENCES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -416,17 +484,27 @@ class SqliteResumeVariantStore:
         with _connect(path) as connection:
             connection.executescript(_RESUME_VARIANT_SCHEMA)
 
-    def save(self, variant: ResumeVariant) -> None:
-        """Persist ``variant``. Never overwrites an existing row (append-only)."""
+    def save(self, variant: ResumeVariant, *, user_id: str) -> None:
+        """Persist ``variant`` for ``user_id``. Never overwrites (append-only).
+
+        ``user_id`` is a required keyword-only argument, deliberately with
+        no default (Phase 56, ADR-0074) -- a missing owner is a
+        ``TypeError`` at every call site, not a silent cross-user leak.
+        Stored as a plain query column, the same "denormalize identity
+        fields, not full content" precedent ``company``/``category``
+        already follow here; ``ResumeVariant`` itself stays a pure,
+        owner-agnostic domain object.
+        """
         with _connect(self._path) as connection:
             connection.execute(
                 "INSERT OR IGNORE INTO resume_variants"
-                " (id, category, payload, created_at) VALUES (?, ?, ?, ?)",
+                " (id, category, payload, created_at, user_id) VALUES (?, ?, ?, ?, ?)",
                 (
                     variant.id,
                     variant.category,
                     variant.model_dump_json(),
                     variant.created_at,
+                    user_id,
                 ),
             )
 
@@ -437,6 +515,18 @@ class SqliteResumeVariantStore:
                 "SELECT payload FROM resume_variants WHERE category = ?"
                 " ORDER BY created_at DESC",
                 (category,),
+            ).fetchall()
+        return [
+            ResumeVariant.model_validate(json.loads(row["payload"])) for row in rows
+        ]
+
+    def by_user(self, user_id: str) -> list[ResumeVariant]:
+        """Every stored variant owned by ``user_id``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM resume_variants WHERE user_id = ?"
+                " ORDER BY created_at DESC",
+                (user_id,),
             ).fetchall()
         return [
             ResumeVariant.model_validate(json.loads(row["payload"])) for row in rows
@@ -483,19 +573,24 @@ class SqliteApplicationSessionStore:
         with _connect(path) as connection:
             connection.executescript(_APPLICATION_SESSION_SCHEMA)
 
-    def save(self, session: ApplicationSession) -> None:
-        """Persist ``session``. Never overwrites an existing row (append-only)."""
+    def save(self, session: ApplicationSession, *, user_id: str) -> None:
+        """Persist ``session`` for ``user_id``. Never overwrites (append-only).
+
+        ``user_id`` required, no default (Phase 56, ADR-0074) -- see
+        :meth:`SqliteResumeVariantStore.save` for why.
+        """
         with _connect(self._path) as connection:
             connection.execute(
                 "INSERT OR IGNORE INTO application_sessions"
-                " (id, opportunity_id, status, payload, created_at)"
-                " VALUES (?, ?, ?, ?, ?)",
+                " (id, opportunity_id, status, payload, created_at, user_id)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     session.id,
                     session.opportunity_id,
                     session.status,
                     session.model_dump_json(),
                     session.created_at.isoformat(),
+                    user_id,
                 ),
             )
 
@@ -523,6 +618,19 @@ class SqliteApplicationSessionStore:
             for row in rows
         ]
 
+    def by_user(self, user_id: str) -> list[ApplicationSession]:
+        """Every stored session owned by ``user_id``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM application_sessions WHERE user_id = ?"
+                " ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [
+            ApplicationSession.model_validate(json.loads(row["payload"]))
+            for row in rows
+        ]
+
 
 class SqliteReviewSessionStore:
     """Append-only human-review-decision audit trail (Phase 52, ADR-0070).
@@ -540,19 +648,24 @@ class SqliteReviewSessionStore:
         with _connect(path) as connection:
             connection.executescript(_REVIEW_SESSION_SCHEMA)
 
-    def save(self, review: ReviewSession) -> None:
-        """Persist ``review``. Never overwrites an existing row (append-only)."""
+    def save(self, review: ReviewSession, *, user_id: str) -> None:
+        """Persist ``review`` for ``user_id``. Never overwrites (append-only).
+
+        ``user_id`` required, no default (Phase 56, ADR-0074) -- see
+        :meth:`SqliteResumeVariantStore.save` for why.
+        """
         with _connect(self._path) as connection:
             connection.execute(
                 "INSERT OR IGNORE INTO review_sessions"
-                " (id, application_session_id, approval_status, payload, created_at)"
-                " VALUES (?, ?, ?, ?, ?)",
+                " (id, application_session_id, approval_status, payload, created_at,"
+                " user_id) VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     review.id,
                     review.application_session_id,
                     review.approval_status,
                     review.model_dump_json(),
                     review.created_at.isoformat(),
+                    user_id,
                 ),
             )
 
@@ -580,6 +693,18 @@ class SqliteReviewSessionStore:
             ReviewSession.model_validate(json.loads(row["payload"])) for row in rows
         ]
 
+    def by_user(self, user_id: str) -> list[ReviewSession]:
+        """Every stored review owned by ``user_id``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM review_sessions WHERE user_id = ?"
+                " ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [
+            ReviewSession.model_validate(json.loads(row["payload"])) for row in rows
+        ]
+
 
 class SqliteSubmissionResultStore:
     """Append-only submission-attempt audit trail (Phase 53, ADR-0071).
@@ -598,13 +723,17 @@ class SqliteSubmissionResultStore:
         with _connect(path) as connection:
             connection.executescript(_SUBMISSION_RESULT_SCHEMA)
 
-    def save(self, result: SubmissionResult) -> None:
-        """Persist ``result``. Never overwrites an existing row (append-only)."""
+    def save(self, result: SubmissionResult, *, user_id: str) -> None:
+        """Persist ``result`` for ``user_id``. Never overwrites (append-only).
+
+        ``user_id`` required, no default (Phase 56, ADR-0074) -- see
+        :meth:`SqliteResumeVariantStore.save` for why.
+        """
         with _connect(self._path) as connection:
             connection.execute(
                 "INSERT OR IGNORE INTO submission_results"
                 " (id, application_session_id, opportunity_id, status, payload,"
-                " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                " created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     result.id,
                     result.application_session_id,
@@ -612,6 +741,7 @@ class SqliteSubmissionResultStore:
                     result.status,
                     result.model_dump_json(),
                     (result.submitted_at or datetime.now(UTC)).isoformat(),
+                    user_id,
                 ),
             )
 
@@ -638,3 +768,347 @@ class SqliteSubmissionResultStore:
             SubmissionResult.model_validate(json.loads(row["payload"]))
             for row in rows
         ]
+
+    def by_user(self, user_id: str) -> list[SubmissionResult]:
+        """Every stored result owned by ``user_id``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM submission_results WHERE user_id = ?"
+                " ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [
+            SubmissionResult.model_validate(json.loads(row["payload"]))
+            for row in rows
+        ]
+
+
+class SqliteUserStore:
+    """Account store (Phase 56, ADR-0074).
+
+    ``email`` is unique, enforced by the schema's own ``UNIQUE`` constraint,
+    not just application-level checking -- a race between two concurrent
+    registrations with the same email can never both succeed.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_USER_SCHEMA)
+
+    def create(self, user: User) -> None:
+        """Insert a new account.
+
+        Raises ``sqlite3.IntegrityError`` for a duplicate email.
+        """
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO users"
+                " (id, email, hashed_password, display_name, role, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    user.id,
+                    user.email,
+                    user.hashed_password,
+                    user.display_name,
+                    user.role,
+                    user.created_at.isoformat(),
+                ),
+            )
+
+    def by_email(self, email: str) -> User | None:
+        """The account with ``email`` (case/whitespace-normalized), or ``None``."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT * FROM users WHERE email = ?", (email.strip().lower(),)
+            ).fetchone()
+        return _user_from_row(row) if row else None
+
+    def by_id(self, user_id: str) -> User | None:
+        """The account with ``user_id``, or ``None``."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+        return _user_from_row(row) if row else None
+
+    def update_profile(self, user_id: str, *, display_name: str | None) -> None:
+        """Update the mutable account-profile fields.
+
+        Email/password/role are never changed here -- password changes go
+        through the auth flow (verify-old-password), and there is no
+        role-elevation endpoint at all yet (Phase 56 wires no admin
+        capability).
+        """
+        with _connect(self._path) as connection:
+            connection.execute(
+                "UPDATE users SET display_name = ? WHERE id = ?",
+                (display_name, user_id),
+            )
+
+    def update_password(self, user_id: str, *, hashed_password: str) -> None:
+        """Replace the stored password hash.
+
+        Used by both the change-password and reset-password flows.
+        """
+        with _connect(self._path) as connection:
+            connection.execute(
+                "UPDATE users SET hashed_password = ? WHERE id = ?",
+                (hashed_password, user_id),
+            )
+
+
+def _user_from_row(row: sqlite3.Row) -> User:
+    return User(
+        id=row["id"],
+        email=row["email"],
+        hashed_password=row["hashed_password"],
+        display_name=row["display_name"],
+        role=row["role"],
+        created_at=row["created_at"],
+    )
+
+
+class SqliteRefreshTokenStore:
+    """Refresh-token store (Phase 56, ADR-0074).
+
+    Only a *hash* of each token is ever stored -- see
+    :func:`~career_agent.core.security.hash_opaque_token` -- so a database
+    read (backup, leak, `sqlite3` CLI on the file) can never itself be
+    used to authenticate as anyone. ``revoked`` is a real column, not a
+    delete, so a revoked-token-reuse attempt is still observable in the
+    data rather than silently vanishing.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_REFRESH_TOKEN_SCHEMA)
+
+    def save(
+        self, *, token_id: str, user_id: str, token_hash: str, expires_at: datetime
+    ) -> None:
+        """Persist a newly issued refresh token (hash only)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO refresh_tokens"
+                " (id, user_id, token_hash, expires_at, revoked, created_at)"
+                " VALUES (?, ?, ?, ?, 0, ?)",
+                (
+                    token_id,
+                    user_id,
+                    token_hash,
+                    expires_at.isoformat(),
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+    def find_active(self, token_hash: str) -> dict | None:
+        """The row for ``token_hash`` iff it exists and is not revoked.
+
+        Returns a plain dict (not a domain model -- this is an internal
+        lookup table, not something the API ever serializes to a client)
+        with ``id``/``user_id``/``expires_at``, or ``None`` if the hash is
+        unknown or the token was revoked.
+        """
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT id, user_id, expires_at FROM refresh_tokens"
+                " WHERE token_hash = ? AND revoked = 0",
+                (token_hash,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "expires_at": datetime.fromisoformat(row["expires_at"]),
+        }
+
+    def revoke(self, token_id: str) -> None:
+        """Mark one refresh token revoked (used on logout and on rotation-on-use)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "UPDATE refresh_tokens SET revoked = 1 WHERE id = ?", (token_id,)
+            )
+
+    def revoke_all_for_user(self, user_id: str) -> None:
+        """Revoke every refresh token for ``user_id`` (on password change/reset)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?", (user_id,)
+            )
+
+
+class SqlitePasswordResetTokenStore:
+    """Password-reset-token store (Phase 56, ADR-0074).
+
+    Same "store a hash, not the token" discipline as
+    :class:`SqliteRefreshTokenStore`. ``used`` is a real column (not a
+    delete) so a used-token-reuse attempt is provably rejected rather than
+    coincidentally absent.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_PASSWORD_RESET_TOKEN_SCHEMA)
+
+    def save(
+        self, *, token_id: str, user_id: str, token_hash: str, expires_at: datetime
+    ) -> None:
+        """Persist a newly issued password-reset token (hash only)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO password_reset_tokens"
+                " (id, user_id, token_hash, expires_at, used, created_at)"
+                " VALUES (?, ?, ?, ?, 0, ?)",
+                (
+                    token_id,
+                    user_id,
+                    token_hash,
+                    expires_at.isoformat(),
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+    def find_unused(self, token_hash: str) -> dict | None:
+        """The row for ``token_hash`` iff it exists and hasn't been used yet."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT id, user_id, expires_at FROM password_reset_tokens"
+                " WHERE token_hash = ? AND used = 0",
+                (token_hash,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "expires_at": datetime.fromisoformat(row["expires_at"]),
+        }
+
+    def mark_used(self, token_id: str) -> None:
+        """Mark one reset token consumed -- it can never be replayed."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "UPDATE password_reset_tokens SET used = 1 WHERE id = ?", (token_id,)
+            )
+
+
+class SqliteUserPreferencesStore:
+    """Per-user Job Search Preferences (Phase 56, ADR-0074).
+
+    Extends :class:`~career_agent.domain.job_preferences.JobPreferences`
+    (Phase 46, ADR-0064) -- unmodified -- from a single CWD-relative
+    ``job_preferences.json`` file to one row per user, keyed by
+    ``user_id``. The CLI's file-based store
+    (:mod:`career_agent.storage.job_preferences`) is untouched and still
+    exactly what ``career-agent preferences``/``discover`` use for the
+    local operator; this is the dashboard's per-dashboard-user analogue,
+    not a replacement.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_USER_PREFERENCES_SCHEMA)
+
+    def save(self, user_id: str, preferences: JobPreferences) -> None:
+        """Upsert ``user_id``'s preferences.
+
+        A real update, unlike the append-only stores above -- there is
+        exactly one preferences row per user, and it should reflect their
+        latest choice, not a history of every edit.
+        """
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO user_preferences (user_id, payload, updated_at)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload,"
+                " updated_at = excluded.updated_at",
+                (
+                    user_id,
+                    preferences.model_dump_json(),
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+    def get(self, user_id: str) -> JobPreferences | None:
+        """``user_id``'s stored preferences, or ``None`` if never saved."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM user_preferences WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return JobPreferences.model_validate(json.loads(row["payload"]))
+
+
+def migrate_to_multi_user(path: Path, *, default_operator_email: str) -> str:
+    """One-time, idempotent migration for a database predating multi-user support.
+
+    Phase 56, ADR-0074. Every user-owned table (``resume_variants``/
+    ``application_sessions``/``review_sessions``/``submission_results``)
+    gets a ``user_id`` column
+    added if it's missing (a pre-Phase-56 database's tables predate the
+    column entirely -- ``CREATE TABLE IF NOT EXISTS`` is a no-op against
+    an existing table, so the column has to be added explicitly via
+    ``ALTER TABLE``). Every row with ``user_id IS NULL`` -- i.e. every row
+    that existed before this migration ever ran -- is then backfilled to
+    one real, auto-created "default operator" account
+    (``default_operator_email``), so no historical data is silently
+    orphaned or deleted.
+
+    Returns the default operator's user id. Safe to call on every
+    process startup (idempotent): a database that already has the
+    ``user_id`` column and no ``NULL`` rows left does nothing beyond the
+    one cheap existence check per table.
+    """
+    user_store = SqliteUserStore(path)
+    default_user = user_store.by_email(default_operator_email)
+    if default_user is None:
+        default_user = User(
+            id=str(uuid.uuid4()),
+            email=default_operator_email,
+            # No real password: this account is never logged into via the
+            # API (nothing hands out its credentials) -- it exists solely
+            # as the CLI's fixed local-operator identity and as the owner
+            # of record for pre-migration rows. A random, never-recorded
+            # value keeps `hashed_password` a real bcrypt hash (so nothing
+            # downstream has to special-case "no password") without ever
+            # being a guessable or reused value.
+            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            role="user",
+            created_at=datetime.now(UTC),
+        )
+        user_store.create(default_user)
+
+    for table, schema in (
+        ("resume_variants", _RESUME_VARIANT_SCHEMA),
+        ("application_sessions", _APPLICATION_SESSION_SCHEMA),
+        ("review_sessions", _REVIEW_SESSION_SCHEMA),
+        ("submission_results", _SUBMISSION_RESULT_SCHEMA),
+    ):
+        with _connect(path) as connection:
+            # The column must exist *before* the schema script runs --
+            # that script's own CREATE INDEX on user_id would otherwise
+            # fail against a pre-Phase-56 table that predates the column,
+            # since CREATE TABLE IF NOT EXISTS is a no-op here.
+            columns = {
+                row["name"]
+                for row in connection.execute(f"PRAGMA table_info({table})")
+            }
+            if columns and "user_id" not in columns:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT")
+            connection.executescript(schema)
+            connection.execute(
+                f"UPDATE {table} SET user_id = ? WHERE user_id IS NULL",
+                (default_user.id,),
+            )
+
+    return default_user.id

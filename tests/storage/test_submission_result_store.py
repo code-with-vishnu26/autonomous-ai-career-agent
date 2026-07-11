@@ -30,14 +30,14 @@ def _result(
 def test_save_then_by_opportunity_round_trips(tmp_path: Path) -> None:
     store = SqliteSubmissionResultStore(tmp_path / "db.sqlite")
     result = _result("sub-1")
-    store.save(result)
+    store.save(result, user_id="u1")
     assert store.by_opportunity("opp-1") == [result]
 
 
 def test_by_opportunity_only_returns_matching(tmp_path: Path) -> None:
     store = SqliteSubmissionResultStore(tmp_path / "db.sqlite")
-    store.save(_result("sub-1", opportunity_id="opp-1"))
-    store.save(_result("sub-2", opportunity_id="opp-2"))
+    store.save(_result("sub-1", opportunity_id="opp-1"), user_id="u1")
+    store.save(_result("sub-2", opportunity_id="opp-2"), user_id="u1")
     assert [r.id for r in store.by_opportunity("opp-1")] == ["sub-1"]
     assert [r.id for r in store.by_opportunity("opp-2")] == ["sub-2"]
 
@@ -50,9 +50,9 @@ def test_by_opportunity_unknown_returns_empty(tmp_path: Path) -> None:
 def test_save_is_append_only_never_overwrites(tmp_path: Path) -> None:
     store = SqliteSubmissionResultStore(tmp_path / "db.sqlite")
     original = _result("sub-1", status="REFUSED")
-    store.save(original)
+    store.save(original, user_id="u1")
     mutated = original.model_copy(update={"status": "SUBMITTED", "submitted": True})
-    store.save(mutated)
+    store.save(mutated, user_id="u1")
     result = store.by_opportunity("opp-1")
     assert len(result) == 1
     assert result[0].status == "REFUSED"
@@ -60,15 +60,15 @@ def test_save_is_append_only_never_overwrites(tmp_path: Path) -> None:
 
 def test_all_results_returns_every_opportunity(tmp_path: Path) -> None:
     store = SqliteSubmissionResultStore(tmp_path / "db.sqlite")
-    store.save(_result("sub-1", opportunity_id="opp-1"))
-    store.save(_result("sub-2", opportunity_id="opp-2"))
+    store.save(_result("sub-1", opportunity_id="opp-1"), user_id="u1")
+    store.save(_result("sub-2", opportunity_id="opp-2"), user_id="u1")
     ids = {r.id for r in store.all_results()}
     assert ids == {"sub-1", "sub-2"}
 
 
 def test_survives_close_and_reopen(tmp_path: Path) -> None:
     path = tmp_path / "db.sqlite"
-    SqliteSubmissionResultStore(path).save(_result("sub-1"))
+    SqliteSubmissionResultStore(path).save(_result("sub-1"), user_id="u1")
     reopened = SqliteSubmissionResultStore(path)
     assert [r.id for r in reopened.by_opportunity("opp-1")] == ["sub-1"]
 
