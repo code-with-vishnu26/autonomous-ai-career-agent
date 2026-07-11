@@ -48,10 +48,12 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from career_agent import __version__
+from career_agent.agents.application.engine import ApplicationPreparationEngine
 from career_agent.agents.planner.decide import DecisionScore
 from career_agent.agents.planner.sensitivity import RankFlipPoint, rank_flip_points
 from career_agent.agents.resume.gate import LLMTruthfulnessGate
 from career_agent.agents.resume.generator import LLMResumeGenerator, MissingSummaryError
+from career_agent.agents.resume.materials import ResumeVariantEngine
 from career_agent.agents.resume.pipeline import ResumeTailoringPipeline
 from career_agent.core.bus import EventBus
 from career_agent.core.config import Settings
@@ -82,6 +84,13 @@ from career_agent.domain.models import (
     SubmissionPreview,
 )
 from career_agent.domain.pareto import ObjectivePoint, analyze_frontier
+from career_agent.integrations.adapters.base import FeatureUnavailableError
+from career_agent.integrations.browser.browser_manager import BrowserManager
+from career_agent.integrations.browser.session_manager import SessionManager
+from career_agent.integrations.browser_session import (
+    EncryptedSessionStore,
+    KeyringKeyProvider,
+)
 from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
     diagnose_prompt_drift,
@@ -114,8 +123,10 @@ from career_agent.storage.profile import (
     write_profile_scaffold,
 )
 from career_agent.storage.sqlite import (
+    SqliteApplicationSessionStore,
     SqliteApplicationStore,
     SqliteOpportunityRepository,
+    SqliteResumeVariantStore,
     SqliteRunJournal,
 )
 
@@ -430,6 +441,136 @@ async def run_apply_command(
         run_journal=SqliteRunJournal(Path(settings.database_path)),
         notifier=build_notifier(settings),
     )
+
+
+async def run_prepare_command(
+    *, profile_path: Path, opportunity_path: Path
+) -> int:
+    """The real ``career-agent prepare`` entry point (Phase 51, ADR-0069).
+
+    Tailors and gates a résumé and assembles a cover letter (Phase 50's
+    ``ResumeVariantEngine``, reused unmodified), then opens a real browser
+    and fills as much of the live application form as it safely can --
+    stopping before any Submit click. Never constructs an ``Applicator``
+    and never invokes a submission method -- see
+    ``ApplicationPreparationEngine`` for the structural guarantee.
+    """
+    try:
+        profile = load_master_profile(profile_path)
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ProfileValidationError,
+        ValidationError,
+    ) as exc:
+        print(f"Could not load profile from {profile_path}: {exc}")
+        return 1
+
+    try:
+        opportunity = _load_opportunity(opportunity_path)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        print(f"Could not load opportunity from {opportunity_path}: {exc}")
+        return 1
+
+    settings = Settings()
+    try:
+        claim_verifier = select_claim_verifier(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
+        return 1
+
+    results_dir = Path(settings.promptfoo_results_dir)
+    try:
+        verify_promptfoo_results(
+            claim_verifier.prompt_version,
+            results_dir,
+            provider_id=claim_verifier.provider_id,
+        )
+    except PromptfooNotValidatedError as exc:
+        print(str(exc))
+        return 1
+
+    try:
+        content_drafter = select_content_drafter(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
+        return 1
+
+    generator = LLMResumeGenerator(content_drafter)
+    gate = LLMTruthfulnessGate(claim_verifier)
+    semantic_matcher = select_semantic_matcher(settings)
+    pipeline = ResumeTailoringPipeline(
+        generator,
+        gate,
+        EventBus(),
+        artifacts_dir=Path(settings.artifacts_dir),
+        ats_threshold=settings.ats_threshold,
+        semantic_matcher=semantic_matcher,
+    )
+    variant_store = SqliteResumeVariantStore(Path(settings.database_path))
+    variant_engine = ResumeVariantEngine(pipeline)
+    category = opportunity.title
+    try:
+        materials = await variant_engine.build_materials(
+            opportunity,
+            profile,
+            category=category,
+            prior_variants=variant_store.by_category(category),
+        )
+    except MissingSummaryError as exc:
+        print(f"Cannot tailor a resume: {exc}")
+        return 1
+    except AtsScoreBelowThresholdError as exc:
+        print("The ATS score gate refused this application:")
+        print(str(exc))
+        return 1
+
+    if materials.tailoring.submittable is None:
+        print("The truthfulness gate rejected this draft:")
+        for rejection in materials.tailoring.application.resume.truthfulness.rejections:
+            print(f"  - [{rejection.category}] {rejection.detail}")
+        return 1
+    if materials.new_variant is not None:
+        variant_store.save(materials.new_variant)
+
+    print(f"Provider detected: {resolve_ats_kind(opportunity.source_url)}")
+    print("Opening browser...")
+
+    browser_manager = BrowserManager()
+    session_manager = SessionManager(
+        EncryptedSessionStore(
+            Path(settings.browser_session_dir), KeyringKeyProvider()
+        )
+    )
+    engine = ApplicationPreparationEngine(browser_manager, session_manager)
+    try:
+        session = await engine.build_session(
+            opportunity,
+            materials.tailoring.submittable,
+            cover_letter=materials.cover_letter,
+            resume_variant_id=(
+                materials.new_variant.id if materials.new_variant else None
+            ),
+        )
+    except FeatureUnavailableError as exc:
+        print(str(exc))
+        return 1
+    finally:
+        await browser_manager.close()
+
+    SqliteApplicationSessionStore(Path(settings.database_path)).save(session)
+
+    print(f"Application prepared. Status: {session.status}")
+    if session.filled_fields:
+        print(f"Filled fields: {session.filled_fields}")
+    if session.uploaded_files:
+        print(f"Uploaded: {session.uploaded_files}")
+    if session.missing_fields:
+        print(f"Needs human review: {session.missing_fields}")
+    for warning in session.warnings:
+        print(f"Warning: {warning}")
+    print("Nothing was submitted.")
+    return 0
 
 
 #: Printed once per ranked-summary run, only if some displayed opportunity's
@@ -1729,6 +1870,27 @@ def main(argv: list[str] | None = None) -> None:
         help="Path to a JSON file describing the Opportunity to apply to.",
     )
 
+    prepare_parser = subparsers.add_parser(
+        "prepare",
+        help=(
+            "Tailor, gate, generate a cover letter, and fill out a real "
+            "application form in a live browser -- stopping before Submit "
+            "(Phase 51, ADR-0069). Never submits anything."
+        ),
+    )
+    prepare_parser.add_argument(
+        "--profile",
+        type=Path,
+        required=True,
+        help="Path to your JSON Resume master profile.",
+    )
+    prepare_parser.add_argument(
+        "--opportunity-file",
+        type=Path,
+        required=True,
+        help="Path to a JSON file describing the Opportunity to prepare.",
+    )
+
     discover_parser = subparsers.add_parser(
         "discover",
         help="Poll every configured source, dedup, persist, and write "
@@ -1926,6 +2088,14 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "apply":
         exit_code = asyncio.run(
             run_apply_command(
+                profile_path=args.profile, opportunity_path=args.opportunity_file
+            )
+        )
+        raise SystemExit(exit_code)
+
+    if args.command == "prepare":
+        exit_code = asyncio.run(
+            run_prepare_command(
                 profile_path=args.profile, opportunity_path=args.opportunity_file
             )
         )
