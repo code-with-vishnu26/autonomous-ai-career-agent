@@ -135,10 +135,29 @@ a local Promptfoo evidence run — see
 `career-agent verify-promptfoo` checks the result it produces before `apply`
 will use a real provider.
 
+### Job Search Preferences (optional, before `discover`)
+
+```bash
+career-agent preferences
+```
+
+An interactive wizard for what kind of job you're looking for — titles,
+seniority, location, salary, preferred/blacklisted companies, and more.
+This is a **separate file** (`job_preferences.json`), never mixed into
+`profile.json` — see [ADR-0064](docs/adr/0064-job-search-preferences-separate-from-profile.md)
+for why. Once saved, `discover`/`auto` use it to generate targeted search
+queries (e.g. "Backend Developer Remote", "Backend Developer India")
+instead of one generic keyword. Re-running `career-agent preferences`
+shows your current values and only changes what you answer — you never
+have to re-enter everything. Most fields (salary, visa sponsorship,
+company allow/deny lists, and a few behavior toggles) are captured now as
+configuration for upcoming phases and are **not yet enforced** — the
+wizard says so at each such prompt.
+
 Core commands:
 
 ```
-career-agent setup | import-cv | promote-cv | discover | apply | auto
+career-agent setup | preferences | import-cv | promote-cv | discover | apply | auto
 career-agent outcome | report | export | verify-promptfoo | diagnose-promptfoo-drift
 ```
 

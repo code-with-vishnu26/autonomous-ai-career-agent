@@ -1134,6 +1134,39 @@ profile.
   README's editable-install-only policy. No version bump, no safety change,
   no tag mutation.
 
+## v2: automation layer (foundation)
+
+- ✅ **User Job Preference Engine -- ADR-0064 (Phase 46).** The first phase
+  of a new v2 automation layer built on top of the existing prepare-only
+  engine (the engine itself -- discovery, decide, truthfulness gate, ATS
+  scoring, tailoring, tracker -- is unchanged). A new, deliberately
+  separate model/file (`domain/job_preferences.py` /
+  `storage/job_preferences.py` / `job_preferences.json`, never merged into
+  `profile.json`) captures titles, seniority, experience range, employment
+  type, work mode, location, salary, preferred/blacklisted companies,
+  industries, visa sponsorship, preferred technologies, include/exclude
+  keywords, and a handful of behavior toggles for future phases. New
+  interactive `career-agent preferences` wizard (injected `input_fn`, no
+  globals, matching `capture-legal-status`'s shape) -- re-running it to
+  tweak one field never requires re-entering the rest. `discover`/`auto`
+  now generate intelligent search queries from preferences (title x
+  location combinations, e.g. "Backend Developer Remote", "Backend
+  Developer India") and fan Adzuna/Reed/USAJobs/Jooble out across them,
+  instead of one static keyword string -- proven byte-identical to the
+  prior single-keyword behavior when no preferences are configured (a
+  regression guard, not just a docstring claim). Only the title/location/
+  work-mode/exclude-keyword fields are wired to real behavior this phase;
+  every other field (salary, visa, company lists, the confirmation/
+  auto-tailor/auto-cover-letter toggles, max applications/day) is captured
+  and persisted but explicitly documented as not yet enforced -- named,
+  deferred integration points, not silent overclaims. The prepare-only
+  execution boundary is untouched: `require_human_confirmation` is
+  informational only and cannot bypass the real, hardcoded confirmation
+  step. Incidental fix: `profile.json` was never actually gitignored
+  (only the unused `master_profile.json` pattern was) -- fixed alongside
+  adding `/job_preferences.json`. 41 new tests; 762 total. No browser
+  automation in this phase -- that begins Phase 47.
+
 ---
 
 ## Deferred work (named, not forgotten)
