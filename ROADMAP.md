@@ -1334,6 +1334,52 @@ profile.
   mutation, no AI review, no résumé/field editing, no Submission Engine,
   no new dependency, no version bump.
 
+- ✅ **Human-Approved Submission Engine -- ADR-0071 (Phase 53).** The
+  boundary every phase since Phase 24 (ADR-0050) built toward and refused
+  to cross -- undertaken only after the user's own explicit, detailed,
+  safety-first authorization. The audit found the actual executor already
+  exists: `BrowserApplicator` (Tier 2, ADR-0020/0028/0032) already does
+  fill -> triage/auto-answer -> click submit -> check for a challenge ->
+  return `ApplicationSubmitted`, unwired specifically pending this
+  boundary. **This phase builds the fail-closed gate in front of it, not
+  a second implementation.** `agents/submission/submission_engine.py::
+  SubmissionEngine` checks, in order: the review and application session
+  actually pair together; the review is `APPROVED`; the application
+  session is still `READY_FOR_REVIEW`; the résumé about to be submitted
+  matches (content-for-content, via a new `SqliteResumeVariantStore.get`)
+  what was actually reviewed -- a profile edit in between refuses rather
+  than silently submitting different content; `domain/execution.py`'s
+  unmodified fail-closed boundary (`execute_allowed`, `resolve_source_policy`
+  -- only Greenhouse/Lever/Ashby resolve `ASSISTED`, everything else
+  refuses) evaluated as a dry run *before* ever asking the human anything,
+  so a doomed attempt never wastes their attention; and only then a real
+  5-second countdown plus a blocking ENTER confirmation
+  (`_countdown_and_confirm`), un-bypassable, Ctrl+C recorded as
+  `CANCELLED`. No fabricated verification: this codebase has never
+  verified a "Thank you" page/confirmation number on any platform, so
+  `confirmation_id`/`confirmation_url` stay `None` with an explicit
+  warning rather than guessed; the only verified signal is
+  `BrowserApplicator`'s own `ApplicationSubmitted`/`HumanActionRequired`
+  distinction, reused unchanged. A generic exception during the actual
+  submit call (which contains the click) is recorded `UNKNOWN`, never
+  `FAILED` -- the same "ambiguous evidence can never become a definite
+  result" rule `domain.execution.outcome_from_ack` already enforces,
+  applied to this exception-handling decision. No new `verification.py`/
+  `tracker.py`: verification *is* the reused event distinction (no new
+  algorithm to house), `SqliteSubmissionResultStore` joins the existing
+  one-file `storage/sqlite.py` convention, and `storage/excel.py` gains a
+  small `export_submissions()` sibling. **Found and deliberately rewrote**
+  (not weakened) `tests/test_phase28_release_invariants.py`'s blanket
+  `.submit(`/`.prepare(` ban -- correctly tripped by this phase's own
+  `engine.submit(` call -- into a stronger, more precise invariant proving
+  `execute_allowed()` genuinely runs before the real executor call, Tier 1/
+  email remain fully dead, and `BrowserApplicator` is only ever
+  constructed inside `SubmissionEngine`, never directly in `cli.py`. 27
+  new tests; 974 total. No CAPTCHA/MFA automation, no password storage, no
+  silent retry, no AI verification, no change to `BrowserApplicator`/
+  `ApplicationPreparationEngine`/`ReviewEngine`, no new dependency, no
+  version bump.
+
 ---
 
 ## Deferred work (named, not forgotten)

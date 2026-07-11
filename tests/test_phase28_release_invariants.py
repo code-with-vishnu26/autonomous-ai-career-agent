@@ -3,9 +3,20 @@
 A single consolidated place asserting the cross-cutting release invariants
 that are not otherwise pinned as one contract. Per-component behavior is
 proven by the phase suites (referenced in ADR-0054's invariant table); this
-file pins the *release-gate* properties: no external submission is
-reachable, the truthfulness release gate is enforced offline, the network
-guard is active, and no machine-local artifact is required.
+file pins the *release-gate* properties: the truthfulness release gate is
+enforced offline, the network guard is active, and no machine-local
+artifact is required.
+
+**External submission was categorically unreachable from the CLI through
+Phase 52.** Phase 53 (ADR-0071) deliberately, explicitly changes that --
+with the user's own explicit authorization, behind ``domain/execution.py``'s
+pre-existing fail-closed boundary (built in Phase 24 for exactly this
+moment) and one final, un-bypassable human confirmation. The invariant
+below is updated, not weakened, to match: submission is reachable from
+exactly one place (``SubmissionEngine``), the two tiers that remain
+genuinely dead (Tier 1 direct-API, email) are still never constructed
+anywhere, and the fail-closed boundary is proven to run *before* the real
+executor call, not just present somewhere in the file.
 """
 
 from __future__ import annotations
@@ -15,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+import career_agent.agents.submission.submission_engine as submission_engine_module
 import career_agent.cli as cli_module
 from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
@@ -22,20 +34,28 @@ from career_agent.llm.promptfoo_gate import (
 )
 
 
-# I16 / I74-78: no external submission path is reachable from the CLI.
-def test_no_external_submission_is_reachable_from_the_cli() -> None:
+# I16 / I74-78: external submission is reachable from the CLI ONLY through
+# the fail-closed Submission Engine (Phase 53, ADR-0071) -- never directly,
+# and never through the two tiers that remain genuinely dead.
+def test_only_the_submission_engine_can_reach_a_real_executor() -> None:
     source = inspect.getsource(cli_module)
-    # The composition root constructs no concrete Applicator and calls no
-    # submit/prepare -- every Applicator mention is documentation.
-    for forbidden in (
-        "TieredApplicator(",
-        "BrowserApplicator(",
-        "EmailApplicator(",
-        "SubmissionPipeline(",
-        ".submit(",
-        ".prepare(",
-    ):
+    # Tier 1 (direct-API) and email remain fully unwired -- Phase 53 only
+    # ever gates the browser tier, and only through SubmissionEngine.
+    for forbidden in ("TieredApplicator(", "EmailApplicator(", "SubmissionPipeline("):
         assert forbidden not in source, f"cli.py contains {forbidden!r}"
+    # BrowserApplicator is never constructed directly in cli.py -- only
+    # inside SubmissionEngine, the sole gated entry point.
+    assert "BrowserApplicator(" not in source
+    assert "SubmissionEngine(" in source
+
+    engine_source = inspect.getsource(submission_engine_module)
+    assert "execute_allowed(" in engine_source
+    assert "ExecutionRequest(" in engine_source
+    # The fail-closed boundary must be consulted textually before the real
+    # submit call -- not merely present somewhere in the same file.
+    assert engine_source.index("execute_allowed(") < engine_source.index(
+        "applicator.submit("
+    ), "execute_allowed() must be checked before the real submit() call"
 
 
 # I11: the truthfulness release gate blocks a required live-verifier path

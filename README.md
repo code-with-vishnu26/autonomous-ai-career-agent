@@ -9,12 +9,18 @@ This is **not** a mass job-application bot and **not** a multi-tenant SaaS. It i
 a personal agent you own end-to-end. Its guiding principle is **quality over
 volume**: fewer, sharper, *truthful* applications.
 
-**Product safety posture: `PREPARE_ONLY`.** The agent prepares everything up to
-a human confirmation and then **stops** — it does **not** submit applications to
-any external system. This is the product's submission capability (unchanged
-across v1.0 and v1.1), independent of the software release state. See
+**Released software (`v1.0.0`/`v1.1.0`) posture: `PREPARE_ONLY`.** The agent
+prepares everything up to a human confirmation and then **stops** — the
+tagged releases do **not** submit applications to any external system. See
 [Scope & limitations](#scope--limitations) and
 [ADR-0056](docs/adr/0056-v1-prepare-only-release-scope.md).
+
+**Current `main` (v2 development) adds one, explicitly human-gated
+exception: `career-agent submit`** (Phase 53, [ADR-0071](docs/adr/0071-human-approved-submission-engine.md)).
+It is never autonomous — every single application requires its own
+explicit review approval (`career-agent review`) *and* a final countdown
+plus a blocking confirmation prompt immediately before the click. Nothing
+is ever submitted without you, in the moment, saying so twice.
 
 ---
 
@@ -157,7 +163,7 @@ wizard says so at each such prompt.
 Core commands:
 
 ```
-career-agent setup | preferences | import-cv | promote-cv | discover | apply | auto | prepare | review
+career-agent setup | preferences | import-cv | promote-cv | discover | apply | auto | prepare | review | submit
 career-agent outcome | report | export | verify-promptfoo | diagnose-promptfoo-drift
 ```
 
@@ -165,7 +171,9 @@ career-agent outcome | report | export | verify-promptfoo | diagnose-promptfoo-d
 stop at confirmation; `prepare` additionally fills out a real application
 form in a live browser and stops before Submit; `review` is the only place
 a prepared application can be marked approved, and only by your own
-explicit decision. None of them submits.
+explicit decision; `submit` is the only command that can click a real
+Submit button, and only after `review`'s approval plus its own final
+countdown-and-confirmation gate.
 
 ## Browser automation (foundation, not yet user-facing)
 
@@ -313,10 +321,53 @@ this project's browser automation: it never imports
 `career_agent.integrations.browser` and never calls anything resembling a
 click, proven by an automated source scan (ADR-0070), the same discipline
 `prepare`'s no-submit-click guarantee already uses. It only ever records
-what you decided. There is no Submission Engine in this codebase yet — an
-`APPROVED` review changes nothing about what's reachable from the CLI
-today; building the (separately, explicitly authorized) component that
-could act on an approval is future work.
+what you decided. `review` also writes a JSON handoff to
+`<artifacts_dir>/reviews/<id>.json` for `submit` (below) to consume.
+
+## Submission (`career-agent submit`)
+
+```bash
+career-agent submit \
+    --review-session <artifacts_dir>/reviews/<id>.json \
+    --opportunity-file <path> \
+    --profile <path>
+```
+
+**The only command in this codebase that can click a real Submit button** —
+and only after every one of the following holds, checked fail-closed, in
+order: the review and application session actually pair together; the
+review is `APPROVED`; the application session is still `READY_FOR_REVIEW`;
+the résumé about to be submitted is verified, content-for-content, against
+what was stored when you reviewed it (a profile edit in between refuses,
+never silently submits something different); the platform is one this
+project has an actual human-in-the-loop browser flow for (Greenhouse,
+Lever, Ashby today — everything else, including every job board and
+Workday, refuses rather than guesses); and there is no unsafe prior
+outcome for this opportunity (a previous submission, or an unresolved
+uncertain one, permanently blocks an automatic retry).
+
+Only once every one of those holds does it ask you anything:
+
+```
+Submitting in
+5...
+4...
+3...
+2...
+1...
+Press ENTER to continue (Ctrl+C to cancel):
+```
+
+Reuses `BrowserApplicator` (Phase 7b3/8g) — the real, tested Tier-2
+executor that has existed in this codebase since early on, unwired from
+the CLI specifically pending this fail-closed gate — unchanged. **No
+success page, confirmation number, or "Thank you" banner has ever been
+verified against a real, live posting on any platform in this project**,
+so none is fabricated: the only verified signal is whether the submit
+click completed with no challenge visible afterward. Every outcome
+(`SUBMITTED`/`FAILED`/`UNKNOWN`/`ABORTED`/`CANCELLED`/`REFUSED`) is
+recorded, append-only, via `SqliteSubmissionResultStore`, exportable via
+`storage.excel.export_submissions`.
 
 ## Privacy
 

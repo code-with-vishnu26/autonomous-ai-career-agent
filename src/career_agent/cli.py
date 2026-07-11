@@ -40,6 +40,7 @@ import argparse
 import asyncio
 import getpass
 import json
+import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -56,6 +57,7 @@ from career_agent.agents.resume.generator import LLMResumeGenerator, MissingSumm
 from career_agent.agents.resume.materials import ResumeVariantEngine
 from career_agent.agents.resume.pipeline import ResumeTailoringPipeline
 from career_agent.agents.review.review_engine import ReviewEngine
+from career_agent.agents.submission.submission_engine import SubmissionEngine
 from career_agent.core.bus import EventBus
 from career_agent.core.config import Settings
 from career_agent.core.interfaces import (
@@ -86,7 +88,8 @@ from career_agent.domain.models import (
     SubmissionPreview,
 )
 from career_agent.domain.pareto import ObjectivePoint, analyze_frontier
-from career_agent.domain.review import build_review_session
+from career_agent.domain.review import ReviewSession, build_review_session
+from career_agent.domain.submission import SubmissionResult
 from career_agent.integrations.adapters.base import FeatureUnavailableError
 from career_agent.integrations.browser.browser_manager import BrowserManager
 from career_agent.integrations.browser.session_manager import SessionManager
@@ -132,6 +135,7 @@ from career_agent.storage.sqlite import (
     SqliteResumeVariantStore,
     SqliteReviewSessionStore,
     SqliteRunJournal,
+    SqliteSubmissionResultStore,
 )
 
 _YES = {"y", "yes"}
@@ -634,17 +638,239 @@ def run_review_command(
 
     review = build_review_session(str(uuid.uuid4()), session, result)
     SqliteReviewSessionStore(Path(settings.database_path)).save(review)
+    review_file = _write_review_session_handoff(review, Path(settings.artifacts_dir))
 
     print(f"Decision: {result.status}")
     if result.approved:
         print(
-            "Approved. Nothing was submitted -- only a Submission Engine "
-            "(not yet built) could ever act on this, and only after this "
-            "explicit approval."
+            "Approved. Nothing was submitted -- only `career-agent submit` "
+            "can act on this, and only after several more fail-closed "
+            "checks and one final explicit confirmation."
+        )
+        print(
+            f"Review written to: {review_file} -- submit it with: "
+            f"career-agent submit --review-session {review_file} "
+            f"--opportunity-file <path> --profile <path>"
         )
     else:
         print("Not approved. Nothing was submitted.")
     return 0
+
+
+def _write_review_session_handoff(review: ReviewSession, artifacts_dir: Path) -> Path:
+    """Write ``review`` as a JSON handoff for ``career-agent submit``.
+
+    Mirrors ``prepare``'s own ``ApplicationSession`` handoff (ADR-0069/0070)
+    exactly -- same directory, same shape, same "engine returns data, the
+    composition root persists/hands it off" convention.
+    """
+    sessions_dir = artifacts_dir / "reviews"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    path = sessions_dir / f"{review.id}.json"
+    path.write_text(review.model_dump_json(indent=2), encoding="utf-8")
+    return path
+
+
+def _resolve_prior_submission_outcome(
+    results: list[SubmissionResult],
+) -> SubmissionOutcome:
+    """The most recent submission result for this opportunity, as an outcome.
+
+    ``results`` is newest-first (``SqliteSubmissionResultStore.by_opportunity``).
+    Fail-closed: ``UNKNOWN``/``ABORTED`` map to ``OUTCOME_UNCERTAIN`` (never
+    automatically retryable, ADR-0050) rather than being treated as safe to
+    retry just because they are not a definite success.
+    """
+    if not results:
+        return SubmissionOutcome.NOT_ATTEMPTED
+    status_to_outcome: dict[str, SubmissionOutcome] = {
+        "SUBMITTED": SubmissionOutcome.DEFINITELY_SUBMITTED,
+        "UNKNOWN": SubmissionOutcome.OUTCOME_UNCERTAIN,
+        "ABORTED": SubmissionOutcome.OUTCOME_UNCERTAIN,
+        "FAILED": SubmissionOutcome.DEFINITELY_NOT_SUBMITTED,
+        "REFUSED": SubmissionOutcome.NOT_ATTEMPTED,
+        "CANCELLED": SubmissionOutcome.NOT_ATTEMPTED,
+    }
+    return status_to_outcome[results[0].status]
+
+
+def _countdown_and_confirm(
+    seconds: int = 5,
+    *,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    input_fn: Callable[[str], str] = input,
+) -> bool:
+    """Real, un-bypassable final gate: a countdown, then a blocking ENTER.
+
+    ``input_fn`` raising ``KeyboardInterrupt`` (a real Ctrl+C) propagates
+    straight out -- ``SubmissionEngine.submit`` catches it and records
+    ``CANCELLED``. There is no code path here that returns ``True`` without
+    ``input_fn`` actually being called and returning.
+    """
+    print("Submitting in")
+    for remaining in range(seconds, 0, -1):
+        print(f"{remaining}...")
+        sleep_fn(1)
+    input_fn("Press ENTER to continue (Ctrl+C to cancel): ")
+    return True
+
+
+async def run_submit_command(
+    *,
+    review_session_path: Path,
+    opportunity_path: Path,
+    profile_path: Path,
+    confirm_fn: Callable[[], bool] | None = None,
+) -> int:
+    """The real ``career-agent submit`` entry point (Phase 53, ADR-0071).
+
+    The only command in this codebase that can click a real Submit button
+    -- and only after every precondition in ``domain/execution.py``'s
+    fail-closed boundary holds, plus one final, explicit, un-bypassable
+    human confirmation (:func:`_countdown_and_confirm`). Re-tailors fresh
+    (the same way ``prepare`` originally did) so the résumé actually
+    submitted is verified byte-for-byte against what was stored at
+    prepare-time -- a profile edit between ``prepare`` and ``submit``
+    fails the artifact-integrity check rather than silently submitting
+    different content than what was reviewed.
+    """
+    try:
+        review = ReviewSession.model_validate(
+            json.loads(review_session_path.read_text(encoding="utf-8"))
+        )
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        print(f"Could not load review session from {review_session_path}: {exc}")
+        return 1
+
+    try:
+        profile = load_master_profile(profile_path)
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ProfileValidationError,
+        ValidationError,
+    ) as exc:
+        print(f"Could not load profile from {profile_path}: {exc}")
+        return 1
+
+    try:
+        opportunity = _load_opportunity(opportunity_path)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        print(f"Could not load opportunity from {opportunity_path}: {exc}")
+        return 1
+
+    settings = Settings()
+    application_sessions = SqliteApplicationSessionStore(
+        Path(settings.database_path)
+    ).by_opportunity(opportunity.id)
+    application_session = next(
+        (s for s in application_sessions if s.id == review.application_session_id),
+        None,
+    )
+    if application_session is None:
+        print(
+            f"No ApplicationSession {review.application_session_id!r} found for "
+            f"opportunity {opportunity.id!r} -- run `career-agent prepare` again."
+        )
+        return 1
+
+    variant_store = SqliteResumeVariantStore(Path(settings.database_path))
+    stored_variant = (
+        variant_store.get(application_session.resume_variant_id)
+        if application_session.resume_variant_id
+        else None
+    )
+
+    try:
+        claim_verifier = select_claim_verifier(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
+        return 1
+    results_dir = Path(settings.promptfoo_results_dir)
+    try:
+        verify_promptfoo_results(
+            claim_verifier.prompt_version,
+            results_dir,
+            provider_id=claim_verifier.provider_id,
+        )
+    except PromptfooNotValidatedError as exc:
+        print(str(exc))
+        return 1
+    try:
+        content_drafter = select_content_drafter(settings)
+    except NoLLMProviderConfiguredError as exc:
+        print(str(exc))
+        return 1
+
+    generator = LLMResumeGenerator(content_drafter)
+    gate = LLMTruthfulnessGate(claim_verifier)
+    semantic_matcher = select_semantic_matcher(settings)
+    pipeline = ResumeTailoringPipeline(
+        generator,
+        gate,
+        EventBus(),
+        artifacts_dir=Path(settings.artifacts_dir),
+        ats_threshold=settings.ats_threshold,
+        semantic_matcher=semantic_matcher,
+    )
+    variant_engine = ResumeVariantEngine(pipeline)
+    category = opportunity.title
+    try:
+        materials = await variant_engine.build_materials(
+            opportunity,
+            profile,
+            category=category,
+            prior_variants=variant_store.by_category(category),
+        )
+    except MissingSummaryError as exc:
+        print(f"Cannot tailor a resume: {exc}")
+        return 1
+    except AtsScoreBelowThresholdError as exc:
+        print("The ATS score gate refused this application:")
+        print(str(exc))
+        return 1
+
+    if materials.tailoring.submittable is None:
+        print(
+            "The truthfulness gate rejected the freshly re-tailored draft -- "
+            "refusing to submit."
+        )
+        return 1
+
+    submission_store = SqliteSubmissionResultStore(Path(settings.database_path))
+    prior_outcome = _resolve_prior_submission_outcome(
+        submission_store.by_opportunity(opportunity.id)
+    )
+
+    session_store = EncryptedSessionStore(
+        Path(settings.browser_session_dir), KeyringKeyProvider()
+    )
+    engine = SubmissionEngine(session_store)
+    try:
+        result = await engine.submit(
+            opportunity,
+            materials.tailoring.submittable,
+            review,
+            application_session,
+            stored_variant.content if stored_variant is not None else None,
+            prior_outcome=prior_outcome,
+            confirm_fn=confirm_fn or _countdown_and_confirm,
+        )
+    except FeatureUnavailableError as exc:
+        print(str(exc))
+        return 1
+
+    submission_store.save(result)
+
+    print(f"Status: {result.status}")
+    if result.submitted:
+        print("Submitted. Nothing further is automated.")
+    else:
+        print(f"Not submitted. Reason: {result.refusal_reason or result.status}")
+    for warning in result.warnings:
+        print(f"Warning: {warning}")
+    print("Recorded.")
+    return 0 if result.status in ("SUBMITTED", "CANCELLED") else 1
 
 
 #: Printed once per ranked-summary run, only if some displayed opportunity's
@@ -1980,6 +2206,34 @@ def main(argv: list[str] | None = None) -> None:
         help="Path to the session JSON file written by `prepare`.",
     )
 
+    submit_parser = subparsers.add_parser(
+        "submit",
+        help=(
+            "Submit an APPROVED, reviewed application -- the only command "
+            "that can click a real Submit button (Phase 53, ADR-0071). "
+            "Fails closed on any unmet precondition; requires one final "
+            "explicit confirmation."
+        ),
+    )
+    submit_parser.add_argument(
+        "--review-session",
+        type=Path,
+        required=True,
+        help="Path to the review session JSON file written by `review`.",
+    )
+    submit_parser.add_argument(
+        "--opportunity-file",
+        type=Path,
+        required=True,
+        help="Path to the same Opportunity JSON file used with `prepare`.",
+    )
+    submit_parser.add_argument(
+        "--profile",
+        type=Path,
+        required=True,
+        help="Path to your JSON Resume master profile.",
+    )
+
     discover_parser = subparsers.add_parser(
         "discover",
         help="Poll every configured source, dedup, persist, and write "
@@ -2192,6 +2446,16 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "review":
         raise SystemExit(run_review_command(session_path=args.session))
+
+    if args.command == "submit":
+        exit_code = asyncio.run(
+            run_submit_command(
+                review_session_path=args.review_session,
+                opportunity_path=args.opportunity_file,
+                profile_path=args.profile,
+            )
+        )
+        raise SystemExit(exit_code)
 
     print(f"Autonomous AI Career Agent v{__version__} — scaffolding (Phase 1).")
     print("Not yet runnable; see ROADMAP.md for the build plan.")
