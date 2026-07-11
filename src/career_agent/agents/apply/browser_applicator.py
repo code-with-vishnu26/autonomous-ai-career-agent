@@ -84,15 +84,19 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
-from career_agent.agents.apply.form_fillers import FormFiller, default_form_fillers
-from career_agent.agents.apply.question_answerer import (
-    AmbiguousQuestionError,
-    MissingLegalStatusFactError,
-    QuestionCategory,
-    answer_factual_question,
-    classify_question,
-    match_dropdown_option,
+from career_agent.agents.apply.field_inspection import (
+    fields_still_empty as _fields_still_empty,
 )
+from career_agent.agents.apply.field_inspection import (
+    triage_unhandled_fields as _triage_unhandled_fields,
+)
+
+# Re-exported for external callers/tests only -- unused within this module
+# itself since this file's own detection now delegates to _triage_unhandled_fields.
+from career_agent.agents.apply.field_inspection import (  # noqa: F401
+    unhandled_required_fields as _unhandled_required_fields,
+)
+from career_agent.agents.apply.form_fillers import FormFiller, default_form_fillers
 from career_agent.core.events import (
     ApplicationSubmitted,
     Event,
@@ -102,7 +106,6 @@ from career_agent.core.interfaces import OpportunityRepository
 from career_agent.domain.ats_urls import resolve_ats_kind
 from career_agent.domain.models import (
     HumanConfirmation,
-    LegalStatusSection,
     PauseAcknowledgment,
     SubmissionPreview,
     SubmittableApplication,
@@ -110,7 +113,7 @@ from career_agent.domain.models import (
 from career_agent.integrations.browser_session import EncryptedSessionStore
 
 if TYPE_CHECKING:
-    from playwright.async_api import Browser, BrowserContext, ElementHandle, Page
+    from playwright.async_api import Browser, BrowserContext, Page
 
 
 class NoApplicableFormFillerError(Exception):
@@ -161,14 +164,6 @@ class RequiredFieldsStillUnresolvedError(Exception):
     specific fields non-empty), not blurred into one check. Raised without
     ever clicking submit, exactly like its Phase B counterpart.
     """
-
-
-class ManifestField(NamedTuple):
-    """One required field Phase A could not auto-resolve, for the human's reference."""
-
-    selector: str
-    category: str
-    question_text: str
 
 
 class _PausedSession(NamedTuple):
@@ -458,194 +453,3 @@ class BrowserApplicator:
             application_id=application.application.id,
             tier_used="browser",
         )
-
-
-async def _required_unknown_elements(
-    page: Page, known_field_selectors: frozenset[str]
-) -> list[tuple[str | None, ElementHandle, str | None]]:
-    """Every required form element not a known submit-mechanic or FormFiller field.
-
-    Each triple is ``(selector, element, element_id)`` -- ``selector`` is
-    ``None`` only when the element has neither ``id`` nor ``name`` to
-    derive one from.
-    """
-    elements = await page.query_selector_all("form input, form textarea, form select")
-    result: list[tuple[str | None, ElementHandle, str | None]] = []
-    for element in elements:
-        input_type = (await element.get_attribute("type")) or ""
-        if input_type.lower() in {"submit", "button", "hidden"}:
-            continue
-        if await element.get_attribute("required") is None:
-            continue
-        element_id = await element.get_attribute("id")
-        name = await element.get_attribute("name")
-        if element_id:
-            selector = f"#{element_id}"
-        elif name:
-            selector = f"[name='{name}']"
-        else:
-            selector = None
-        if selector is not None and selector in known_field_selectors:
-            continue
-        result.append((selector, element, element_id))
-    return result
-
-
-async def _unhandled_required_fields(
-    page: Page, known_field_selectors: frozenset[str]
-) -> list[str]:
-    """Return every required form field a FormFiller doesn't know how to fill.
-
-    Queried generically against the real page's actual ``form`` elements
-    (not a fixed per-platform list), so this works the same way regardless
-    of which ATS's form is loaded -- it is the mechanism, not per-platform
-    knowledge, that makes the refusal possible. Submit/button/hidden inputs
-    are never data fields, so they are excluded; a field with no
-    ``required`` attribute is left alone -- an optional field left blank is
-    honest, only an unanswerable *required* field blocks submission.
-
-    Each element's own real selector is derived from whichever attribute it
-    actually has -- ``#id`` first, then ``[name='...']`` (ADR-0029): a real
-    Lever posting confirmed identity fields with no ``id`` at all, only
-    ``name``, so ``known_field_selectors`` must be compared against
-    whichever shape the live page actually uses, not assumed to always be
-    ``#id``.
-    """
-    fields = await _required_unknown_elements(page, known_field_selectors)
-    return [
-        selector if selector is not None else "(no id or name)"
-        for selector, _element, _element_id in fields
-    ]
-
-
-async def _field_question_text(
-    page: Page, element: ElementHandle, element_id: str | None
-) -> str:
-    """The best available human-readable text describing this field.
-
-    Tries ``aria-label``, then an associated ``<label for="...">``, then
-    ``placeholder``, in that order -- the same priority a screen reader
-    would use. An empty result means Phase A cannot even describe this
-    field to a human, which is what makes it eligible for outright refusal
-    rather than being manifested with no context (ADR-0032).
-    """
-    aria_label = await element.get_attribute("aria-label")
-    if aria_label and aria_label.strip():
-        return aria_label.strip()
-    if element_id:
-        label = await page.query_selector(f"label[for='{element_id}']")
-        if label is not None:
-            text = await label.inner_text()
-            if text and text.strip():
-                return text.strip()
-    placeholder = await element.get_attribute("placeholder")
-    if placeholder and placeholder.strip():
-        return placeholder.strip()
-    return ""
-
-
-async def _try_fill_boolean_select(element: ElementHandle, fact: bool) -> bool:
-    """Fill a ``<select>`` from a resolved boolean fact, if it confidently maps.
-
-    Deterministic, not a model call (the same "prove the cheap thing
-    first" discipline as Category 4's own matching) -- maps the fact to a
-    "Yes"/"No" candidate string and reuses
-    :func:`~career_agent.agents.apply.question_answerer.match_dropdown_option`
-    against the live, enumerated ``<option>`` text. Returns ``False``
-    (never guesses, never fills) when the element isn't a ``<select>`` at
-    all, or when nothing on the real page clears the match threshold --
-    "Authorized"/"Not Authorized" options, for instance, correctly refuse
-    here rather than being force-mapped to "Yes"/"No".
-    """
-    tag = await element.evaluate("el => el.tagName.toLowerCase()")
-    if tag != "select":
-        return False
-    option_elements = await element.query_selector_all("option")
-    options: list[str] = []
-    for option_element in option_elements:
-        text = (await option_element.inner_text()).strip()
-        if text:
-            options.append(text)
-    candidate = "Yes" if fact else "No"
-    result = match_dropdown_option(candidate, options)
-    if result.matched_option is None:
-        return False
-    await element.select_option(label=result.matched_option)
-    return True
-
-
-async def _triage_unhandled_fields(
-    page: Page,
-    known_field_selectors: frozenset[str],
-    legal_status: LegalStatusSection,
-) -> tuple[list[str], list[ManifestField]]:
-    """Classify every required-but-unknown field into auto-filled / manifest / refuse.
-
-    A Category 2 (factual) field with an already-captured fact is filled
-    automatically here and never appears in either returned list. Category
-    1 (EEOC) and Category 3 (subjective) fields always land in the
-    manifest -- the human fills them directly on the live page, never this
-    function. A Category 2 field with no captured fact, or a compound/
-    non-boolean question :func:`~career_agent.agents.apply.
-    question_answerer.answer_factual_question` refuses to answer, also
-    lands in the manifest rather than being force-classified further.
-    Category 4 (dropdown) auto-matching is deliberately not wired into
-    this triage this slice (ADR-0032) -- it requires its own new frozen
-    profile-data snapshot (e.g. education) that was never decided here;
-    those fields land in the manifest like anything else unresolved, which
-    is a safe degradation, not a broken guarantee.
-
-    A field with no describable question text at all (ADR-0032) is
-    returned in the first (hard-refuse) list instead of either the other
-    two -- handing a human a context-free blank field is close enough to
-    guessing that outright refusal is the honest response.
-    """
-    hard_refuse: list[str] = []
-    manifest: list[ManifestField] = []
-    fields = await _required_unknown_elements(page, known_field_selectors)
-    for selector, element, element_id in fields:
-        if selector is None:
-            hard_refuse.append("(no id or name)")
-            continue
-        question_text = await _field_question_text(page, element, element_id)
-        if not question_text:
-            hard_refuse.append(selector)
-            continue
-
-        category = classify_question(question_text)
-        if category == QuestionCategory.FACTUAL:
-            try:
-                fact = answer_factual_question(question_text, legal_status)
-            except (AmbiguousQuestionError, MissingLegalStatusFactError):
-                manifest.append(
-                    ManifestField(selector, category.value, question_text)
-                )
-                continue
-            if await _try_fill_boolean_select(element, fact):
-                continue
-            manifest.append(ManifestField(selector, category.value, question_text))
-            continue
-
-        manifest.append(ManifestField(selector, category.value, question_text))
-
-    return hard_refuse, manifest
-
-
-async def _fields_still_empty(page: Page, selectors: tuple[str, ...]) -> list[str]:
-    """Which manifested selectors are still empty on the live page right now.
-
-    Never trusts the acknowledgment alone (ADR-0020's original discipline,
-    generalized here from "is the challenge gone" to "are these specific
-    fields filled") -- queried freshly against the real page each time
-    resume() is called, not cached from when the pause was created.
-    """
-    empty: list[str] = []
-    for selector in selectors:
-        element = await page.query_selector(selector)
-        if element is None:
-            empty.append(selector)
-            continue
-        value = await element.input_value()
-        if not value:
-            empty.append(selector)
-    return empty

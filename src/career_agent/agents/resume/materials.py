@@ -26,7 +26,7 @@ pieces, and deliberately touches zero lines of any of them:
 touches ``storage/`` either -- ``cli.py`` calls ``application_store.record()``
 itself, at the composition root, after ``pipeline.run()`` returns. This
 module mirrors that exact convention for the new
-``SqliteResumeVariantStore``: ``prepare()`` returns a built-but-unsaved
+``SqliteResumeVariantStore``: ``build_materials()`` returns a built-but-unsaved
 :class:`~career_agent.domain.resume_variants.ResumeVariant` (Phase 50's
 "Store Resume Variant" step's *data*), and the caller decides whether/how to
 persist it, the same as every other store in this project.
@@ -69,7 +69,7 @@ class ResumeVariantEngine:
         """Wrap an unmodified :class:`ResumeTailoringPipeline` (ADR-0068)."""
         self._pipeline = pipeline
 
-    async def prepare(
+    async def build_materials(
         self,
         opportunity: Opportunity,
         profile: MasterProfile,

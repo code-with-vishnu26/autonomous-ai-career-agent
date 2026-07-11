@@ -157,12 +157,13 @@ wizard says so at each such prompt.
 Core commands:
 
 ```
-career-agent setup | preferences | import-cv | promote-cv | discover | apply | auto
+career-agent setup | preferences | import-cv | promote-cv | discover | apply | auto | prepare
 career-agent outcome | report | export | verify-promptfoo | diagnose-promptfoo-drift
 ```
 
 `career-agent --help` lists them all. `apply` and `auto` prepare materials and
-stop at confirmation; neither submits.
+stop at confirmation; `prepare` additionally fills out a real application
+form in a live browser and stops before Submit. None of them submits.
 
 ## Browser automation (foundation, not yet user-facing)
 
@@ -247,6 +248,39 @@ itself never touches storage — it returns a built résumé variant for the
 caller to save, the same "pipeline doesn't touch storage either" shape the
 existing tailoring pipeline already uses. There is no `career-agent`
 command that uses this yet.
+
+## Application Preparation (`career-agent prepare`)
+
+```bash
+career-agent prepare --profile profile.json --opportunity-file <path>
+```
+
+Tailors and gates a résumé, generates a cover letter (the Resume Variant
+Engine above, unmodified), then opens a **real, visible** Chromium window,
+navigates to the posting, and fills in as much of the application form as
+it safely can:
+
+- Known identity/résumé fields (name, email, résumé) are filled by the
+  same per-platform `FormFiller` this project's Tier 2 apply machinery
+  already uses (Greenhouse: real text fields; Lever: a real, required
+  file upload of your rendered résumé; Ashby: an honest, unimplemented
+  stub — its form selectors have never been verified against a live
+  posting).
+- Every other required field is classified (work-authorization/sponsorship
+  questions are auto-answered only from a fact you've already explicitly
+  captured; EEOC and anything else is never guessed) and, if it can't be
+  safely resolved, listed for you to fill in yourself.
+- If the site requires login and you supply a selector that detects it,
+  `prepare` waits for **you** to log in on the visible window — it never
+  automates a login, ever.
+
+**It always stops there.** There is no code path anywhere in
+`agents/application/engine.py` that clicks a submit button — proven by an
+automated source scan, not just documented (ADR-0069). The result is a
+stored `ApplicationSession` (status `READY_FOR_REVIEW`/`BLOCKED`/
+`LOGIN_REQUIRED_TIMEOUT`/`UNSUPPORTED_PROVIDER`) with every filled field,
+every uploaded file, every field still needing your attention, and any
+warnings — for you to review. Nothing is ever submitted by this command.
 
 ## Privacy
 

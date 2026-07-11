@@ -79,7 +79,9 @@ async def test_approved_draft_produces_cover_letter_and_new_variant() -> None:
             ),
         },
     )
-    materials = await engine.prepare(_opportunity(), profile, category="backend")
+    materials = await engine.build_materials(
+        _opportunity(), profile, category="backend"
+    )
     assert materials.tailoring.application.status == "pending"
     assert materials.cover_letter is not None
     assert "Acme Corp" in materials.cover_letter.body
@@ -93,7 +95,9 @@ async def test_rejected_draft_produces_no_cover_letter_and_no_new_variant() -> N
     profile = sample_master_profile()
     profile.basics.summary = "Backend engineer."
     engine = _engine(DraftedTailoring(skills=["Kubernetes"]), {})
-    materials = await engine.prepare(_opportunity(), profile, category="backend")
+    materials = await engine.build_materials(
+        _opportunity(), profile, category="backend"
+    )
     assert materials.tailoring.application.status == "rejected"
     assert materials.cover_letter is None
     assert materials.new_variant is None
@@ -120,7 +124,7 @@ async def test_prior_variants_only_affect_the_advisory_field() -> None:
         content=TailoredContent(summary="s", skills=["Python"]),
         created_at="2026-01-01T00:00:00+00:00",
     )
-    materials = await engine.prepare(
+    materials = await engine.build_materials(
         _opportunity(), profile, category="backend", prior_variants=[prior]
     )
     assert materials.closest_prior_variant == prior
@@ -140,7 +144,9 @@ async def test_no_prior_variants_leaves_closest_prior_variant_none() -> None:
             ),
         },
     )
-    materials = await engine.prepare(_opportunity(), profile, category="backend")
+    materials = await engine.build_materials(
+        _opportunity(), profile, category="backend"
+    )
     assert materials.closest_prior_variant is None
 
 

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     #: ``database_path``/``artifacts_dir``/``promptfoo_results_dir`` above --
     #: never repo-tree-relative.
     job_preferences_path: str = "job_preferences.json"
+    #: Where encrypted browser session state is stored (Phase 51, ADR-0069).
+    #: CWD-relative, ``.env``-overridable, same pattern as the paths above.
+    browser_session_dir: str = "data/sessions"
     # Worldwide job-board discovery (Phase 12/ADR-0036). A source is wired
     # by the composition root only when its credentials are present; the
     # keyless boards have explicit enabled flags.

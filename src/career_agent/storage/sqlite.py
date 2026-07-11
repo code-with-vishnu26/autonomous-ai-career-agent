@@ -38,6 +38,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from career_agent.domain.application_session import ApplicationSession
 from career_agent.domain.identity import canonical_fingerprint
 from career_agent.domain.journal import RunEvent
 from career_agent.domain.models import Application, Opportunity
@@ -105,6 +106,18 @@ CREATE TABLE IF NOT EXISTS resume_variants (
 );
 CREATE INDEX IF NOT EXISTS idx_resume_variants_category
     ON resume_variants (category);
+"""
+
+_APPLICATION_SESSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS application_sessions (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_application_sessions_opportunity
+    ON application_sessions (opportunity_id);
 """
 
 
@@ -410,4 +423,62 @@ class SqliteResumeVariantStore:
             ).fetchall()
         return [
             ResumeVariant.model_validate(json.loads(row["payload"])) for row in rows
+        ]
+
+
+class SqliteApplicationSessionStore:
+    """Append-only store of prepared-but-unsubmitted application sessions.
+
+    Same discipline as :class:`SqliteApplicationStore`/
+    :class:`SqliteResumeVariantStore` (Phase 51, ADR-0069): ``save`` never
+    updates an existing row, and there is no update/delete method on this
+    class at all. This is the record Phase 52's Human Review Center reads
+    from -- never anything a submission step writes to, since no
+    submission step exists anywhere in this codebase yet.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_APPLICATION_SESSION_SCHEMA)
+
+    def save(self, session: ApplicationSession) -> None:
+        """Persist ``session``. Never overwrites an existing row (append-only)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO application_sessions"
+                " (id, opportunity_id, status, payload, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    session.id,
+                    session.opportunity_id,
+                    session.status,
+                    session.model_dump_json(),
+                    session.created_at.isoformat(),
+                ),
+            )
+
+    def by_opportunity(self, opportunity_id: str) -> list[ApplicationSession]:
+        """Every stored session for ``opportunity_id``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM application_sessions WHERE opportunity_id = ?"
+                " ORDER BY created_at DESC",
+                (opportunity_id,),
+            ).fetchall()
+        return [
+            ApplicationSession.model_validate(json.loads(row["payload"]))
+            for row in rows
+        ]
+
+    def all_sessions(self) -> list[ApplicationSession]:
+        """Every stored session, newest first, across all opportunities."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM application_sessions ORDER BY created_at DESC"
+            ).fetchall()
+        return [
+            ApplicationSession.model_validate(json.loads(row["payload"]))
+            for row in rows
         ]

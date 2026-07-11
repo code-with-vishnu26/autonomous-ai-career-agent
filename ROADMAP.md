@@ -1253,7 +1253,8 @@ profile.
   a letter shape -- no new fabrication surface, so no new gate is needed.
   `domain/resume_variants.py::select_closest_variant` ranks previously
   approved variants by keyword overlap (reusing `extract_jd_keywords`
-  unchanged) but is purely advisory -- `ResumeVariantEngine.prepare()`
+  unchanged) but is purely advisory -- `ResumeVariantEngine.build_materials()`
+  (renamed from `.prepare()` in Phase 51 -- see below)
   always calls the unmodified pipeline regardless of its answer, so it
   cannot influence what gets gated. `SqliteResumeVariantStore` (added into
   the existing one-file `storage/sqlite.py` convention) is append-only,
@@ -1264,6 +1265,40 @@ profile.
   892 total. No CLI wiring, no change to `ResumeTailoringPipeline`/
   `LLMResumeGenerator`/`LLMTruthfulnessGate`, no new dependency, no version
   bump.
+
+- ✅ **Application Preparation Engine -- ADR-0069 (Phase 51).** Opens a
+  real browser, fills a live application form, and stops before Submit --
+  the audit found this is almost entirely not greenfield: the unwired Tier
+  2 `BrowserApplicator` (ADR-0020/0028/0032) already implements the exact
+  sequence the brief describes (per-platform `FormFiller` fills identity/
+  résumé fields, `question_answerer.py` classifies and auto-answers
+  everything else it safely can, unresolved fields are manifested for a
+  human) and only then clicks submit. Extracted the field-detection/triage
+  helpers out of `browser_applicator.py` into a new shared
+  `agents/apply/field_inspection.py` (verbatim, no behavior change --
+  proven by `browser_applicator`'s own unchanged 32-test suite), and built
+  `agents/application/engine.py::ApplicationPreparationEngine` composing
+  them plus Phase 47's `BrowserManager`/`SessionManager`/`TabManager` --
+  reaching the identical point `BrowserApplicator.submit()` reaches right
+  before the submit click, then simply returning. No submit-selector/click
+  reference exists anywhere in the new module, proven by an AST-based
+  source-scan test. No new `field_detector.py`/`answer_engine.py` (would
+  duplicate the extraction/`question_answerer.py`); no `field_mapper.py`
+  (most example fields -- website/LinkedIn/GitHub -- have no
+  `MasterProfile` field to map from at all, so they honestly fall through
+  to the manifest); no `upload_manager.py` (Lever's real upload already
+  lives in `LeverFormFiller`; cover-letter upload is attempted nowhere
+  since no platform has a verified selector). New `domain/
+  application_session.py::ApplicationSession` (pure data; no
+  submission-confirmation field can exist on it at all) follows Phase 50's
+  precedent of pure results living in `domain/`. Found and fixed a real
+  collision: `ResumeVariantEngine.prepare()` would have tripped the
+  existing release-invariant test's literal `.prepare(` ban the moment
+  `cli.py` actually called it -- renamed to `.build_materials()`. New
+  `career-agent prepare` CLI command and `SqliteApplicationSessionStore`.
+  19 new tests; 911 total. No submit click anywhere, no change to
+  `BrowserApplicator`/`TieredApplicator`/the execution-safety boundary, no
+  new dependency, no version bump.
 
 ---
 
