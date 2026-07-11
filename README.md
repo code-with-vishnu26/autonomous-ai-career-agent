@@ -223,6 +223,31 @@ call, no network, no adapter call (nothing here has ever seen a
 Nothing in this codebase executes the plan yet — that's future work; this
 phase only builds the plan.
 
+## Resume Variant Engine (foundation, not yet user-facing)
+
+`career_agent.agents.resume.materials.ResumeVariantEngine` composes an
+**unmodified** `ResumeTailoringPipeline` with two new, deliberately narrow
+capabilities:
+
+- `career_agent.domain.cover_letter.assemble_cover_letter` builds a cover
+  letter **deterministically, with no new LLM call**: it copies the
+  already-gate-approved résumé summary and up to three highlights verbatim
+  into a letter shape. Extending the truthfulness gate itself to freeform
+  prose is a real, separate problem, left for a future phase — nothing here
+  can say anything the résumé doesn't already say.
+- `career_agent.domain.resume_variants.select_closest_variant` ranks
+  previously-approved résumé variants by deterministic keyword overlap
+  against a job description, for inspection only. It is purely advisory:
+  the tailoring pipeline always runs regardless of its answer, so it cannot
+  influence what gets gated.
+
+A new `SqliteResumeVariantStore` (alongside the existing application store
+in `storage/sqlite.py`) persists approved variants, append-only. The engine
+itself never touches storage — it returns a built résumé variant for the
+caller to save, the same "pipeline doesn't touch storage either" shape the
+existing tailoring pipeline already uses. There is no `career-agent`
+command that uses this yet.
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered

@@ -41,6 +41,7 @@ from pathlib import Path
 from career_agent.domain.identity import canonical_fingerprint
 from career_agent.domain.journal import RunEvent
 from career_agent.domain.models import Application, Opportunity
+from career_agent.domain.resume_variants import ResumeVariant
 
 _OPPORTUNITY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS opportunities (
@@ -92,6 +93,18 @@ CREATE TABLE IF NOT EXISTS run_journal (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_run_journal_run_seq
     ON run_journal (run_id, sequence_no);
+"""
+
+
+_RESUME_VARIANT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS resume_variants (
+    id TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_resume_variants_category
+    ON resume_variants (category);
 """
 
 
@@ -343,4 +356,58 @@ class SqliteRunJournal:
                 metadata=json.loads(row["metadata"]),
             )
             for row in rows
+        ]
+
+
+class SqliteResumeVariantStore:
+    """Persistent store of approved resume variants, one row per category snapshot.
+
+    Append-only, same discipline as :class:`SqliteApplicationStore`: ``save``
+    never updates an existing row, and there is no update/delete method on
+    this class at all (Phase 50, ADR-0068). ``by_category`` returns every
+    stored variant for a category (newest first) so
+    :func:`~career_agent.domain.resume_variants.select_closest_variant` has
+    real candidates to rank, never just one silently-assumed row.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_RESUME_VARIANT_SCHEMA)
+
+    def save(self, variant: ResumeVariant) -> None:
+        """Persist ``variant``. Never overwrites an existing row (append-only)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO resume_variants"
+                " (id, category, payload, created_at) VALUES (?, ?, ?, ?)",
+                (
+                    variant.id,
+                    variant.category,
+                    variant.model_dump_json(),
+                    variant.created_at,
+                ),
+            )
+
+    def by_category(self, category: str) -> list[ResumeVariant]:
+        """Every stored variant for ``category``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM resume_variants WHERE category = ?"
+                " ORDER BY created_at DESC",
+                (category,),
+            ).fetchall()
+        return [
+            ResumeVariant.model_validate(json.loads(row["payload"])) for row in rows
+        ]
+
+    def all_variants(self) -> list[ResumeVariant]:
+        """Every stored variant, newest first, across all categories."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM resume_variants ORDER BY created_at DESC"
+            ).fetchall()
+        return [
+            ResumeVariant.model_validate(json.loads(row["payload"])) for row in rows
         ]

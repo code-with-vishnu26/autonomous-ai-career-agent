@@ -1240,6 +1240,31 @@ profile.
   `Decide`/`AdapterRegistry`/the execution-safety boundary, no new
   dependency, no version bump.
 
+- ✅ **Resume Variant Engine -- ADR-0068 (Phase 50).** Cover-letter
+  generation + resume-variant storage on top of the unmodified tailoring
+  pipeline. Most of the brief already existed (`ResumeTailoringPipeline.run()`
+  already does generate -> gate -> ATS-score; `ats_scoring.extract_jd_keywords`
+  already is skill/JD analysis); the truthfulness gate is deliberately
+  *not* extended to freeform prose this phase -- atomizing/verifying
+  arbitrary generated sentences is a real, separate design problem, left
+  for future work. Instead `domain/cover_letter.py::assemble_cover_letter`
+  is a **deterministic, zero-LLM** template that copies only the
+  already-approved résumé summary and up to three highlights verbatim into
+  a letter shape -- no new fabrication surface, so no new gate is needed.
+  `domain/resume_variants.py::select_closest_variant` ranks previously
+  approved variants by keyword overlap (reusing `extract_jd_keywords`
+  unchanged) but is purely advisory -- `ResumeVariantEngine.prepare()`
+  always calls the unmodified pipeline regardless of its answer, so it
+  cannot influence what gets gated. `SqliteResumeVariantStore` (added into
+  the existing one-file `storage/sqlite.py` convention) is append-only,
+  mirroring `SqliteApplicationStore`; `ResumeVariantEngine` itself has zero
+  storage dependency (proven by an AST canary) -- it returns a
+  built-but-unsaved `ResumeVariant`, the same "pipeline doesn't touch
+  storage either, `cli.py` does" shape already established. 24 new tests;
+  892 total. No CLI wiring, no change to `ResumeTailoringPipeline`/
+  `LLMResumeGenerator`/`LLMTruthfulnessGate`, no new dependency, no version
+  bump.
+
 ---
 
 ## Deferred work (named, not forgotten)
