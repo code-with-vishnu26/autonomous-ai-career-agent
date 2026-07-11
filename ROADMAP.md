@@ -1191,6 +1191,31 @@ profile.
   (Phase 48), no automated login of any kind on any site. No new
   dependency, no version bump.
 
+- ✅ **Website Adapter Framework -- ADR-0066 (Phase 48).** A common
+  interface over eight providers (Greenhouse, Lever, Ashby, Workday,
+  RemoteOK, Remotive, Arbeitnow, TheMuse). The audit found six of seven
+  already have a real, working, tested, API-based `OpportunitySource` and
+  `resolve_ats_kind` already does deterministic provider detection --
+  `search()` delegates to what exists rather than re-scraping through a
+  browser. No new canonical job model (reuses `Opportunity`; capability
+  flags live on the adapter class, mirroring `ProviderCapabilities`'s
+  existing pattern). Capabilities are grounded in `FormFiller`'s real
+  evidence, not assumption: Greenhouse's verified text resume field ->
+  `supports_resume_upload=False`; Lever's verified required file upload ->
+  `True`; everything else unverified -> `False`. `extract_job()` (a
+  URL-only fallback) uses only universal Open-Graph/`<title>` signals,
+  never a guessed vendor selector -- this codebase has never verified any
+  platform's job-*content* DOM, only Greenhouse/Lever's *application-form*
+  DOM. `open_job`/`extract_job`/`detect_login` are identical across every
+  adapter, shared via one mixin wired to Phase 47's `TabManager`/
+  `SessionManager`. Workday's adapter is an honest stub (zero prior art
+  anywhere in this codebase), matching `AshbyFormFiller`'s own precedent.
+  `prepare_application` always raises -- declared on the interface, not
+  implemented this phase. `AdapterRegistry.find(url)` means no caller ever
+  switches on provider names. 45 new tests; 835 total. No CLI wiring, no
+  form-filling, no login automation, no `Opportunity`/`ats_urls.py`
+  change, no new dependency, no version bump.
+
 ---
 
 ## Deferred work (named, not forgotten)

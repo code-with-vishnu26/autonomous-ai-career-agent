@@ -177,6 +177,38 @@ all (enforced by an import-linter contract, ADR-0065). Running it
 requires a local Chromium build — `playwright install chromium` — and its
 tests are skipped automatically if none is found.
 
+## Website Adapter Framework (foundation, not yet user-facing)
+
+`career_agent.integrations.adapters` provides a common interface over job
+websites, so a future caller never has to switch on provider names — it
+asks `AdapterRegistry.find(url)` for the right adapter. Supported
+providers:
+
+| Provider | Discovery (`search()`) | Resume upload | Cover letter | Easy apply |
+|---|---|---|---|---|
+| Greenhouse | ✅ real API | ❌ (verified: manual text field) | unverified | unverified |
+| Lever | ✅ real API | ✅ (verified: required file upload) | unverified | unverified |
+| Ashby | ✅ real API | unverified | unverified | unverified |
+| RemoteOK / Remotive / Arbeitnow / The Muse | ✅ real API | unverified | unverified | unverified |
+| Workday | ❌ stub (no integration exists yet) | unverified | unverified | unverified |
+
+"Unverified" means *not yet confirmed against a live posting* — never
+"confirmed absent." Discovery delegates to this project's existing,
+real, API-based sources (the same ones `career-agent discover` already
+uses); nothing here scrapes a job's title/description through a browser
+except as a generic, universal (Open-Graph/`<title>`-based) fallback when
+only a URL is known. There is no `career-agent` command that uses this
+yet, no form-filling, and no login automation anywhere in this package
+(ADR-0066).
+
+**Adding a new adapter:** implement `WebsiteAdapter`
+(`integrations/adapters/base.py`) — typically by inheriting
+`BrowserAdapterMixin` for the browser-facing methods and wrapping a real
+`OpportunitySource` for `search()` if one exists, or declaring an honest
+`FeatureUnavailableError` stub (like `workday.py`) if it doesn't yet.
+Register it with `AdapterRegistry`, and add its capability flags only
+once verified against a real, live posting — never guessed.
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered
