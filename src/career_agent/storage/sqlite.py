@@ -44,6 +44,7 @@ from career_agent.domain.journal import RunEvent
 from career_agent.domain.models import Application, Opportunity
 from career_agent.domain.resume_variants import ResumeVariant
 from career_agent.domain.review import ReviewSession
+from career_agent.domain.submission import SubmissionResult
 
 _OPPORTUNITY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS opportunities (
@@ -131,6 +132,19 @@ CREATE TABLE IF NOT EXISTS review_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_review_sessions_application_session
     ON review_sessions (application_session_id);
+"""
+
+_SUBMISSION_RESULT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS submission_results (
+    id TEXT PRIMARY KEY,
+    application_session_id TEXT NOT NULL,
+    opportunity_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_submission_results_opportunity
+    ON submission_results (opportunity_id);
 """
 
 
@@ -438,6 +452,19 @@ class SqliteResumeVariantStore:
             ResumeVariant.model_validate(json.loads(row["payload"])) for row in rows
         ]
 
+    def get(self, variant_id: str) -> ResumeVariant | None:
+        """The stored variant with ``variant_id``, or ``None`` (Phase 53).
+
+        Added for the Submission Engine's artifact-integrity check
+        (ADR-0071): it must load one specific variant by the id an
+        ``ApplicationSession`` names, not the category it belongs to.
+        """
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM resume_variants WHERE id = ?", (variant_id,)
+            ).fetchone()
+        return ResumeVariant.model_validate(json.loads(row["payload"])) if row else None
+
 
 class SqliteApplicationSessionStore:
     """Append-only store of prepared-but-unsubmitted application sessions.
@@ -551,4 +578,63 @@ class SqliteReviewSessionStore:
             ).fetchall()
         return [
             ReviewSession.model_validate(json.loads(row["payload"])) for row in rows
+        ]
+
+
+class SqliteSubmissionResultStore:
+    """Append-only submission-attempt audit trail (Phase 53, ADR-0071).
+
+    Same discipline as every other store in this file: ``save`` never
+    updates an existing row, and there is no update/delete method at all
+    -- a submission attempt's outcome, once recorded, is permanent
+    history, the load-bearing property the execution-safety boundary
+    (``domain/execution.py``) relies on to refuse an unsafe retry after a
+    ``DEFINITELY_SUBMITTED``/``OUTCOME_UNCERTAIN`` prior result.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_SUBMISSION_RESULT_SCHEMA)
+
+    def save(self, result: SubmissionResult) -> None:
+        """Persist ``result``. Never overwrites an existing row (append-only)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO submission_results"
+                " (id, application_session_id, opportunity_id, status, payload,"
+                " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    result.id,
+                    result.application_session_id,
+                    result.opportunity_id,
+                    result.status,
+                    result.model_dump_json(),
+                    (result.submitted_at or datetime.now(UTC)).isoformat(),
+                ),
+            )
+
+    def by_opportunity(self, opportunity_id: str) -> list[SubmissionResult]:
+        """Every stored result for ``opportunity_id``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM submission_results WHERE opportunity_id = ?"
+                " ORDER BY created_at DESC",
+                (opportunity_id,),
+            ).fetchall()
+        return [
+            SubmissionResult.model_validate(json.loads(row["payload"]))
+            for row in rows
+        ]
+
+    def all_results(self) -> list[SubmissionResult]:
+        """Every stored result, newest first, across all opportunities."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM submission_results ORDER BY created_at DESC"
+            ).fetchall()
+        return [
+            SubmissionResult.model_validate(json.loads(row["payload"]))
+            for row in rows
         ]
