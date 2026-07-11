@@ -1380,6 +1380,34 @@ profile.
   `ApplicationPreparationEngine`/`ReviewEngine`, no new dependency, no
   version bump.
 
+- ✅ **Web Dashboard read API -- ADR-0072 (Phase 54).** The backend core
+  workflow (Search -> Plan -> Discover -> Tailor -> Prepare -> Review ->
+  Approve -> Submit -> Track -> Export) is complete; this phase is the
+  first step toward a web dashboard on top of it, scoped deliberately down
+  from the full brief (new frontend toolchain + FastAPI layer in one pass)
+  to the backend API surface only, and further scoped to **read-only**.
+  `src/career_agent/api/` is a thin FastAPI layer: each router
+  (`applications`/`reviews`/`submissions`/`resume_variants`) wraps exactly
+  one existing store's `all_*()` method, `analytics.py` adds one
+  `collections.Counter` aggregation step (no new metrics engine, and
+  deliberately does not touch the older `SqliteApplicationStore`/funnel
+  pipeline -- a documented separate pipeline since Phase 51), and
+  `settings.py` redacts every API-key/token field to a `configured: bool`
+  flag, never its value. **No route can trigger discovery, tailoring,
+  review approval, or submission** -- `SubmissionEngine` is not imported
+  anywhere under `career_agent.api`, and this is enforced structurally, not
+  just documented: `CORSMiddleware` only allows `GET`, and a dedicated test
+  enumerates every route the app actually registers and asserts each one's
+  methods are a subset of `{GET, HEAD, OPTIONS}`. New CLI subcommand
+  `career-agent serve [--host] [--port]` runs `uvicorn.run(create_app())`;
+  `fastapi`/`uvicorn` are a new optional `web` extra
+  (`pip install 'career-agent[web]'`), imported lazily inside
+  `run_serve_command` so every other command keeps working with a plain
+  install. 15 new tests; 990 total. No authentication (single-user,
+  localhost-only, matching the README's own framing -- multi-user auth is
+  Phase 55+); no React frontend yet -- that is the immediate follow-up
+  phase, building against this now-tested API contract.
+
 ---
 
 ## Deferred work (named, not forgotten)

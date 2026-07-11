@@ -40,6 +40,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dashboard = ["streamlit>=1.30"]
+web = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -51,6 +55,8 @@ dev = [
     "import-linter>=2.0",
     "pre-commit>=3.7",
     "build>=1.2",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
 ]
 
 [project.urls]

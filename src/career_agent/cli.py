@@ -1860,6 +1860,27 @@ async def run_auto_cli_command(
     )
 
 
+def run_serve_command(*, host: str, port: int) -> int:
+    """The ``career-agent serve`` command: run the read-only dashboard API.
+
+    Imports uvicorn/FastAPI lazily (same pattern as the LLM providers
+    imported inside command functions above) so the ``web`` extra stays
+    optional -- every other CLI command works with a plain install.
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        print(
+            "The web dashboard API requires the 'web' extra: "
+            "pip install 'career-agent[web]'"
+        )
+        return 1
+    from career_agent.api.app import create_app
+
+    uvicorn.run(create_app(), host=host, port=port)
+    return 0
+
+
 def run_setup_command(
     *,
     profile_path: Path,
@@ -2338,6 +2359,14 @@ def main(argv: list[str] | None = None) -> None:
         ),
     )
 
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Run the read-only Web Dashboard API (Phase 54, ADR-0072). "
+        "Cannot discover, tailor, approve, or submit -- those stay CLI-only.",
+    )
+    serve_parser.add_argument("--host", default="127.0.0.1")
+    serve_parser.add_argument("--port", type=int, default=8000)
+
     args = parser.parse_args(argv)
 
     if args.command == "discover":
@@ -2456,6 +2485,9 @@ def main(argv: list[str] | None = None) -> None:
             )
         )
         raise SystemExit(exit_code)
+
+    if args.command == "serve":
+        raise SystemExit(run_serve_command(host=args.host, port=args.port))
 
     print(f"Autonomous AI Career Agent v{__version__} — scaffolding (Phase 1).")
     print("Not yet runnable; see ROADMAP.md for the build plan.")
