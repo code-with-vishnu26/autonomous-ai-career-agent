@@ -1216,6 +1216,30 @@ profile.
   form-filling, no login automation, no `Opportunity`/`ats_urls.py`
   change, no new dependency, no version bump.
 
+- ✅ **Search Planner -- ADR-0067 (Phase 49).** Decides what to search
+  *before* discovery runs (provider priority, keyword queries, budget,
+  diversification) -- a second capability inside the existing
+  `agents/planner/` boundary ADR-0007 already named, not a new top-level
+  package. ADR-0007's original LangGraph/LLM-cost-cascade coordinator
+  vision was never built (no `langgraph`/`langchain` import exists
+  anywhere under `src/`); this stays purely deterministic, matching how
+  `Decide` (the boundary's other capability) already works. New
+  `execution_plan.py`/`provider_selector.py`/`budget.py`/
+  `planning_rules.py`/`planner.py`, flat alongside `decide.py`. No
+  `keyword_expander.py` (would wrap Phase 46's already-real
+  `generate_search_queries`) and no `strategy.py` (diversification is one
+  assembly-loop decision inside `build_execution_plan`, not an
+  independently swappable strategy). Finally consumes
+  `JobPreferences.preferred_ats_providers` -- captured in Phase 46,
+  documented there as unconsumed until now. Search-volume budget is kept
+  explicitly distinct from `max_applications_per_day` (an unrelated
+  application-rate limit). `max_retries` is declared, not enforced -- no
+  executor exists yet to enforce it (future work); an AST-based purity
+  test proves zero I/O and zero `async def` across every new module. 33
+  new tests; 868 total. No CLI wiring, no AI/LLM call, no change to
+  `Decide`/`AdapterRegistry`/the execution-safety boundary, no new
+  dependency, no version bump.
+
 ---
 
 ## Deferred work (named, not forgotten)
