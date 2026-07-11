@@ -369,6 +369,26 @@ click completed with no challenge visible afterward. Every outcome
 recorded, append-only, via `SqliteSubmissionResultStore`, exportable via
 `storage.excel.export_submissions`.
 
+## Web Dashboard API (`career-agent serve`, backend only)
+
+```bash
+pip install 'career-agent[web]'
+career-agent serve --host 127.0.0.1 --port 8000
+```
+
+A **read-only** FastAPI layer (Phase 54, [ADR-0072](docs/adr/0072-web-dashboard-read-api.md))
+over the same data the CLI already produces — `GET /api/applications`,
+`/api/reviews` (and `/api/reviews/pending`), `/api/submissions`,
+`/api/resume-variants`, `/api/analytics/summary`, `/api/settings`
+(secrets redacted to a `configured: bool` flag, never their values). Each
+route wraps exactly one existing store class; there is no duplicated
+business logic here and no new database schema. Every route is a `GET` —
+structurally enforced by a test that enumerates the app's actual routes —
+so **nothing reachable through this API can trigger a search, a tailoring
+run, a review approval, or a submission**; those remain exclusively CLI
+actions (`discover`/`prepare`/`review`/`submit`). The React frontend that
+consumes this API is a follow-up phase, not yet built.
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered
