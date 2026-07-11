@@ -1405,8 +1405,46 @@ profile.
   `run_serve_command` so every other command keeps working with a plain
   install. 15 new tests; 990 total. No authentication (single-user,
   localhost-only, matching the README's own framing -- multi-user auth is
-  Phase 55+); no React frontend yet -- that is the immediate follow-up
+  a later phase); no React frontend yet -- that is the immediate follow-up
   phase, building against this now-tested API contract.
+
+- ✅ **React Dashboard frontend -- ADR-0073 (Phase 55).** The frontend
+  ADR-0072 named as its own immediate follow-up. `frontend/` is a React 19 +
+  TypeScript + Vite app (TailwindCSS + hand-written shadcn-style
+  primitives, TanStack Query, React Router, React Hook Form, Recharts,
+  Lucide) with 8 pages (Dashboard, Search Jobs, Applications, Review Queue,
+  Submission Queue, History, Analytics, Settings), a responsive
+  sidebar/navbar layout (mobile drawer), and persisted dark mode. **Every
+  page renders real data from the six existing `GET` routes only** --
+  `services/api.ts` is a one-function-per-route wrapper matching
+  `api/routers/*.py` exactly; cross-route joins (e.g. Review Queue's
+  résumé/cover-letter preview alongside its approval decision, Submission
+  Queue's "ready to submit" list) are pure functions over the already-
+  fetched responses (`lib/derive.ts`), the same "aggregation is
+  presentation logic" precedent `analytics.py` already set server-side --
+  no new status vocabulary, no client-side business rule the backend
+  doesn't already express. The brief's write actions (Search Jobs'
+  Search, Review Queue's Approve/Reject, Submission Queue's Submit) have no
+  backing endpoint (ADR-0072 shipped read-only, by design) -- rather than
+  fabricate them, `components/CliOnlyAction.tsx` renders a disabled button
+  naming the exact real CLI command instead, and each page's `Callout`
+  explains why (most pointedly: Submission Queue states there is no live
+  browser state or countdown to show, since ADR-0071's countdown-plus-
+  blocking-ENTER confirmation is a real terminal interaction this
+  dashboard cannot safely reproduce over HTTP). UI primitives
+  (`components/ui/*`) are hand-written in the shadcn "copy into your repo"
+  style rather than generated via the shadcn CLI (no network path to its
+  registry in this sandbox) -- same contract, same reasoning as any other
+  reused-not-duplicated primitive in this project. New CI job
+  `verify-frontend` (matrix `ubuntu-latest`/`windows-latest`, matching the
+  backend `verify` job) runs `npm ci`, type-check, lint, `vitest run`, and
+  `vite build` on every push/PR. 15 new frontend tests (pure-function
+  coverage for every `derive.ts` join, a `CliOnlyAction` behavior test,
+  route/rendering smoke tests including an API-unreachable error-banner
+  path); manually verified against a real running `career-agent serve`
+  with seeded data, screenshotted in light/dark themes and at a mobile
+  viewport. Zero backend files changed; full backend suite re-confirmed
+  unmodified (990 passed).
 
 ---
 

@@ -386,8 +386,50 @@ business logic here and no new database schema. Every route is a `GET` —
 structurally enforced by a test that enumerates the app's actual routes —
 so **nothing reachable through this API can trigger a search, a tailoring
 run, a review approval, or a submission**; those remain exclusively CLI
-actions (`discover`/`prepare`/`review`/`submit`). The React frontend that
-consumes this API is a follow-up phase, not yet built.
+actions (`discover`/`prepare`/`review`/`submit`). The React frontend
+consuming this API is documented next.
+
+## Web Dashboard frontend (`frontend/`)
+
+```bash
+# Terminal 1 -- the API this frontend consumes
+pip install 'career-agent[web]'
+career-agent serve
+
+# Terminal 2 -- the dashboard itself
+cd frontend
+npm install
+npm run dev   # http://localhost:5173, proxies /api to 127.0.0.1:8000
+```
+
+A React 19 + TypeScript + Vite dashboard (Phase 55, [ADR-0073](docs/adr/0073-react-dashboard-frontend.md))
+over the Phase 54 API above — TailwindCSS + hand-written shadcn-style
+primitives, TanStack Query, React Router, React Hook Form, Recharts, Lucide
+icons. Eight pages: Dashboard, Search Jobs, Applications, Review Queue,
+Submission Queue, History, Analytics, Settings. Responsive (sidebar
+collapses to a mobile drawer) and dark-mode aware (persisted, defaults to
+the OS preference).
+
+**Every number on every page comes from one of the six existing `GET`
+routes** — no client-side fabrication, no duplicated backend logic. Where a
+page needs data joined across routes (e.g. Review Queue showing a résumé
+preview next to its approval decision), the join is a pure function over
+the already-fetched responses (`frontend/src/lib/derive.ts`), the same
+"aggregation is presentation logic" precedent the API's own
+`analytics.py` already established server-side.
+
+**Actions with no backing endpoint are named, not faked.** Search Jobs'
+Search button, Review Queue's Approve/Reject, and Submission Queue's Submit
+all render as disabled buttons naming the exact CLI command to run instead
+(`career-agent discover`/`review`/`submit`) — approving a review and
+submitting an application stay exclusively CLI actions, preserving
+ADR-0071's terminal-only countdown/confirmation gate untouched. Submission
+Queue explicitly has no live browser state or countdown to show, for the
+same reason.
+
+Build for production with `npm run build` (output in `frontend/dist/`);
+test with `npm test` (Vitest + React Testing Library); type-check with
+`npx tsc -b`; lint with `npm run lint`.
 
 ## Privacy
 
