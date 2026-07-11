@@ -83,6 +83,16 @@ browser_state*.json
 *.log
 logs/
 
+# ---- Node / frontend (Phase 55) ----
+# frontend/.gitignore already covers this for git itself; also listed here
+# because hatchling's sdist file-selection only consults the *root*
+# .gitignore, not nested ones (the same class of gap ADR-0061 found for
+# .claude/.import_linter_cache/ -- confirmed live: node_modules leaked into
+# a built sdist despite frontend/.gitignore ignoring it for git). dist/
+# (frontend's build output) is already covered by the generic dist/ pattern
+# above.
+node_modules/
+
 # ---- Local Phase 36 controlled-smoke evidence/fixtures (never committed) ----
 # Named exactly, not by wildcard, so this can never silently hide an
 # unrelated legitimate file -- see docs/adr/0058-confirmation-lifecycle-and-retry-semantics.md.

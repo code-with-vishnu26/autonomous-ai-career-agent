@@ -53,6 +53,11 @@ _SDIST_ALLOWED_TOP_LEVEL = frozenset(
         "ROADMAP.md",
         "SECURITY.md",
         "docs",
+        # Phase 55: the React dashboard frontend's source (node_modules/
+        # dist are excluded via .gitignore -- see the "Node / frontend"
+        # section there for why they're listed at the *root* .gitignore
+        # rather than relying on frontend/.gitignore alone).
+        "frontend",
         "promptfoo",
         "pyproject.toml",
         "requirements.txt",

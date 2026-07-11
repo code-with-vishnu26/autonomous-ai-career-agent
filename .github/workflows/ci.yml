@@ -1,10 +1,12 @@
 name: CI
 
-# Zero-cost, fail-closed release gate (ADR-0057). Runs the full test suite,
-# architecture contracts, and a real packaging + clean-install + offline
-# smoke on every supported OS. Never uses continue-on-error, never
-# references a secret, and never makes a live LLM call -- the network guard
-# in tests/conftest.py blocks it even if a key were somehow present.
+# Zero-cost, fail-closed release gate (ADR-0057). Runs the full backend test
+# suite, architecture contracts, and a real packaging + clean-install +
+# offline smoke on every supported OS, plus (Phase 55, ADR-0073) the
+# frontend's type-check/lint/test/build in a parallel job. Never uses
+# continue-on-error, never references a secret, and never makes a live LLM
+# call -- the network guard in tests/conftest.py blocks it even if a key
+# were somehow present.
 
 on:
   push:
@@ -67,3 +69,40 @@ jobs:
 
       - name: Clean-venv install + CLI smoke (--help, offline setup)
         run: python scripts/smoke_test_wheel.py
+
+  verify-frontend:
+    name: verify-frontend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Same platform pair as the backend `verify` job (ADR-0056).
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc -b
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test suite (Vitest)
+        run: npm test
+
+      - name: Build (Vite)
+        run: npm run build
