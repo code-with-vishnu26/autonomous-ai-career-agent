@@ -72,6 +72,11 @@ dev = [
     # Test-only: parses docker-compose.yml/.dev.yml/.prod.yml for structural
     # validation (Phase 59, ADR-0076) -- never imported by any runtime code.
     "pyyaml>=6.0",
+    # Background scheduler (Phase 58, ADR-0077) -- CI's `verify` job installs
+    # only `.[dev]`, not `.[web]`, so this is duplicated here the same way
+    # `fastapi`/`uvicorn` already are, not a second source of truth for the
+    # version constraint (kept identical to the `web` extra's entry above).
+    "apscheduler>=3.10",
 ]
 
 [project.urls]
