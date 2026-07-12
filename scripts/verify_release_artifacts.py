@@ -83,6 +83,11 @@ _SDIST_ALLOWED_TOP_LEVEL = frozenset(
         # records only hashes of known false-positive matches, never a
         # real credential (see check_secrets_baseline.py's own docstring).
         ".secrets.baseline",
+        # Phase 61 (ADR-0079): forces LF line endings on checkout --
+        # fixes a real Windows CI failure where core.autocrlf's CRLF
+        # conversion silently changed file content enough to break the
+        # secrets-baseline hash comparison.
+        ".gitattributes",
     }
 )
 
