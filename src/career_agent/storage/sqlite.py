@@ -50,6 +50,8 @@ from career_agent.domain.identity import canonical_fingerprint
 from career_agent.domain.job_preferences import JobPreferences
 from career_agent.domain.journal import RunEvent
 from career_agent.domain.models import Application, Opportunity
+from career_agent.domain.notification import DeliveryAttempt, Notification
+from career_agent.domain.notification_preferences import NotificationPreferences
 from career_agent.domain.resume_variants import ResumeVariant
 from career_agent.domain.review import ReviewSession
 from career_agent.domain.submission import SubmissionResult
@@ -211,6 +213,48 @@ _USER_PREFERENCES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_preferences (
     user_id TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+_NOTIFICATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    read_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user
+    ON notifications (user_id);
+"""
+
+_NOTIFICATION_PREFERENCES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    user_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+_DELIVERY_ATTEMPT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS delivery_attempts (
+    id TEXT PRIMARY KEY,
+    notification_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    status TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    attempted_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_delivery_attempts_notification
+    ON delivery_attempts (notification_id);
+"""
+
+_WEBHOOK_SUBSCRIPTION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+    user_id TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 """
@@ -858,6 +902,16 @@ class SqliteUserStore:
                 (hashed_password, user_id),
             )
 
+    def all_users(self) -> list[User]:
+        """Every account.
+
+        Phase 58's scheduler jobs iterate this to compute per-user
+        reminders/digests; no other caller needs every account at once.
+        """
+        with _connect(self._path) as connection:
+            rows = connection.execute("SELECT * FROM users").fetchall()
+        return [_user_from_row(row) for row in rows]
+
 
 def _user_from_row(row: sqlite3.Row) -> User:
     return User(
@@ -941,6 +995,22 @@ class SqliteRefreshTokenStore:
                 "UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?", (user_id,)
             )
 
+    def delete_expired(self, *, now: datetime | None = None) -> int:
+        """Delete every row past its ``expires_at`` (Phase 58's cleanup job).
+
+        A real row deletion, not another revocation -- an already-expired
+        token carries no further audit value the way a *revoked-while-
+        still-valid* token does (that one stays as a real "someone tried
+        to reuse this" signal). Returns the number of rows deleted, so a
+        scheduler job can log something more useful than "ran."
+        """
+        cutoff = (now or datetime.now(UTC)).isoformat()
+        with _connect(self._path) as connection:
+            cursor = connection.execute(
+                "DELETE FROM refresh_tokens WHERE expires_at < ?", (cutoff,)
+            )
+            return cursor.rowcount
+
 
 class SqlitePasswordResetTokenStore:
     """Password-reset-token store (Phase 56, ADR-0074).
@@ -998,6 +1068,18 @@ class SqlitePasswordResetTokenStore:
                 "UPDATE password_reset_tokens SET used = 1 WHERE id = ?", (token_id,)
             )
 
+    def delete_expired(self, *, now: datetime | None = None) -> int:
+        """Delete every row past its ``expires_at`` (Phase 58's cleanup job).
+
+        Same reasoning as :meth:`SqliteRefreshTokenStore.delete_expired`.
+        """
+        cutoff = (now or datetime.now(UTC)).isoformat()
+        with _connect(self._path) as connection:
+            cursor = connection.execute(
+                "DELETE FROM password_reset_tokens WHERE expires_at < ?", (cutoff,)
+            )
+            return cursor.rowcount
+
 
 class SqliteUserPreferencesStore:
     """Per-user Job Search Preferences (Phase 56, ADR-0074).
@@ -1047,6 +1129,278 @@ class SqliteUserPreferencesStore:
         if row is None:
             return None
         return JobPreferences.model_validate(json.loads(row["payload"]))
+
+
+class SqliteNotificationStore:
+    """Per-user notification store (Phase 58, ADR-0077).
+
+    Append-only in spirit -- ``read_at``/``delete`` are the only ever
+    mutations, never the notification's own content, mirroring
+    ``SqliteReviewSessionStore``'s "the decision, not the content, is what
+    changes" discipline.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_NOTIFICATION_SCHEMA)
+
+    def save(self, notification: Notification, *, user_id: str) -> None:
+        """Persist a newly created notification, owned by ``user_id``."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO notifications (id, user_id, payload, read_at, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    notification.id,
+                    user_id,
+                    notification.model_dump_json(),
+                    notification.read_at.isoformat() if notification.read_at else None,
+                    notification.created_at.isoformat(),
+                ),
+            )
+
+    def by_user(self, user_id: str) -> list[Notification]:
+        """Every notification owned by ``user_id``, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM notifications WHERE user_id = ?"
+                " ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [Notification.model_validate(json.loads(row["payload"])) for row in rows]
+
+    def unread_by_user(self, user_id: str) -> list[Notification]:
+        """``user_id``'s notifications with no ``read_at`` yet, newest first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM notifications"
+                " WHERE user_id = ? AND read_at IS NULL"
+                " ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [Notification.model_validate(json.loads(row["payload"])) for row in rows]
+
+    def get(self, notification_id: str, *, user_id: str) -> Notification | None:
+        """One notification, only if owned by ``user_id`` -- never cross-user."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM notifications WHERE id = ? AND user_id = ?",
+                (notification_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return Notification.model_validate(json.loads(row["payload"]))
+
+    def mark_read(
+        self, notification_id: str, *, user_id: str, read_at: datetime
+    ) -> bool:
+        """Mark one notification read; returns whether a row was actually updated."""
+        notification = self.get(notification_id, user_id=user_id)
+        if notification is None:
+            return False
+        updated = notification.model_copy(update={"read_at": read_at})
+        with _connect(self._path) as connection:
+            connection.execute(
+                "UPDATE notifications SET payload = ?, read_at = ?"
+                " WHERE id = ? AND user_id = ?",
+                (
+                    updated.model_dump_json(),
+                    read_at.isoformat(),
+                    notification_id,
+                    user_id,
+                ),
+            )
+        return True
+
+    def mark_all_read(self, *, user_id: str, read_at: datetime) -> int:
+        """Mark every unread notification for ``user_id`` read; returns the count."""
+        unread = self.unread_by_user(user_id)
+        for notification in unread:
+            self.mark_read(notification.id, user_id=user_id, read_at=read_at)
+        return len(unread)
+
+    def delete(self, notification_id: str, *, user_id: str) -> bool:
+        """Delete one notification, only if owned by ``user_id``."""
+        with _connect(self._path) as connection:
+            cursor = connection.execute(
+                "DELETE FROM notifications WHERE id = ? AND user_id = ?",
+                (notification_id, user_id),
+            )
+            return cursor.rowcount > 0
+
+    def delete_read_older_than(self, *, cutoff: datetime) -> int:
+        """Delete every already-read notification older than ``cutoff`` (cleanup)."""
+        with _connect(self._path) as connection:
+            cursor = connection.execute(
+                "DELETE FROM notifications"
+                " WHERE read_at IS NOT NULL AND created_at < ?",
+                (cutoff.isoformat(),),
+            )
+            return cursor.rowcount
+
+
+class SqliteNotificationPreferencesStore:
+    """Per-user notification preferences (Phase 58, ADR-0077).
+
+    Same upsert-one-row-per-user shape as :class:`SqliteUserPreferencesStore`.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_NOTIFICATION_PREFERENCES_SCHEMA)
+
+    def save(self, user_id: str, preferences: NotificationPreferences) -> None:
+        """Upsert ``user_id``'s notification preferences."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO notification_preferences (user_id, payload, updated_at)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload,"
+                " updated_at = excluded.updated_at",
+                (
+                    user_id,
+                    preferences.model_dump_json(),
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+    def get(self, user_id: str) -> NotificationPreferences | None:
+        """``user_id``'s stored preferences, or ``None`` if never saved."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM notification_preferences WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return NotificationPreferences.model_validate(json.loads(row["payload"]))
+
+    def get_or_default(self, user_id: str) -> NotificationPreferences:
+        """``user_id``'s preferences, or the all-default set if never saved."""
+        return self.get(user_id) or NotificationPreferences()
+
+
+class SqliteDeliveryAttemptStore:
+    """Delivery-attempt log (Phase 58, ADR-0077) -- append-only, never mutated.
+
+    The evidence behind "record actual delivery status, never fabricate
+    success": every real attempt through every channel is logged here,
+    independent of the notification's own content.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_DELIVERY_ATTEMPT_SCHEMA)
+
+    def save(self, attempt: DeliveryAttempt, *, user_id: str) -> None:
+        """Persist one real delivery attempt."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO delivery_attempts"
+                " (id, notification_id, user_id, channel, status, detail, attempted_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    attempt.id,
+                    attempt.notification_id,
+                    user_id,
+                    attempt.channel,
+                    attempt.status,
+                    attempt.detail,
+                    attempt.attempted_at.isoformat(),
+                ),
+            )
+
+    def by_notification(self, notification_id: str) -> list[DeliveryAttempt]:
+        """Every delivery attempt recorded for one notification."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT id, notification_id, channel, status, detail, attempted_at"
+                " FROM delivery_attempts WHERE notification_id = ?"
+                " ORDER BY attempted_at ASC",
+                (notification_id,),
+            ).fetchall()
+        return [
+            DeliveryAttempt(
+                id=row["id"],
+                notification_id=row["notification_id"],
+                channel=row["channel"],
+                status=row["status"],
+                detail=row["detail"],
+                attempted_at=datetime.fromisoformat(row["attempted_at"]),
+            )
+            for row in rows
+        ]
+
+    def failed_webhook_attempts(self, *, user_id: str) -> list[DeliveryAttempt]:
+        """This user's most recent failed ``webhook`` attempts -- retry candidates."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT id, notification_id, channel, status, detail, attempted_at"
+                " FROM delivery_attempts"
+                " WHERE user_id = ? AND channel = 'webhook' AND status = 'FAILED'"
+                " ORDER BY attempted_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [
+            DeliveryAttempt(
+                id=row["id"],
+                notification_id=row["notification_id"],
+                channel=row["channel"],
+                status=row["status"],
+                detail=row["detail"],
+                attempted_at=datetime.fromisoformat(row["attempted_at"]),
+            )
+            for row in rows
+        ]
+
+
+class SqliteWebhookSubscriptionStore:
+    """Per-user webhook destination URL (Phase 58, ADR-0077).
+
+    Deliberately separate from :class:`SqliteNotificationPreferencesStore`
+    -- a webhook URL can carry sensitive info (a Slack/Discord incoming-
+    webhook secret embedded in its path), so it stays out of the same
+    payload the (less sensitive) channel-toggle preferences already
+    return wholesale to the frontend.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_WEBHOOK_SUBSCRIPTION_SCHEMA)
+
+    def save(self, user_id: str, url: str) -> None:
+        """Upsert ``user_id``'s webhook destination URL."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO webhook_subscriptions (user_id, url, updated_at)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT(user_id) DO UPDATE SET url = excluded.url,"
+                " updated_at = excluded.updated_at",
+                (user_id, url, datetime.now(UTC).isoformat()),
+            )
+
+    def get(self, user_id: str) -> str | None:
+        """``user_id``'s webhook URL, or ``None`` if never configured."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT url FROM webhook_subscriptions WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        return row["url"] if row is not None else None
+
+    def delete(self, user_id: str) -> None:
+        """Remove ``user_id``'s webhook subscription (disabling the channel)."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "DELETE FROM webhook_subscriptions WHERE user_id = ?", (user_id,)
+            )
 
 
 def migrate_to_multi_user(path: Path, *, default_operator_email: str) -> str:

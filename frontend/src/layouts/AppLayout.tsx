@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Navbar } from "./Navbar";
+import { BrowserNotifier } from "@/components/BrowserNotifier";
 
 export function AppLayout() {
   return (
@@ -8,6 +9,7 @@ export function AppLayout() {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Navbar />
+        <BrowserNotifier />
         <main className="flex-1 overflow-x-hidden p-4 md:p-6">
           <Outlet />
         </main>

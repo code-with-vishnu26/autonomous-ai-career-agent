@@ -241,3 +241,53 @@ export interface InterviewPrepResult {
   role_specific_questions: PrepQuestion[];
   star_guidance: string;
 }
+
+/** Phase 58, ADR-0077: `/notifications/*` and `/notification-settings`. */
+export type NotificationType = "INFO" | "SUCCESS" | "WARNING" | "ERROR" | "REMINDER" | "SYSTEM";
+
+export type NotificationCategory =
+  | "resume_prepared"
+  | "review_approved"
+  | "review_rejected"
+  | "submission_completed"
+  | "submission_cancelled"
+  | "submission_failed"
+  | "password_changed"
+  | "reminder_pending_review"
+  | "reminder_pending_submission"
+  | "reminder_promptfoo_validation"
+  | "digest_daily"
+  | "digest_weekly"
+  | "digest_monthly"
+  | "system";
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  category: NotificationCategory;
+  title: string;
+  message: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+export type WeeklyDigestDay = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface NotificationSettings {
+  enable_email: boolean;
+  enable_browser: boolean;
+  enable_in_app: boolean;
+  enable_reminders: boolean;
+  enable_digests: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  timezone: string;
+  daily_digest_time: string;
+  weekly_digest_day: WeeklyDigestDay;
+  categories: NotificationCategory[];
+  webhook_configured: boolean;
+}
+
+export interface NotificationSettingsUpdate extends Partial<Omit<NotificationSettings, "webhook_configured">> {
+  webhook_url?: string;
+}

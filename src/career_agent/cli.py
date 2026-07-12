@@ -131,15 +131,72 @@ from career_agent.storage.profile import (
 from career_agent.storage.sqlite import (
     SqliteApplicationSessionStore,
     SqliteApplicationStore,
+    SqliteDeliveryAttemptStore,
+    SqliteNotificationPreferencesStore,
+    SqliteNotificationStore,
     SqliteOpportunityRepository,
     SqliteResumeVariantStore,
     SqliteReviewSessionStore,
     SqliteRunJournal,
     SqliteSubmissionResultStore,
+    SqliteUserStore,
+    SqliteWebhookSubscriptionStore,
     migrate_to_multi_user,
 )
 
 _YES = {"y", "yes"}
+
+
+async def _notify(
+    settings: Settings,
+    *,
+    user_id: str,
+    type: str,
+    category: str,
+    title: str,
+    message: str,
+) -> None:
+    """Create + dispatch one dashboard notification (Phase 58, ADR-0077).
+
+    Never raises out to the caller -- the same "notify, never gate"
+    discipline :class:`~career_agent.integrations.notifications.NotifyingSubscriber`
+    already holds itself to (ADR-0005): a notification-delivery failure
+    (a dead SMTP relay, an unreachable webhook) must never fail or block
+    ``prepare``/``review``/``submit`` themselves.
+    """
+    from career_agent.agents.notifications.dispatcher import NotificationDispatcher
+    from career_agent.agents.notifications.engine import NotificationEngine
+    from career_agent.integrations.webhook import WebhookSender
+    from career_agent.scheduler import HttpxClient, build_email_sender
+
+    try:
+        db_path = Path(settings.database_path)
+        engine = NotificationEngine(SqliteNotificationStore(db_path))
+        notification = engine.create(
+            user_id=user_id,
+            type=type,  # type: ignore[arg-type]
+            category=category,  # type: ignore[arg-type]
+            title=title,
+            message=message,
+        )
+        preferences = SqliteNotificationPreferencesStore(db_path).get_or_default(
+            user_id
+        )
+        user = SqliteUserStore(db_path).by_id(user_id)
+        dispatcher = NotificationDispatcher(
+            delivery_store=SqliteDeliveryAttemptStore(db_path),
+            email_sender=build_email_sender(settings),
+            webhook_sender=WebhookSender(HttpxClient()),
+        )
+        await dispatcher.dispatch(
+            notification,
+            user_id=user_id,
+            preferences=preferences,
+            email_address=user.email if user else None,
+            webhook_url=SqliteWebhookSubscriptionStore(db_path).get(user_id),
+        )
+    except Exception as exc:  # noqa: BLE001 -- notifications never gate a command
+        print(f"(notification delivery warning, not fatal: {exc})")
 
 
 def confirm_submission(
@@ -578,6 +635,15 @@ async def run_prepare_command(
         session, Path(settings.artifacts_dir)
     )
 
+    await _notify(
+        settings,
+        user_id=operator_user_id,
+        type="SUCCESS" if session.status == "READY_FOR_REVIEW" else "WARNING",
+        category="resume_prepared",
+        title=f"Application prepared: {session.company} - {session.job_title}",
+        message=f"Status: {session.status}. Ready for `career-agent review`.",
+    )
+
     print(f"Application prepared. Status: {session.status}")
     if session.filled_fields:
         print(f"Filled fields: {session.filled_fields}")
@@ -652,6 +718,25 @@ def run_review_command(
         review, user_id=operator_user_id
     )
     review_file = _write_review_session_handoff(review, Path(settings.artifacts_dir))
+
+    if result.status in ("APPROVED", "REJECTED"):
+        approved = result.status == "APPROVED"
+        asyncio.run(
+            _notify(
+                settings,
+                user_id=operator_user_id,
+                type="SUCCESS" if approved else "INFO",
+                category="review_approved" if approved else "review_rejected",
+                title=(
+                    f"Review {result.status.lower()}: {session.company} - "
+                    f"{session.job_title}"
+                ),
+                message=(
+                    f"Your review of {session.job_title} at {session.company} "
+                    f"was {result.status.lower()}."
+                ),
+            )
+        )
 
     print(f"Decision: {result.status}")
     if result.approved:
@@ -878,6 +963,24 @@ async def run_submit_command(
         return 1
 
     submission_store.save(result, user_id=operator_user_id)
+
+    _submission_category = {
+        "SUBMITTED": ("SUCCESS", "submission_completed"),
+        "CANCELLED": ("INFO", "submission_cancelled"),
+    }.get(result.status, ("ERROR", "submission_failed"))
+    await _notify(
+        settings,
+        user_id=operator_user_id,
+        type=_submission_category[0],
+        category=_submission_category[1],
+        title=(
+            f"Submission {result.status.lower()}: {result.company} - "
+            f"{result.job_title}"
+        ),
+        message=f"Status: {result.status}." + (
+            f" Reason: {result.refusal_reason}" if result.refusal_reason else ""
+        ),
+    )
 
     print(f"Status: {result.status}")
     if result.submitted:

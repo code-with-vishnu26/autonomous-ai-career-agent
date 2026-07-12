@@ -520,6 +520,44 @@ backups, troubleshooting), [`docs/deployment/environment.md`](docs/deployment/en
 and [`docs/deployment/monitoring.md`](docs/deployment/monitoring.md)
 (health endpoints, structured logs, Prometheus metrics).
 
+## Notifications & Background Processing (Phase 58, [ADR-0077](docs/adr/0077-notifications-and-background-processing.md))
+
+A real Notification Center, reachable from the bell icon in the navbar or
+`/notifications`. Notifications are generated for events that have a
+real, wired data source: a résumé is prepared, a review is approved or
+rejected, a submission completes/is cancelled/fails, and a password
+reset completes. In-app delivery works with no configuration; email
+requires `SMTP_HOST`/`SMTP_FROM_ADDRESS` (unset by default — an attempted
+email without SMTP configured is recorded as **skipped**, never
+fabricated as sent); a webhook URL (`/notification-settings`) delivers to
+any service that accepts an incoming JSON POST, including Slack, Discord,
+and Microsoft Teams incoming webhooks. Browser push notifications use the
+real browser `Notification` API client-side, with graceful degradation
+where it's unsupported.
+
+A background scheduler (`career-agent serve`'s own process, no separate
+worker) runs six jobs: reminders (pending review, pending submission,
+missing Promptfoo validation — every 60 min by default,
+`REMINDER_INTERVAL_MINUTES`), daily/weekly digests (prepared/awaiting-
+review/submitted counts, 08:00 UTC), notification cleanup (deletes
+already-read notifications past `NOTIFICATION_RETENTION_DAYS`, default
+30), expired refresh/password-reset token cleanup, and failed-webhook
+retry. **The scheduler can never trigger a submission** — proven by an
+AST-based structural test, not just a docstring promise; every job only
+ever reads existing stores and writes to the notification stores.
+
+Per-user preferences (`/notification-settings`) control which channels
+are enabled, whether reminders/digests are on, quiet hours (channel
+delivery pauses; notifications are still recorded, never lost), and the
+webhook URL. **Several events named in early planning have no real
+trigger point in this codebase and are not built**: job-discovery and
+application-outcome notifications (discovery/outcome-recording remain
+CLI-only pipelines never wired to the dashboard), interview reminders and
+incomplete-profile reminders (no interview-tracking or profile-
+completeness store exists), invitation notifications (no invitation
+system exists), and an expired-API-key notification (no key-expiry
+concept exists) — see ADR-0077 for the full list and revisit criteria.
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered

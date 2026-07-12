@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogOut, Menu, Moon, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useThemeContext } from "@/hooks/useThemeContext";
 import { useAuth } from "@/hooks/useAuth";
 import { SidebarContent } from "./Sidebar";
@@ -38,6 +39,7 @@ export function Navbar() {
               {user.display_name ?? user.email}
             </span>
           )}
+          <NotificationBell />
           <Button
             variant="ghost"
             size="icon"

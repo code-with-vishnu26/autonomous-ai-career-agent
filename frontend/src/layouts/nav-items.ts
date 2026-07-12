@@ -20,6 +20,7 @@ import {
   DollarSign,
   CalendarClock,
   Map,
+  Bell,
 } from "lucide-react";
 
 export interface NavItem {
@@ -36,6 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/submission", label: "Submission Queue", icon: Send },
   { to: "/history", label: "History", icon: History },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -63,4 +65,5 @@ export const COACH_NAV_ITEMS: NavItem[] = [
 export const ACCOUNT_NAV_ITEMS: NavItem[] = [
   { to: "/profile", label: "Profile", icon: UserCircle },
   { to: "/account", label: "Account", icon: ShieldCheck },
+  { to: "/notification-settings", label: "Notification Settings", icon: Bell },
 ];

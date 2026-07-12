@@ -1643,6 +1643,91 @@ profile.
   `SubmissionEngine`, `BrowserApplicator`,
   `BrowserManager`/`SessionManager`/`TabManager`, or any auth logic.
 
+- ✅ **Notifications & Background Processing -- ADR-0077 (Phase 58).** The
+  brief named 17 trigger events, a full `NotificationEngine`/
+  `ReminderEngine`/`DigestGenerator` stack, and Slack/Discord/Teams
+  channels, requesting ADR number "0075" -- already used by the AI Career
+  Coach phase; correctly numbered ADR-0077 instead. The audit found the
+  existing `EventBus`/`Notifier` (Telegram + ntfy, ADR-0040) is CLI-only
+  and was never wired to the dashboard, no scheduler dependency or SMTP
+  transport exists anywhere, and several named events have no real
+  trigger point: discovery and application-outcome recording remain
+  CLI-only, dashboard-disconnected pipelines; no interview-tracking or
+  per-user profile-completeness store exists; no invitation system
+  exists; no API-key-expiry concept exists; the Career Coach is
+  synchronous request/response with no async "available later" state;
+  session-expiry is already fully handled client-side
+  (`SessionExpiredScreen`). This was the third consecutive phase to hit
+  this "brief names more than the architecture supports" pattern, after
+  two explicit user endorsements of "build what's real, defer what's not,
+  name it" (Phase 57, Phase 59); the scoping decision was stated directly
+  this time rather than asked a third time.
+
+  **Built for real:** notifications for résumé prepared, review
+  approved/rejected, submission completed/cancelled/failed, and password
+  changed -- wired at their six real call sites in `cli.py`/
+  `api/routers/auth.py`, every dispatch wrapped in a broad exception
+  catch so a delivery failure can never block the underlying operation
+  ("notify, never gate," ADR-0005). `domain/notification.py`'s
+  `Notification`/`DeliveryAttempt` follow the "`user_id` in the SQL row,
+  never the domain model" precedent (Phase 56); `DeliveryStatus =
+  SENT | FAILED | SKIPPED` is recorded for every real attempt through
+  every channel, regardless of outcome -- the literal implementation of
+  "never fabricate delivery success." Email is stdlib `smtplib` only (no
+  new dependency, matching `TelegramNotifier`/`NtfyNotifier`'s own "raw
+  protocol over an SDK" discipline); the webhook channel is one
+  **generic** `HttpClient`-based JSON POST sender that already satisfies
+  Slack/Discord/Teams incoming webhooks -- not three separate SDKs,
+  reading the brief's own "only build channels that have existing
+  infrastructure" instruction correctly rather than treating it as a gap.
+  `ReminderEngine` covers the three reminder types with a real data
+  source (pending review, pending submission, missing Promptfoo
+  validation, reusing `select_claim_verifier`/`verify_promptfoo_results`
+  exactly as `cli.py` already does); `DigestGenerator` reports the three
+  counts it can compute for real (prepared/awaiting-review/submitted),
+  omitting "new jobs"/"interview scheduled" as having no data source
+  rather than guessing zero.
+
+  `career_agent/scheduler.py` (`APScheduler`'s `AsyncIOScheduler`, six
+  named jobs, wired into `api/app.py`'s existing `lifespan` hook) lives
+  **top-level**, not under `core/`, because it needs to import both
+  `agents.notifications.*` and `llm.providers` -- both forbidden for
+  `core/` by the two import-linter layer contracts (ADR-0018/ADR-0043).
+  This exactly mirrors how `cli.py`, the existing composition root, is
+  already exempt from both contracts -- a reusable pattern for any future
+  cross-layer-composing module that isn't itself an agent. **The
+  scheduler is structurally proven incapable of ever submitting
+  anything** via an AST source scan (`tests/test_scheduler_purity.py`),
+  the same discipline `ApplicationPreparationEngine`'s no-submit-selector
+  test and `ReviewEngine`'s no-browser-import test already established --
+  not merely a docstring promise. Two new write-capable routers
+  (`/notifications/*`, `/notification-settings`) join `/auth/`, `/user/`,
+  `/coach/` as the API's only mutation-capable exceptions to the
+  `/api/*`-GET-only structural test, both proven user-isolated (a
+  cross-user notification access attempt is a 404, never a leak).
+
+  Frontend: `NotificationBell` (navbar, polls `/notifications/unread`
+  every 30s via TanStack Query's `refetchInterval` -- no websockets, the
+  same shape the rest of this dashboard already commits to),
+  `NotificationsPage` (full center: filter/search/pagination/mark-read/
+  mark-all-read/delete), `NotificationSettingsPage` (channel toggles,
+  reminders/digests toggles, webhook URL -- never echoed back once set,
+  the same discipline this API already applies to secrets), and
+  `BrowserNotifier` -- the exact file `agents/notifications/dispatcher.py`'s
+  own docstring names as where the client-side-only browser-push channel
+  lives, since there is no server-side "send a browser notification"
+  action to attempt or log; it shows a permission banner only while
+  undecided, and degrades gracefully (verified against a real
+  `Notification`-undefined test case) where the browser API is
+  unsupported.
+
+  99 new backend tests (1233 total), 16 new frontend tests (49 total);
+  full suites, ruff, both import-linter contracts, `tsc`/`oxlint`/
+  `vite build` all green. Zero changes to `SubmissionEngine`,
+  `BrowserApplicator`, the Human Review Center's approval semantics, or
+  any authentication logic beyond one notification dispatch call at the
+  end of an already-existing `reset_password` handler.
+
 ---
 
 ## Deferred work (named, not forgotten)

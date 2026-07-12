@@ -12,6 +12,9 @@ from pathlib import Path
 from career_agent.core.config import Settings
 from career_agent.storage.sqlite import (
     SqliteApplicationSessionStore,
+    SqliteDeliveryAttemptStore,
+    SqliteNotificationPreferencesStore,
+    SqliteNotificationStore,
     SqlitePasswordResetTokenStore,
     SqliteRefreshTokenStore,
     SqliteResumeVariantStore,
@@ -19,6 +22,7 @@ from career_agent.storage.sqlite import (
     SqliteSubmissionResultStore,
     SqliteUserPreferencesStore,
     SqliteUserStore,
+    SqliteWebhookSubscriptionStore,
 )
 
 
@@ -78,3 +82,23 @@ def get_password_reset_token_store() -> SqlitePasswordResetTokenStore:
 def get_user_preferences_store() -> SqliteUserPreferencesStore:
     """Per-user Job Search Preferences store (Phase 56, ADR-0074)."""
     return SqliteUserPreferencesStore(_database_path())
+
+
+def get_notification_store() -> SqliteNotificationStore:
+    """Notification store (Phase 58, ADR-0077)."""
+    return SqliteNotificationStore(_database_path())
+
+
+def get_notification_preferences_store() -> SqliteNotificationPreferencesStore:
+    """Per-user notification preferences store (Phase 58, ADR-0077)."""
+    return SqliteNotificationPreferencesStore(_database_path())
+
+
+def get_delivery_attempt_store() -> SqliteDeliveryAttemptStore:
+    """Notification delivery-attempt store (Phase 58, ADR-0077)."""
+    return SqliteDeliveryAttemptStore(_database_path())
+
+
+def get_webhook_subscription_store() -> SqliteWebhookSubscriptionStore:
+    """Per-user webhook-URL store (Phase 58, ADR-0077)."""
+    return SqliteWebhookSubscriptionStore(_database_path())
