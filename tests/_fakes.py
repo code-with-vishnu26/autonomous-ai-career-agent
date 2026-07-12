@@ -217,6 +217,33 @@ class FakeContentDrafter:
         return outcome
 
 
+class FakeCareerCoachAdvisor:
+    """Satisfies :class:`~career_agent.core.interfaces.CareerCoachAdvisor`.
+
+    Deterministic, fixture-driven, the same canned-outcome pattern as
+    ``FakeContentDrafter``: ``result`` is the raw text string returned on
+    every call (or an ``Exception`` to simulate advisor failure). Records
+    every prompt it was asked, so a test can assert what the coach
+    actually put in front of the model without needing a real call.
+    """
+
+    def __init__(
+        self,
+        result: str | Exception,
+        *,
+        prompt_version: str = "fake-coach-v1",
+    ) -> None:
+        self._result = result
+        self.prompt_version = prompt_version
+        self.calls: list[str] = []
+
+    async def draft_text(self, prompt: str, *, max_tokens: int = 1500) -> str:
+        self.calls.append(prompt)
+        if isinstance(self._result, Exception):
+            raise self._result
+        return self._result
+
+
 class FakeKeyProvider:
     """Satisfies :class:`~career_agent.integrations.browser_session.KeyProvider`.
 

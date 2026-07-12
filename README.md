@@ -399,7 +399,7 @@ JWT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 # Terminal 2 -- the dashboard itself
 cd frontend
 npm install
-npm run dev   # http://localhost:5173, proxies /api, /auth, /user to 127.0.0.1:8000
+npm run dev   # http://localhost:5173, proxies /api, /auth, /user, /coach to 127.0.0.1:8000
 ```
 
 A React 19 + TypeScript + Vite dashboard (Phase 55, [ADR-0073](docs/adr/0073-react-dashboard-frontend.md);
@@ -408,9 +408,10 @@ over the API above — TailwindCSS + hand-written shadcn-style primitives,
 TanStack Query, React Router, React Hook Form, Recharts, Lucide icons.
 Eight pages: Dashboard, Search Jobs, Applications, Review Queue,
 Submission Queue, History, Analytics, Settings, plus Login/Register/
-Forgot-Password/Reset-Password/Profile/Account. Responsive (sidebar
-collapses to a mobile drawer) and dark-mode aware (persisted, defaults to
-the OS preference, applied on every page including the public auth ones).
+Forgot-Password/Reset-Password/Profile/Account, plus a "Career Coach ⭐"
+section (Phase 57, see below). Responsive (sidebar collapses to a mobile
+drawer) and dark-mode aware (persisted, defaults to the OS preference,
+applied on every page including the public auth ones).
 
 **Every number on every dashboard page comes from an authenticated
 caller's own data** — no client-side fabrication, no duplicated backend
@@ -449,6 +450,41 @@ operator" account (`CLI_LOCAL_USER_EMAIL`, `.env`-overridable). Password
 resets issue a real token but don't email it yet (no transport is wired —
 a future phase); ask whoever runs the install for the token in the
 meantime.
+
+## Career Coach (Phase 57, [ADR-0075](docs/adr/0075-ai-career-coach.md))
+
+Advisory, candidate-strengthening features under a new "Career Coach ⭐"
+sidebar section, reachable once logged in. Every request is stateless and
+self-contained (paste your resume text and a job description; nothing is
+stored server-side):
+
+- **Resume Analysis** — deterministic ATS-style score, missing keywords,
+  weak-bullet flags, and formatting checks. No LLM call.
+- **Job Match Score** / **Skill Gap Analysis** — the same deterministic
+  keyword-coverage engine (`domain/coach_analysis.py`), plus a documented
+  "learning priority" heuristic (hard skills first, then earliest JD
+  mention — not a learned ranking model).
+- **AI Resume Suggestions** — LLM-drafted rewordings of your *existing*
+  bullets, each independently re-verified against your original text by
+  the same truthfulness-gate `ClaimVerifier` before being shown. An
+  unverifiable suggestion is dropped, never surfaced. Accept/Reject is a
+  local note for you; nothing is ever written back automatically.
+- **Cover Letter Assistant** — rewrite/shorten/more-formal/more-technical,
+  verified the same way against your original letter.
+- **Interview Preparation** — technical/behavioral/role-specific
+  questions plus STAR guidance, grounded only in the job description you
+  paste (never invented outside knowledge about the company).
+
+**Four features named in the brief are deferred, not faked**: Company
+Research, Salary Insights, Weekly Career Report, and Career Roadmap each
+have a sidebar page that honestly explains why (no real company-research/
+salary-benchmarking data source is integrated, and this project's
+interview/rejection outcome tracking was never connected to the
+dashboard) — see ADR-0075 for the full reasoning and revisit criteria.
+
+Requires `GROQ_API_KEY` or `ANTHROPIC_API_KEY` (same as every other LLM
+feature); the deterministic features (Resume Analysis, Job Match Score,
+Skill Gap Analysis) work without either.
 
 ## Privacy
 

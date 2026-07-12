@@ -1506,6 +1506,62 @@ profile.
   no in-app change-password (reset-token flow only), no organizations/
   billing (Phase 60).
 
+- ✅ **AI Career Coach -- ADR-0075 (Phase 57).** Ten features named in the
+  brief; a repository-reality audit found six have a real data source
+  (`domain/ats_scoring.py`'s taxonomy, the LLM provider abstraction,
+  `ClaimVerifier.verify_claim`) and four (Company Research, Salary
+  Insights, Weekly Career Report, Career Roadmap) do not -- no company-
+  research/salary-benchmarking data source exists (and ADR-0036 rules out
+  a scraper), and outcome data (interviews/rejections) only lives in an
+  old, disconnected CLI-only pipeline the dashboard never reads. Surfaced
+  as an explicit scoping question; **user chose to build the six for real
+  and defer the four with a named reason, still visible in the UI**.
+  Built: Resume Analysis (ATS score, missing keywords, weak-bullet and
+  formatting checks), Job Match Score, AI Resume Suggestions, Cover
+  Letter Assistant (rewrite/shorten/more formal/more technical),
+  Interview Preparation (JD-grounded technical/behavioral/role-specific
+  questions plus STAR guidance), Skill Gap Analysis. New
+  `domain/coach_analysis.py` is a distinct, lighter deterministic
+  pipeline for freeform pasted resume text against a JD -- reuses
+  `extract_jd_keywords`/the curated taxonomy but not `score_resume`'s
+  structured-`TailoredContent`-shaped matching (a genuinely different
+  input contract), plus two new heuristics (`find_weak_bullets`,
+  `find_formatting_issues`), both fixed and explainable, never a model
+  judgment. Skill Gap's "learning priority" ranking (hard skills first,
+  then by earliest JD mention) is the same kind of named heuristic, not a
+  learned model -- there's no outcome data in this codebase to train one
+  on. A new narrow LLM port, `CareerCoachAdvisor`
+  (`draft_text(prompt) -> str`, Groq-first/Anthropic-second like every
+  other port), backs the three LLM features. **Every AI-drafted claim is
+  verified before it is ever shown**: Resume Suggestions only ever asks
+  the advisor to reword an existing bullet, then independently re-checks
+  each rewording via the *same* `ClaimVerifier` the truthfulness gate
+  uses (0.7 confidence threshold, matching `agents/resume/gate.py`) --
+  an unverified suggestion is silently dropped, not surfaced. Cover
+  Letter Assistant's rewrite is verified the same way, raising a typed
+  `CoverLetterTransformRejectedError` (fail closed) if it can't be
+  confirmed as entailed by the original letter. Interview Prep needs no
+  verifier -- it produces questions/guidance, not achievement claims,
+  and its prompt requires every question's "why" to cite the specific JD
+  text that prompted it. Nothing in this phase has any write path back
+  to a résumé, profile, or stored record -- Resume Suggestions'
+  Accept/Reject buttons only flip local component state, which is how
+  "users explicitly accept any changes before they're applied" is
+  actually enforced (there is no channel to apply one automatically even
+  if a caller tried). New `/coach/*` router (deliberately not
+  `/api/coach/*`, preserving the existing `/api/*` GET-only structural
+  proof) is a third write-capable-router exception alongside
+  `/auth/`/`/user/` -- every call is stateless and self-contained (resume/
+  JD text in the body), so it never touches the database. Frontend: a new
+  "Career Coach ⭐" sidebar section with an overview page plus the 6 real
+  and 4 deferred feature pages; the deferred ones render an honest
+  `Callout` explaining why, the same `CliOnlyAction` precedent Phase 55
+  established for naming an unavailable capability instead of faking one.
+  35 new backend tests (1104 total), 3 new frontend tests (32 total);
+  clean ruff/lint-imports/`tsc`/`oxlint`/`vite build`. Zero changes to
+  `ats_scoring.py`, `domain/cover_letter.py`, or the real ATS-gated
+  tailoring pipeline.
+
 ---
 
 ## Deferred work (named, not forgotten)

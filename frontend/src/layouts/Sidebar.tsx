@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ACCOUNT_NAV_ITEMS, NAV_ITEMS } from "./nav-items";
+import { ACCOUNT_NAV_ITEMS, COACH_NAV_ITEMS, NAV_ITEMS } from "./nav-items";
 
 function NavLinks({ items, onNavigate }: { items: typeof NAV_ITEMS; onNavigate?: () => void }) {
   return (
@@ -36,8 +36,12 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <Briefcase className="h-5 w-5 text-primary" />
         <span className="font-semibold">Career Agent</span>
       </div>
-      <nav className="flex-1 space-y-1 p-2">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         <NavLinks items={NAV_ITEMS} onNavigate={onNavigate} />
+        <div className="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-muted-foreground">
+          Career Coach ⭐
+        </div>
+        <NavLinks items={COACH_NAV_ITEMS} onNavigate={onNavigate} />
       </nav>
       <nav className="space-y-1 border-t border-border p-2">
         <NavLinks items={ACCOUNT_NAV_ITEMS} onNavigate={onNavigate} />

@@ -22,6 +22,13 @@ from __future__ import annotations
 
 TRUTHFULNESS_GATE_PROMPT_VERSION = "truthfulness-gate-v2"
 
+#: Tracks the Career Coach's free-text advisor port (Phase 57, ADR-0075).
+#: Unlike the other constants here, this is not one fixed prompt template --
+#: ``CareerCoachAdvisor.draft_text`` takes an arbitrary caller-built prompt --
+#: so this version tracks the *port's contract* (model, call shape), bumped
+#: whenever that changes, not a single prompt's text.
+COACH_ADVISOR_PROMPT_VERSION = "coach-advisor-v1"
+
 TRUTHFULNESS_GATE_PROMPT = """\
 You are a strict fact-checker for a job application resume. Your ONLY job is \
 to judge whether a CLAIM is fully supported by EVIDENCE drawn from the \
