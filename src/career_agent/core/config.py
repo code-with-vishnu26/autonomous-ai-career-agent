@@ -151,3 +151,10 @@ class Settings(BaseSettings):
     #: How long an already-read notification survives before the
     #: cleanup job deletes it (days).
     notification_retention_days: int = 30
+
+    # -- Phase 60 (ADR-0078): organizations/invitations --------------------
+    #: Where the frontend actually lives -- needed to build an absolute
+    #: accept-invitation link inside an email (the backend otherwise never
+    #: needs to know this; every other link it builds is a relative API
+    #: path, per ``frontend/src/services/http.ts``'s own reasoning).
+    frontend_base_url: str = "http://localhost:5173"

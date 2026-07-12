@@ -62,8 +62,22 @@ export const COACH_NAV_ITEMS: NavItem[] = [
   { to: "/coach/roadmap", label: "Career Roadmap", icon: Map },
 ];
 
+/** Phase 60 (ADR-0078). Team/Billing/Audit Log are reached from a specific
+ * organization card on `/organizations`, not their own static nav links
+ * (they need an `organizationId`, which this static list has no way to
+ * know in advance). */
+export const ORGANIZATION_NAV_ITEMS: NavItem[] = [
+  { to: "/organizations", label: "Organizations", icon: Building2 },
+];
+
 export const ACCOUNT_NAV_ITEMS: NavItem[] = [
   { to: "/profile", label: "Profile", icon: UserCircle },
   { to: "/account", label: "Account", icon: ShieldCheck },
   { to: "/notification-settings", label: "Notification Settings", icon: Bell },
+];
+
+/** Platform-superadmin only (`User.role === "admin"`) -- rendered
+ * conditionally by `Sidebar.tsx`, not exposed to every user. */
+export const ADMIN_NAV_ITEMS: NavItem[] = [
+  { to: "/admin", label: "Platform Admin", icon: ShieldCheck },
 ];

@@ -48,6 +48,16 @@ service accepting a JSON POST) is set from the dashboard's Notification
 Settings page, not an environment variable -- it is per-account, not
 per-deployment.
 
+## Optional -- organizations & billing (Phase 60)
+
+| Variable | Default | Notes |
+|---|---|---|
+| `FRONTEND_BASE_URL` | `http://localhost:5173` | Where the frontend lives -- used only to build an absolute accept-invitation link inside an invitation email. Set this to your real frontend origin in production |
+
+No other new variables -- billing is a stub (`integrations/billing.py`,
+no Stripe key or webhook secret needed) and roles/permissions are a fixed,
+in-code mapping (`domain/roles.py`), not configuration.
+
 ## Optional -- existing application config (Phases 1-57, unchanged)
 
 Every variable `.env.example` already documents is unaffected by this

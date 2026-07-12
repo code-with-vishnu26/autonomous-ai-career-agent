@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,29 +19,40 @@ from fastapi.middleware.cors import CORSMiddleware
 from career_agent import __version__
 from career_agent.api.middleware import log_requests
 from career_agent.api.routers import (
+    admin,
     analytics,
     applications,
+    audit_log,
     auth,
+    billing,
     coach,
     health,
     notification_settings,
     notifications,
+    organizations,
     resume_variants,
     reviews,
+    roles,
     settings_,
     submissions,
+    team,
     user,
 )
 from career_agent.core.config import Settings
 from career_agent.core.logging_config import configure_logging
 from career_agent.core.startup_validation import validate_startup
+from career_agent.organizations import migrate_users_without_organization
 from career_agent.scheduler import build_scheduler
+from career_agent.storage.organization_store import SqliteOrganizationStore
+from career_agent.storage.sqlite import SqliteUserStore
+from career_agent.storage.team_store import SqliteMembershipStore
 
 logger = logging.getLogger(__name__)
 
-#: Local Vite dev server origins only -- this is a single-user-per-install,
-#: self-hosted tool (README's own framing), not a public multi-tenant SaaS;
-#: there is no production domain to allow yet.
+#: Local Vite dev server origins only -- self-hosted, single-install by
+#: default (README's own framing); a real hosted multi-tenant deployment
+#: (Phase 60, ADR-0078) would add its own production origin(s) here, not
+#: yet done since this project still ships as a self-hosted install.
 _DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 #: Every dashboard-data router (Phase 54) stays GET-only, by design --
@@ -49,9 +62,13 @@ _DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 #: account and its own preferences; Phase 57 (ADR-0075) scopes the Career
 #: Coach's stateless, self-contained requests. Phase 58 (ADR-0077) adds
 #: ``notifications``/``notification_settings`` -- read/mark-read/delete on
-#: the caller's own notifications and their own delivery preferences, still
-#: never anything that can trigger discovery, tailoring, review approval,
-#: or submission.
+#: the caller's own notifications and their own delivery preferences.
+#: Phase 60 (ADR-0078) adds ``roles``/``admin``/``audit_log`` (all
+#: GET-only, so they live under ``/api/`` and join this group) and
+#: ``organizations``/``team``/``billing`` (real mutations -- creating an
+#: organization, inviting/removing a member, changing a plan -- so they
+#: join the write-capable group below instead). Still nothing here can
+#: trigger discovery, tailoring, review approval, or submission.
 _READ_ONLY_ROUTERS = (
     health,
     applications,
@@ -60,8 +77,20 @@ _READ_ONLY_ROUTERS = (
     resume_variants,
     analytics,
     settings_,
+    roles,
+    admin,
+    audit_log,
 )
-_WRITE_CAPABLE_ROUTERS = (auth, user, coach, notifications, notification_settings)
+_WRITE_CAPABLE_ROUTERS = (
+    auth,
+    user,
+    coach,
+    notifications,
+    notification_settings,
+    organizations,
+    team,
+    billing,
+)
 
 
 @asynccontextmanager
@@ -88,6 +117,17 @@ async def _lifespan(app: FastAPI):
         __version__,
         settings.environment,
     )
+    db_path = Path(settings.database_path)
+    created = migrate_users_without_organization(
+        user_store=SqliteUserStore(db_path),
+        organization_store=SqliteOrganizationStore(db_path),
+        membership_store=SqliteMembershipStore(db_path),
+        now=datetime.now(UTC),
+    )
+    if created:
+        logger.info(
+            "Organization migration: created %d personal organization(s)", created
+        )
     scheduler = build_scheduler(settings)
     scheduler.start()
     logger.info("Background scheduler started (%d job(s))", len(scheduler.get_jobs()))

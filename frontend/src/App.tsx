@@ -21,6 +21,12 @@ import { ProfilePage } from "@/pages/ProfilePage";
 import { AccountPage } from "@/pages/AccountPage";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import { NotificationSettingsPage } from "@/pages/NotificationSettingsPage";
+import { OrganizationsPage } from "@/pages/OrganizationsPage";
+import { TeamPage } from "@/pages/TeamPage";
+import { BillingPage } from "@/pages/BillingPage";
+import { AuditLogPage } from "@/pages/AuditLogPage";
+import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
+import { AdminPage } from "@/pages/AdminPage";
 import { CareerCoachPage } from "@/pages/coach/CareerCoachPage";
 import { ResumeAnalysisPage } from "@/pages/coach/ResumeAnalysisPage";
 import { JobMatchPage } from "@/pages/coach/JobMatchPage";
@@ -72,6 +78,15 @@ function AppRoutes() {
           <Route path="/coach/salary-insights" element={<SalaryInsightsPage />} />
           <Route path="/coach/weekly-report" element={<WeeklyReportPage />} />
           <Route path="/coach/roadmap" element={<CareerRoadmapPage />} />
+          <Route path="/organizations" element={<OrganizationsPage />} />
+          <Route path="/organizations/:organizationId/team" element={<TeamPage />} />
+          <Route
+            path="/organizations/:organizationId/billing"
+            element={<BillingPage />}
+          />
+          <Route path="/organizations/:organizationId/audit" element={<AuditLogPage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Route>
       </Route>
     </Routes>

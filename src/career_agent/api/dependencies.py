@@ -10,6 +10,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from career_agent.core.config import Settings
+from career_agent.storage.audit_store import SqliteAuditLogStore
+from career_agent.storage.billing_store import (
+    SqliteSubscriptionStore,
+    SqliteUsageCounterStore,
+)
+from career_agent.storage.organization_store import SqliteOrganizationStore
 from career_agent.storage.sqlite import (
     SqliteApplicationSessionStore,
     SqliteDeliveryAttemptStore,
@@ -24,6 +30,7 @@ from career_agent.storage.sqlite import (
     SqliteUserStore,
     SqliteWebhookSubscriptionStore,
 )
+from career_agent.storage.team_store import SqliteInvitationStore, SqliteMembershipStore
 
 
 def get_settings() -> Settings:
@@ -102,3 +109,33 @@ def get_delivery_attempt_store() -> SqliteDeliveryAttemptStore:
 def get_webhook_subscription_store() -> SqliteWebhookSubscriptionStore:
     """Per-user webhook-URL store (Phase 58, ADR-0077)."""
     return SqliteWebhookSubscriptionStore(_database_path())
+
+
+def get_organization_store() -> SqliteOrganizationStore:
+    """Organization (tenant) store (Phase 60, ADR-0078)."""
+    return SqliteOrganizationStore(_database_path())
+
+
+def get_membership_store() -> SqliteMembershipStore:
+    """Organization-membership store (Phase 60, ADR-0078)."""
+    return SqliteMembershipStore(_database_path())
+
+
+def get_invitation_store() -> SqliteInvitationStore:
+    """Organization-invitation store (Phase 60, ADR-0078)."""
+    return SqliteInvitationStore(_database_path())
+
+
+def get_audit_log_store() -> SqliteAuditLogStore:
+    """Organization audit-log store (Phase 60, ADR-0078)."""
+    return SqliteAuditLogStore(_database_path())
+
+
+def get_subscription_store() -> SqliteSubscriptionStore:
+    """Billing-stub subscription store (Phase 60, ADR-0078)."""
+    return SqliteSubscriptionStore(_database_path())
+
+
+def get_usage_counter_store() -> SqliteUsageCounterStore:
+    """Billing-stub usage-counter store (Phase 60, ADR-0078)."""
+    return SqliteUsageCounterStore(_database_path())

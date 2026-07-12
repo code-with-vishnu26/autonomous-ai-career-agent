@@ -1,6 +1,10 @@
 # ADR-0000: Project philosophy
 
-- **Status:** Accepted
+- **Status:** Accepted; the "Multi-tenancy or a hosted SaaS" non-goal below is
+  **partially superseded by [ADR-0078](0078-saas-multi-tenant-platform.md)**
+  (Phase 60) -- see that ADR and the "Future revisit criteria" note at the
+  bottom of this document for what changed and why. Every other non-goal
+  and golden rule on this page is unchanged and still binding.
 - **Date:** 2026-06-30
 
 > This is the root ADR. Every other ADR is made in service of this one and may
@@ -108,7 +112,16 @@ circular dependencies.
 Revisit this philosophy if:
 
 - The project's intended audience changes from single self-hosted user to a hosted
-  / multi-user product (would invalidate several non-goals).
+  / multi-user product (would invalidate several non-goals). **Triggered by
+  ADR-0078 (Phase 60):** the audit for that phase found this exact trigger had
+  occurred -- the brief asked for a real Organizations/RBAC/billing platform,
+  which is precisely "hosted / multi-user product." The user confirmed the
+  change explicitly rather than it being assumed. Only the multi-tenancy
+  non-goal is affected; every other non-goal (mass-apply, CAPTCHA-bypass,
+  automating provider-intended-human logins, fabricating résumé content)
+  is untouched and still absolute. The CLI remains the single-operator,
+  self-hosted power-user tool it always was (ADR-0078's own scoping) --
+  multi-tenancy applies to the dashboard/API only.
 - The legal/ToS landscape changes such that current source strategies are no longer
   viable.
 - Evidence shows the interview-rate objective is being gamed and needs refinement.

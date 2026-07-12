@@ -28,6 +28,9 @@ NotificationType = Literal["INFO", "SUCCESS", "WARNING", "ERROR", "REMINDER", "S
 #: fixed, closed set matching only the trigger points that genuinely exist
 #: in this codebase today (see ADR-0077's "what this phase does not do"
 #: for the event types with no real data source, not included here).
+#: ``invitation_received``/``invitation_accepted`` were named-deferred in
+#: ADR-0077 ("no invitation system exists") -- Phase 60 (ADR-0078) built
+#: one for real, so they are added here as genuinely real triggers now.
 NotificationCategory = Literal[
     "resume_prepared",
     "review_approved",
@@ -42,6 +45,8 @@ NotificationCategory = Literal[
     "digest_daily",
     "digest_weekly",
     "digest_monthly",
+    "invitation_received",
+    "invitation_accepted",
     "system",
 ]
 

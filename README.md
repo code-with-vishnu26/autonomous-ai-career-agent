@@ -1,13 +1,20 @@
 # Autonomous AI Career Agent
 
-> A single-user, self-hosted assistant that discovers job openings, ranks them,
-> ingests your CV as evidence, and **prepares** truthful, ATS-tuned application
+> A self-hosted assistant that discovers job openings, ranks them, ingests
+> your CV as evidence, and **prepares** truthful, ATS-tuned application
 > materials for your review — using **your** accounts, **your** data, and
 > **your** machine.
 
-This is **not** a mass job-application bot and **not** a multi-tenant SaaS. It is
-a personal agent you own end-to-end. Its guiding principle is **quality over
-volume**: fewer, sharper, *truthful* applications.
+This is **not** a mass job-application bot. The CLI (`career-agent prepare`/
+`review`/`submit`) remains the single-operator personal agent it has always
+been — you own it end-to-end. The dashboard, as of Phase 60
+([ADR-0078](docs/adr/0078-saas-multi-tenant-platform.md)), supports real
+Organizations and teams for people who want to run this install for more
+than one person — a deliberate, explicit mission change from this project's
+original single-user-only framing, recorded (not hidden) in
+[ADR-0000](docs/adr/0000-project-philosophy.md)'s own amendment note. Its
+guiding principle is unchanged: **quality over volume**: fewer, sharper,
+*truthful* applications.
 
 **Released software (`v1.0.0`/`v1.1.0`) posture: `PREPARE_ONLY`.** The agent
 prepares everything up to a human confirmation and then **stops** — the
@@ -554,9 +561,64 @@ trigger point in this codebase and are not built**: job-discovery and
 application-outcome notifications (discovery/outcome-recording remain
 CLI-only pipelines never wired to the dashboard), interview reminders and
 incomplete-profile reminders (no interview-tracking or profile-
-completeness store exists), invitation notifications (no invitation
-system exists), and an expired-API-key notification (no key-expiry
-concept exists) — see ADR-0077 for the full list and revisit criteria.
+completeness store exists), and an expired-API-key notification (no
+key-expiry concept exists) — see ADR-0077 for the full list and revisit
+criteria. (Invitation notifications were deferred here for the same
+reason — no invitation system existed yet — but Phase 60/ADR-0078 built
+a real one; `invitation_received` is now a genuinely wired notification
+category, see below.)
+
+## Organizations & Team Management (Phase 60, [ADR-0078](docs/adr/0078-saas-multi-tenant-platform.md))
+
+Every account belongs to at least one **Organization** — a real personal
+one is created automatically at registration (you as its owner), so
+nothing extra is required to start. Create more from `/organizations`,
+where you can also see every organization you belong to and your role in
+each.
+
+Five fixed roles, each with a fixed permission set:
+
+| Permission | owner | admin | recruiter | member | viewer |
+|---|:---:|:---:|:---:|:---:|:---:|
+| View dashboard / analytics | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Search, prepare, review, submit | ✅ | ✅ | ✅ | ✅ | — |
+| Manage own notification settings | ✅ | ✅ | ✅ | ✅ | — |
+| Invite / suspend users | ✅ | ✅ | — | — | — |
+| Manage billing | ✅ | ✅ | — | — | — |
+| Delete organization / transfer ownership | ✅ | — | — | — | — |
+
+From `/organizations/<id>/team` you can invite members by email (a real,
+hashed-token invitation — reused through the exact same Phase 58 email
+transport and notification pipeline whenever the invited email already
+has an account), change roles, remove members, and review/revoke/resend
+pending invitations. Invitations respect your plan's seat limit — a real
+`402 Payment Required`, not just a displayed number.
+
+`/organizations/<id>/billing` is a real, production-ready billing
+**shape** with **no Stripe integration and no external payment call
+anywhere in this codebase** — three fixed plans (Free/Pro/Enterprise),
+plan changes that activate immediately (there's no real payment to wait
+for), and a live seat-usage counter. See ADR-0078 for exactly how it's
+built so a real payment processor could be swapped in later without
+touching any call site.
+
+`/organizations/<id>/audit` shows every real mutation recorded for that
+organization (who did what, when, from which IP, and whether it
+succeeded) — an append-only log, never editable.
+
+A platform-admin surface (`/admin`, visible only to accounts with the
+platform-wide `admin` account flag — a separate concept from any
+organization's own owner/admin role) lists every organization on the
+install and its members.
+
+**This is also a mission change, not just a feature**, and is recorded
+as one: [ADR-0000](docs/adr/0000-project-philosophy.md) (this project's
+founding philosophy) explicitly ruled out multi-tenancy "by fiat" until
+now; ADR-0078 documents exactly why and how that changed, with the
+original ADR-0000 decision text left untouched (see its Status line).
+The CLI is unaffected by any of this — `career-agent prepare`/`review`/
+`submit` remain the single local-operator, self-hosted tool they have
+always been; organizations are a dashboard/API concept only.
 
 ## Privacy
 

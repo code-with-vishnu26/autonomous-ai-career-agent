@@ -1,7 +1,14 @@
 import { NavLink } from "react-router-dom";
 import { Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ACCOUNT_NAV_ITEMS, COACH_NAV_ITEMS, NAV_ITEMS } from "./nav-items";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  ACCOUNT_NAV_ITEMS,
+  ADMIN_NAV_ITEMS,
+  COACH_NAV_ITEMS,
+  NAV_ITEMS,
+  ORGANIZATION_NAV_ITEMS,
+} from "./nav-items";
 
 function NavLinks({ items, onNavigate }: { items: typeof NAV_ITEMS; onNavigate?: () => void }) {
   return (
@@ -30,6 +37,8 @@ function NavLinks({ items, onNavigate }: { items: typeof NAV_ITEMS; onNavigate?:
 }
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+  const { user } = useAuth();
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-border p-4">
@@ -42,6 +51,13 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           Career Coach ⭐
         </div>
         <NavLinks items={COACH_NAV_ITEMS} onNavigate={onNavigate} />
+        <div className="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-muted-foreground">
+          Organization
+        </div>
+        <NavLinks items={ORGANIZATION_NAV_ITEMS} onNavigate={onNavigate} />
+        {user?.role === "admin" && (
+          <NavLinks items={ADMIN_NAV_ITEMS} onNavigate={onNavigate} />
+        )}
       </nav>
       <nav className="space-y-1 border-t border-border p-2">
         <NavLinks items={ACCOUNT_NAV_ITEMS} onNavigate={onNavigate} />

@@ -72,6 +72,19 @@ def submission_confirmation_email(
     return subject, body
 
 
+def invitation_email(
+    *, organization_name: str, role: str, invite_link: str
+) -> tuple[str, str]:
+    """Sent when someone is invited to join an organization (Phase 60, ADR-0078)."""
+    subject = f"You've been invited to join {organization_name}"
+    body = (
+        f"You've been invited to join {organization_name} as a {role}.\n\n"
+        f"Accept the invitation: {invite_link}\n\n"
+        "If you weren't expecting this, you can safely ignore this email."
+    )
+    return subject, body
+
+
 def digest_email(*, period: str, summary_lines: list[str]) -> tuple[str, str]:
     """Daily/weekly/monthly digest from already-formatted plain-text lines.
 

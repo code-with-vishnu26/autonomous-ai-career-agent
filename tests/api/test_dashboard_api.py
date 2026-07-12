@@ -319,8 +319,11 @@ def test_auth_and_user_are_the_only_write_capable_routers() -> None:
     endpoints (a real costed action, even though none of them write to a
     database). Phase 58 (ADR-0077) adds `/notifications/*` and
     `/notification-settings` -- read/mark-read/delete on the caller's own
-    notifications and their own delivery preferences. This proves nothing
-    else silently gained a POST/PUT/PATCH/DELETE.
+    notifications and their own delivery preferences. Phase 60 (ADR-0078)
+    adds `/organizations/*`, `/team/*`, and `/billing/*` for real
+    organization/membership/plan mutations (`/roles`, `/admin`, `/audit`
+    are GET-only and live under `/api/`, so they need no exception here).
+    This proves nothing else silently gained a POST/PUT/PATCH/DELETE.
     """
     app = create_app()
     for route in _iter_routes(app):
@@ -336,6 +339,9 @@ def test_auth_and_user_are_the_only_write_capable_routers() -> None:
                 or path.startswith("/coach/")
                 or path.startswith("/notifications/")
                 or path.startswith("/notification-settings")
+                or path.startswith("/organizations")
+                or path.startswith("/team")
+                or path.startswith("/billing")
             )
             assert allowed, f"{path} allows {mutating} outside the write boundary"
 
