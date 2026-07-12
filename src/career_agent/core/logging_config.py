@@ -17,6 +17,8 @@ import sys
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from career_agent.core.request_context import RequestIdLogFilter
+
 if TYPE_CHECKING:
     from career_agent.core.config import Settings
 
@@ -74,6 +76,9 @@ def configure_logging(settings: Settings) -> None:
         handler.setFormatter(JsonFormatter())
     else:
         handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+            logging.Formatter(
+                "%(asctime)s %(levelname)s %(name)s [%(request_id)s]: %(message)s"
+            )
         )
+    handler.addFilter(RequestIdLogFilter())
     root.addHandler(handler)

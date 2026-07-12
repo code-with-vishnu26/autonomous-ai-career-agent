@@ -13,11 +13,12 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from career_agent import __version__
-from career_agent.api.middleware import log_requests
+from career_agent.api.middleware import log_requests, request_id_middleware
 from career_agent.api.routers import (
     admin,
     analytics,
@@ -40,6 +41,7 @@ from career_agent.api.routers import (
 )
 from career_agent.core.config import Settings
 from career_agent.core.logging_config import configure_logging
+from career_agent.core.request_context import REQUEST_ID_HEADER, current_request_id
 from career_agent.core.startup_validation import validate_startup
 from career_agent.organizations import migrate_users_without_organization
 from career_agent.scheduler import build_scheduler
@@ -136,6 +138,37 @@ async def _lifespan(app: FastAPI):
     logger.info("Shutting down Autonomous AI Career Agent dashboard API")
 
 
+async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all for any exception a route/dependency didn't handle itself.
+
+    FastAPI's own default already turns an uncaught exception into a bare
+    500 with no body; this only makes that response consistent (a JSON
+    envelope carrying the same correlation ID as the request's log lines)
+    and guarantees the full traceback reaches the logs -- Starlette's
+    default error handling logs it via the ASGI server, not this
+    project's own structured `logging_config`, so it would otherwise never
+    get a `request_id` or land in JSON when JSON logging is on. Never
+    includes ``str(exc)`` in the response body -- that's exactly the
+    internal detail (a stack trace fragment, a file path, a SQL fragment)
+    this handler exists to keep off the wire.
+
+    Reads the ID from ``request.state`` rather than the
+    ``current_request_id()`` contextvar -- a handler for the bare
+    ``Exception`` type runs in Starlette's outermost middleware layer,
+    after ``request_id_middleware``'s own ``finally`` has already reset
+    the contextvar (see that function's docstring).
+    """
+    request_id = getattr(request.state, "request_id", "") or current_request_id()
+    logger.exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "request_id": request_id},
+        headers={REQUEST_ID_HEADER: request_id} if request_id else None,
+    )
+
+
 def create_app() -> FastAPI:
     """Build the FastAPI app: CORS for the local dev frontend, then routers."""
     app = FastAPI(
@@ -157,7 +190,13 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["*"],
     )
+    # Registered in reverse execution order (Starlette wraps middleware
+    # innermost-last): request_id must run first so log_requests' own log
+    # line -- and every route/dependency log line after it -- already has
+    # the correlation ID available.
     app.middleware("http")(log_requests)
+    app.middleware("http")(request_id_middleware)
+    app.add_exception_handler(Exception, _handle_unexpected_error)
     for router_module in (*_READ_ONLY_ROUTERS, *_WRITE_CAPABLE_ROUTERS):
         app.include_router(router_module.router)
     return app
