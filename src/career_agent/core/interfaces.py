@@ -484,6 +484,36 @@ class ClaimVerifier(Protocol):
 
 
 @runtime_checkable
+class CareerCoachAdvisor(Protocol):
+    """The narrow free-text LLM port behind the Career Coach (Phase 57, ADR-0075).
+
+    Every other real LLM port in this project (``ContentDrafter``,
+    ``SemanticKeywordMatcher``, ``ClaimVerifier``) is narrowly typed to one
+    resume-tailoring shape. The Career Coach's six real features (resume
+    suggestions, cover letter rewriting, interview prep) each need
+    differently-shaped free text back, so this port is intentionally the
+    opposite: one prompt in, one raw string out. Every caller is
+    responsible for its own fabrication-safety story on top of this --
+    see ``agents/coach/resume_suggestions.py`` and
+    ``agents/coach/cover_letter_assistant.py``, which verify what comes
+    back through the same :class:`ClaimVerifier` the truthfulness gate
+    uses, before ever returning it to a caller. This port itself makes no
+    truthfulness guarantee -- it is exactly as raw as
+    ``groq_chat_completion``/a bare Anthropic call.
+    """
+
+    prompt_version: str
+
+    async def draft_text(self, prompt: str, *, max_tokens: int = 1500) -> str:
+        """Return the model's raw text completion for ``prompt``.
+
+        Must raise on failure (timeout, API error) rather than return a
+        fabricated or empty string.
+        """
+        ...
+
+
+@runtime_checkable
 class NotificationSink(Protocol):
     """A pluggable notification channel.
 

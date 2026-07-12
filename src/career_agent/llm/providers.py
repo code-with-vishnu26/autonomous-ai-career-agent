@@ -21,13 +21,16 @@ from __future__ import annotations
 
 from career_agent.core.config import Settings
 from career_agent.core.interfaces import (
+    CareerCoachAdvisor,
     ClaimVerifier,
     ContentDrafter,
     SemanticKeywordMatcher,
 )
 from career_agent.llm.claim_verifier import AnthropicClaimVerifier
+from career_agent.llm.coach_advisor import AnthropicCareerCoachAdvisor
 from career_agent.llm.content_drafter import AnthropicContentDrafter
 from career_agent.llm.groq_claim_verifier import GroqClaimVerifier
+from career_agent.llm.groq_coach_advisor import GroqCareerCoachAdvisor
 from career_agent.llm.groq_content_drafter import GroqContentDrafter
 from career_agent.llm.groq_semantic_matcher import GroqSemanticKeywordMatcher
 from career_agent.llm.semantic_matcher import AnthropicSemanticKeywordMatcher
@@ -88,4 +91,24 @@ def select_claim_verifier(settings: Settings) -> ClaimVerifier:
     raise NoLLMProviderConfiguredError(
         "Set GROQ_API_KEY (free) or ANTHROPIC_API_KEY (paid) for the "
         "truthfulness gate's verifier."
+    )
+
+
+def select_coach_advisor(settings: Settings) -> CareerCoachAdvisor:
+    """Groq first (free), Anthropic second (paid) -- the Career Coach's advisor.
+
+    Every LLM-backed coach feature (resume suggestions, cover letter
+    rewriting, interview prep) is recoverable the same way ``ContentDrafter``
+    is: resume-suggestion/cover-letter text this advisor drafts is verified
+    against evidence by the *same* ``ClaimVerifier`` the truthfulness gate
+    uses (see ``agents/coach/resume_suggestions.py``) before ever reaching a
+    caller, so a false-approve here is not the last word.
+    """
+    if settings.groq_api_key:
+        return GroqCareerCoachAdvisor(api_key=settings.groq_api_key)
+    if settings.anthropic_api_key:
+        return AnthropicCareerCoachAdvisor(api_key=settings.anthropic_api_key)
+    raise NoLLMProviderConfiguredError(
+        "Set GROQ_API_KEY (free) or ANTHROPIC_API_KEY (paid) for the "
+        "Career Coach's advisor."
     )

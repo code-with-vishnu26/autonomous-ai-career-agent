@@ -19,6 +19,17 @@ import { AnalyticsPage } from "@/pages/AnalyticsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { AccountPage } from "@/pages/AccountPage";
+import { CareerCoachPage } from "@/pages/coach/CareerCoachPage";
+import { ResumeAnalysisPage } from "@/pages/coach/ResumeAnalysisPage";
+import { JobMatchPage } from "@/pages/coach/JobMatchPage";
+import { ResumeSuggestionsPage } from "@/pages/coach/ResumeSuggestionsPage";
+import { CoverLetterAssistantPage } from "@/pages/coach/CoverLetterAssistantPage";
+import { InterviewPrepPage } from "@/pages/coach/InterviewPrepPage";
+import { SkillGapPage } from "@/pages/coach/SkillGapPage";
+import { CompanyResearchPage } from "@/pages/coach/CompanyResearchPage";
+import { SalaryInsightsPage } from "@/pages/coach/SalaryInsightsPage";
+import { WeeklyReportPage } from "@/pages/coach/WeeklyReportPage";
+import { CareerRoadmapPage } from "@/pages/coach/CareerRoadmapPage";
 
 function AppRoutes() {
   const { sessionExpired } = useAuth();
@@ -46,6 +57,17 @@ function AppRoutes() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/account" element={<AccountPage />} />
+          <Route path="/coach" element={<CareerCoachPage />} />
+          <Route path="/coach/resume-analysis" element={<ResumeAnalysisPage />} />
+          <Route path="/coach/job-match" element={<JobMatchPage />} />
+          <Route path="/coach/resume-suggestions" element={<ResumeSuggestionsPage />} />
+          <Route path="/coach/cover-letter" element={<CoverLetterAssistantPage />} />
+          <Route path="/coach/interview-prep" element={<InterviewPrepPage />} />
+          <Route path="/coach/skill-gap" element={<SkillGapPage />} />
+          <Route path="/coach/company-research" element={<CompanyResearchPage />} />
+          <Route path="/coach/salary-insights" element={<SalaryInsightsPage />} />
+          <Route path="/coach/weekly-report" element={<WeeklyReportPage />} />
+          <Route path="/coach/roadmap" element={<CareerRoadmapPage />} />
         </Route>
       </Route>
     </Routes>

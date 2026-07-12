@@ -311,11 +311,14 @@ def test_dashboard_data_routes_are_get_only() -> None:
 
 
 def test_auth_and_user_are_the_only_write_capable_routers() -> None:
-    """No route outside `/auth/*`/`/user/*` allows a mutating method.
+    """No route outside `/auth/*`/`/user/*`/`/coach/*` allows a mutating method.
 
-    Phase 56 (ADR-0074) deliberately adds exactly two write-capable
-    routers -- authentication and the caller's own account/preferences.
-    This proves nothing else silently gained a POST/PUT/PATCH/DELETE.
+    Phase 56 (ADR-0074) added two write-capable routers -- authentication
+    and the caller's own account/preferences. Phase 57 (ADR-0075) adds a
+    third, `/coach/*`, for the Career Coach's stateless LLM-backed
+    endpoints (a real costed action, even though none of them write to a
+    database). This proves nothing else silently gained a
+    POST/PUT/PATCH/DELETE.
     """
     app = create_app()
     for route in _iter_routes(app):
@@ -325,9 +328,12 @@ def test_auth_and_user_are_the_only_write_capable_routers() -> None:
             continue
         mutating = methods - {"GET", "HEAD", "OPTIONS"}
         if mutating:
-            assert path.startswith("/auth/") or path.startswith("/user/"), (
-                f"{path} allows {mutating} outside the /auth//user/ write boundary"
+            allowed = (
+                path.startswith("/auth/")
+                or path.startswith("/user/")
+                or path.startswith("/coach/")
             )
+            assert allowed, f"{path} allows {mutating} outside the write boundary"
 
 
 def test_dependencies_construct_settings_freshly_not_cached() -> None:

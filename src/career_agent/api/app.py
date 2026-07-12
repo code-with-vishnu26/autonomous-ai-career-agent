@@ -10,6 +10,7 @@ from career_agent.api.routers import (
     analytics,
     applications,
     auth,
+    coach,
     health,
     resume_variants,
     reviews,
@@ -24,11 +25,12 @@ from career_agent.api.routers import (
 _DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 #: Every dashboard-data router (Phase 54) stays GET-only, by design --
-#: ADR-0072/0074's read-only boundary. ``auth``/``user`` are the only
-#: routers this API has ever allowed to mutate anything, and only what
-#: Phase 56 explicitly scoped: an account and its own preferences. Still
-#: nothing here can trigger discovery, tailoring, review approval, or
-#: submission.
+#: ADR-0072/0074's read-only boundary. ``auth``/``user``/``coach`` are the
+#: only routers this API has ever allowed to mutate anything (or, for
+#: ``coach``, to trigger a real costed LLM call) -- Phase 56 scoped an
+#: account and its own preferences; Phase 57 (ADR-0075) scopes the Career
+#: Coach's stateless, self-contained requests. Still nothing here can
+#: trigger discovery, tailoring, review approval, or submission.
 _READ_ONLY_ROUTERS = (
     health,
     applications,
@@ -38,7 +40,7 @@ _READ_ONLY_ROUTERS = (
     analytics,
     settings_,
 )
-_WRITE_CAPABLE_ROUTERS = (auth, user)
+_WRITE_CAPABLE_ROUTERS = (auth, user, coach)
 
 
 def create_app() -> FastAPI:
@@ -48,10 +50,10 @@ def create_app() -> FastAPI:
         version=__version__,
         description=(
             "Read-only dashboard data API (Phase 54) plus authentication "
-            "and per-user account/preferences endpoints (Phase 56). No "
-            "route in this API can trigger discovery, tailoring, review "
-            "approval, or submission -- those remain exclusively CLI "
-            "actions."
+            "and per-user account/preferences endpoints (Phase 56) and "
+            "advisory Career Coach endpoints (Phase 57). No route in this "
+            "API can trigger discovery, tailoring, review approval, or "
+            "submission -- those remain exclusively CLI actions."
         ),
     )
     app.add_middleware(

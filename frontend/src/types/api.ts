@@ -165,3 +165,79 @@ export interface JobPreferences {
   preferred_ats_providers: string[];
   time_zone: string | null;
 }
+
+/**
+ * Career Coach types (Phase 57, ADR-0075). Mirror
+ * `career_agent/agents/coach/*.py`'s Pydantic response models field-for-field.
+ */
+export interface MatchedSkill {
+  keyword: string;
+  kind: "hard" | "soft";
+}
+
+export interface MissingKeyword {
+  keyword: string;
+  kind: "hard" | "soft";
+}
+
+export interface BulletIssue {
+  text: string;
+  reason: string;
+}
+
+export interface FormattingIssue {
+  reason: string;
+}
+
+export interface ResumeAnalysis {
+  ats_score: number;
+  matched_keywords: MatchedSkill[];
+  missing_keywords: MissingKeyword[];
+  weak_bullets: BulletIssue[];
+  formatting_issues: FormattingIssue[];
+}
+
+export interface JobMatchResult {
+  match_score: number;
+  matched_keywords: MatchedSkill[];
+  missing_keywords: MissingKeyword[];
+}
+
+export interface PrioritizedGap {
+  keyword: string;
+  kind: string;
+  reason: string;
+}
+
+export interface SkillGapReport {
+  qualifies_percent: number;
+  missing_skills: PrioritizedGap[];
+}
+
+export interface ResumeSuggestion {
+  original: string;
+  suggested: string;
+  reason: string;
+  confidence: number;
+}
+
+export type CoverLetterMode = "rewrite" | "shorten" | "more_formal" | "more_technical";
+
+export interface CoverLetterTransformResult {
+  mode: string;
+  original: string;
+  transformed: string;
+  confidence: number;
+}
+
+export interface PrepQuestion {
+  question: string;
+  why: string;
+}
+
+export interface InterviewPrepResult {
+  technical_questions: PrepQuestion[];
+  behavioral_questions: PrepQuestion[];
+  role_specific_questions: PrepQuestion[];
+  star_guidance: string;
+}
