@@ -132,8 +132,11 @@ silently pretended-away here.
   browser-automation dependency to unpin two transitive libraries is a far
   bigger, riskier undertaking than a hardening phase should take
   unilaterally. Named here and in CI, not silently skipped; revisit when
-  `browser-use` relaxes or bumps its own pins. `pip` itself was upgraded
-  (fixes its own 5 CVEs for real, no ignore needed).
+  `browser-use` relaxes or bumps its own pins. `pip` and `setuptools`
+  themselves are upgraded in CI before the audit runs (fixes 5 real CVEs
+  in each for real, no ignore needed) -- `setuptools`' vulnerable
+  `65.5.0` only surfaced on the `windows-latest` leg, since that runner's
+  bundled Python ships an older default than Linux's.
 - **`npm audit`** (frontend `verify-frontend` job): genuinely clean today
   (0 vulnerabilities) -- added as a real, unconditional gate.
 - **`detect-secrets`** + `.secrets.baseline` (new, committed) +
@@ -143,18 +146,26 @@ silently pretended-away here.
   verified by hand to be placeholder/test-fixture values (`docker.env`'s
   own "safe to commit" comment, test JWT secrets like
   `"unit-test-secret-not-for-real-use"`, promptfoo config comments
-  mentioning "key"), never a real credential. Two real bugs found and
-  fixed while building this, both by testing the actual tool rather than
+  mentioning "key"), never a real credential. Three real bugs found and
+  fixed while building this, all by testing the actual tool rather than
   assuming it would work: (1) `detect-secrets` enumerates scan targets via
   `git ls-files`, not a raw filesystem walk -- a naive re-scan in a
   directory with no `.git` silently finds nothing; (2) the baseline file
   itself was being scanned, so its own recorded secret-hashes looked like
   fresh high-entropy findings, snowballing on every regeneration -- fixed
-  by excluding `.secrets.baseline` from its own scan. The check also
-  strips `generated_at` (changes every run) and the `is_baseline_file`
-  filter's absolute `--baseline` path (differs between a contributor's
-  machine and CI's runner) before comparing, or CI would fail on every
-  single run regardless of whether a real secret changed.
+  by excluding `.secrets.baseline` from its own scan; (3) found only by a
+  real Windows CI failure, after two wrong guesses (line endings, then
+  forced UTF-8 mode) were tried and each individually ruled out against
+  the actual failing job's log before moving on: `detect-secrets` reports
+  `results` filenames with `\` path separators on Windows and `/`
+  everywhere else, so a Linux-generated baseline never matched a fresh
+  Windows scan of identical content until both sides were canonicalized
+  to `/` -- confirmed by reproducing the exact backslash-keyed scan the
+  real job produced before trusting the fix. The check also strips
+  `generated_at` (changes every run) and the `is_baseline_file` filter's
+  absolute `--baseline` path (differs between a contributor's machine and
+  CI's runner) before comparing, or CI would fail on every single run
+  regardless of whether a real secret changed.
 
 Both new CI tools live in their own `security` extra
 (`pip install -e ".[dev,security]"`), not folded into `dev` -- neither

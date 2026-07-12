@@ -1855,17 +1855,26 @@ profile.
   Submission Engine's real browser automation library; confirmed the
   latest available release, 0.13.4, still pins the identical vulnerable
   versions, a genuine upstream constraint rather than a shortcut --
-  `pip` itself was upgraded, fixing its own 5 CVEs for real), `npm audit`
-  (genuinely clean today, added as an unconditional gate), and a new
-  `.secrets.baseline` + `scripts/check_secrets_baseline.py` that fails CI
-  if a fresh scan no longer matches the committed baseline. Two real bugs
-  found and fixed while building the checker, both by actually running
-  the tool rather than assuming it would work: `detect-secrets`
-  enumerates scan targets via `git ls-files`, not a filesystem walk, so a
-  scratch copy with no `.git` silently scans nothing; and the baseline
-  file was scanning *itself*, treating its own recorded secret-hashes as
-  fresh high-entropy findings and snowballing on every regeneration,
-  fixed by excluding `.secrets.baseline` from its own scan.
+  `pip`/`setuptools` themselves are upgraded before the audit runs,
+  fixing 5 real CVEs in each for real -- `setuptools`' vulnerable
+  `65.5.0` only ever surfaced on the `windows-latest` CI leg, caught by a
+  real CI failure, not assumed), `npm audit` (genuinely clean today,
+  added as an unconditional gate), and a new `.secrets.baseline` +
+  `scripts/check_secrets_baseline.py` that fails CI if a fresh scan no
+  longer matches the committed baseline. Four real bugs found and fixed
+  while building the checker, all by actually running the tool rather
+  than assuming it would work: `detect-secrets` enumerates scan targets
+  via `git ls-files`, not a filesystem walk, so a scratch copy with no
+  `.git` silently scans nothing; the baseline file was scanning *itself*,
+  treating its own recorded secret-hashes as fresh high-entropy findings
+  and snowballing on every regeneration, fixed by excluding
+  `.secrets.baseline` from its own scan; and, caught only by a real
+  Windows CI failure (two wrong guesses -- line endings, then forced
+  UTF-8 -- were tried and ruled out first, each verified against the
+  actual failing job's log before moving on), `detect-secrets` reports
+  `results` filenames with `\` path separators on Windows and `/`
+  everywhere else, so a Linux-generated baseline never matched a fresh
+  Windows scan until both sides were canonicalized to `/`.
 
   Existing `InMemoryRateLimiter` (auth-only, process-local, ADR-0074) and
   the CSRF decision (`SameSite=Lax` cookie, no CSRF token, ADR-0074's own
