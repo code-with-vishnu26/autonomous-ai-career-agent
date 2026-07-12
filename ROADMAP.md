@@ -1728,6 +1728,84 @@ profile.
   any authentication logic beyond one notification dispatch call at the
   end of an already-existing `reset_password` handler.
 
+- ✅ **SaaS Multi-Tenant Platform (Organizations & RBAC) -- ADR-0078
+  (Phase 60).** Unlike the three prior phases' "brief names more than the
+  architecture supports" pattern, this phase's audit found something
+  categorically different: [ADR-0000](docs/adr/0000-project-philosophy.md)
+  (this project's own foundational document) explicitly rules out
+  multi-tenancy "by fiat" and names its own revisit trigger as exactly
+  this scenario -- single self-hosted user becoming a hosted/multi-user
+  product. Surfaced directly to the user (not folded into a routine
+  scoping question); **the user confirmed: proceed, and amend ADR-0000**
+  -- its Status line and "Future revisit criteria" now point to ADR-0078;
+  the original decision text is untouched, since ADRs are immutable once
+  accepted. A second real tension resolved before writing code: the brief
+  demands `organization_id`+`user_id` on every query while also
+  forbidding rewriting existing services -- retrofitting `organization_id`
+  onto the nine pre-existing personal-resource tables (résumé variants,
+  application sessions, review sessions, submission results,
+  notifications, and four more) would mean rewriting every one of them.
+  The scoping adopted: **every genuinely new piece of data this phase
+  introduces (organizations, memberships, invitations, roles, audit log,
+  billing) is organization_id+user_id-scoped from creation; the nine
+  existing tables stay exactly as user_id-scoped as before**, named
+  explicitly rather than silently narrowed.
+
+  Every registered account gets a real personal organization at
+  registration (owner role, slug derived from the email's local part);
+  pre-Phase-60 accounts are backfilled idempotently on every startup,
+  mirroring `migrate_to_multi_user`'s own "never orphan history, safe to
+  re-run" discipline. Five fixed roles (owner/admin/recruiter/member/
+  viewer) with a fixed permission matrix (`domain/roles.py`) -- a
+  deliberately separate concept from `domain.user.UserRole`
+  (`"user"|"admin"`, Phase 56's still-mostly-unused platform-wide flag).
+  `api/rbac.py`'s `OrganizationRequired`/`PermissionRequired`/
+  `RoleRequired` are real per-request `SqliteMembershipStore` lookups --
+  deliberately no JWT claim change (would touch every token-handling call
+  site for one phase, and a 15-minute-old claim can't reflect a role
+  changed 30 seconds ago anyway). Invitations
+  (`career_agent/invitations.py`) mirror `SqlitePasswordResetTokenStore`'s
+  "store a hash, never the token" discipline and **never duplicate email
+  logic** -- delivery reuses the exact Phase 58
+  `NotificationEngine`/`NotificationDispatcher`/`EmailSender` stack when
+  the invited email already has an account (in-app plus the account's own
+  preferences), falling back to a direct email send only when it
+  genuinely can't (no `user_id` yet exists for an in-app row), named as
+  exactly that limitation rather than hidden.
+
+  Billing (`integrations/billing.py`'s `BillingService` protocol +
+  `FakeBillingProvider`) is the same port+adapter shape every other
+  integration in this project already uses -- **no Stripe integration, no
+  external payment call anywhere in this codebase**, but seat limits are
+  *actually enforced* (`402 Payment Required` past a plan's `max_seats`,
+  checked before creating an invitation), not just displayed. Audit log
+  is append-only and best-effort (a failed audit write can never fail the
+  real action it's describing). `require_admin` (Phase 56's own unused
+  scaffolding) gets its first real caller: a minimal platform-admin
+  surface listing every organization and its members.
+
+  New GET-only routers (`/api/roles`, `/api/admin`, `/api/audit`) join
+  the existing read-only structural proof for free; new mutation-capable
+  routers (`/organizations/*`, `/team/*`, `/billing/*`) join `/auth/`,
+  `/user/`, `/coach/`, `/notifications/`, `/notification-settings` as the
+  API's only write-capable exceptions, each proven both permission-gated
+  and organization-isolated. Frontend: `organization_id` travels as a
+  route param (`/organizations/:id/{team,billing,audit}`), not a new
+  global "current organization" context -- `OrganizationsPage` is the
+  real switcher/creator that links into each org's own pages;
+  `AcceptInvitePage` drives the real accept flow from a URL token; the
+  sidebar gains an "Organization" section plus a conditionally-rendered
+  "Platform Admin" link.
+
+  116 new backend tests (1349 total), 19 new frontend tests (68 total);
+  full suites, ruff, every import-linter contract, `tsc`/`oxlint`/
+  `vite build` all green. Zero changes to `SubmissionEngine`,
+  `ReviewEngine`, `NotificationEngine`, the tailoring pipeline, the
+  Career Coach, the scheduler's job logic, JWT/refresh-token
+  authentication, or any of the nine pre-existing personal-resource
+  tables. The CLI remains single-operator with no organization
+  awareness -- multi-tenancy is a dashboard/API concept only.
+
 ---
 
 ## Deferred work (named, not forgotten)

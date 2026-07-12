@@ -291,3 +291,81 @@ export interface NotificationSettings {
 export interface NotificationSettingsUpdate extends Partial<Omit<NotificationSettings, "webhook_configured">> {
   webhook_url?: string;
 }
+
+/** Phase 60, ADR-0078: organizations, teams, roles, billing, audit. */
+export type Role = "owner" | "admin" | "recruiter" | "member" | "viewer";
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  role: Role;
+}
+
+export interface RolePermissions {
+  role: Role;
+  permissions: string[];
+}
+
+export interface Member {
+  user_id: string;
+  email: string;
+  display_name: string | null;
+  role: Role;
+}
+
+export type InvitationStatus = "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+
+export interface Invitation {
+  id: string;
+  email: string;
+  role: Role;
+  status: InvitationStatus;
+  created_at: string;
+  expires_at: string;
+}
+
+export type PlanId = "free" | "pro" | "enterprise";
+
+export interface Plan {
+  id: PlanId;
+  name: string;
+  monthly_price_cents: number;
+  max_seats: number;
+  features: string[];
+}
+
+export type SubscriptionStatus = "ACTIVE" | "CANCELLED" | "PAST_DUE" | "TRIALING";
+
+export interface Subscription {
+  organization_id: string;
+  plan_id: PlanId;
+  status: SubscriptionStatus;
+  current_period_end: string;
+}
+
+export interface UsageMetric {
+  metric: string;
+  count: number;
+}
+
+export interface CheckoutResult {
+  checkout_url: string;
+  subscription: Subscription;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  user_id: string;
+  action: string;
+  result: string;
+  ip_address: string | null;
+  created_at: string;
+}
+
+export interface AdminOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  member_count: number;
+}

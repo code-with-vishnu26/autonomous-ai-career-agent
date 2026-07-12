@@ -32,6 +32,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from career_agent.api.dependencies import (
+    get_membership_store,
+    get_organization_store,
     get_password_reset_token_store,
     get_refresh_token_store,
     get_settings,
@@ -49,6 +51,7 @@ from career_agent.core.security import (
     verify_password,
 )
 from career_agent.domain.user import User
+from career_agent.organizations import create_personal_organization
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -159,12 +162,17 @@ def register(
     secret_key: str = Depends(require_jwt_secret),
     user_store=Depends(get_user_store),
     refresh_store=Depends(get_refresh_token_store),
+    organization_store=Depends(get_organization_store),
+    membership_store=Depends(get_membership_store),
     _rate_limit: None = Depends(enforce_auth_rate_limit),
 ) -> TokenResponse:
-    """Create an account and sign the caller in immediately.
+    """Create an account, a personal organization, and sign the caller in.
 
     No demo/seed users: every account starts here, with a real bcrypt hash
-    of a password the caller actually chose.
+    of a password the caller actually chose. Every account also gets a
+    real personal ``Organization`` (owner role) at registration, per
+    Phase 60 (ADR-0078) -- "every user belongs to an organization" holds
+    without a forced org-creation step.
     """
     if len(body.password) < 8:
         raise HTTPException(
@@ -186,6 +194,12 @@ def register(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with that email already exists.",
         ) from exc
+    create_personal_organization(
+        user=user,
+        organization_store=organization_store,
+        membership_store=membership_store,
+        now=datetime.now(UTC),
+    )
     return _issue_tokens(
         response,
         user,
