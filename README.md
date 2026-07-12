@@ -620,6 +620,28 @@ The CLI is unaffected by any of this — `career-agent prepare`/`review`/
 `submit` remain the single local-operator, self-hosted tool they have
 always been; organizations are a dashboard/API concept only.
 
+## Production Hardening (Phase 61, [ADR-0079](docs/adr/0079-production-hardening.md))
+
+With the roadmap feature-complete, this phase hardens what already exists
+instead of adding scope. Every API response carries an `X-Request-ID`
+header (reused from the caller if one was already set, generated
+otherwise), and every structured log line produced during that request
+carries the same ID — including a background job the request triggered.
+An unhandled exception anywhere in the API now returns a safe, consistent
+`{"detail": "Internal server error", "request_id": "..."}` body instead of
+a bare 500, and always reaches this project's own structured logger with a
+full traceback first. Both nginx layers (`deploy/nginx/edge.conf` and
+`frontend.conf`) now set a real Content-Security-Policy alongside the
+existing `X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy`
+headers. CI gained three real, always-run gates: `pip-audit` (with 20
+CVEs in two `browser-use`-pinned transitive dependencies individually
+named and ignored — a genuine upstream constraint, verified against the
+latest available `browser-use` release, not a shortcut), `npm audit`
+(genuinely clean today), and a committed `.secrets.baseline` +
+`scripts/check_secrets_baseline.py` that fails CI on any newly introduced
+potential secret. Existing rate limiting (auth-only) and the CSRF decision
+(`SameSite=Lax`, no token) were re-examined and reaffirmed, not reopened.
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered

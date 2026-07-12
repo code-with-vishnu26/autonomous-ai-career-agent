@@ -1806,6 +1806,78 @@ profile.
   tables. The CLI remains single-operator with no organization
   awareness -- multi-tenancy is a dashboard/API concept only.
 
+- ✅ **Production Hardening -- ADR-0079 (Phase 61).** Not a feature phase:
+  with the roadmap (Phases 1-60) feature-complete, the owner asked to
+  shift effort to observability/error-handling/security/CI scanning
+  instead of adding scope. The audit found ADR-0076's structured JSON
+  logging, request logging, and edge security headers already real, but
+  no request-correlation ID anywhere, no global exception handler, no
+  Content-Security-Policy at either nginx layer, and CI running only
+  `ruff`+`pytest` -- no dependency or secret scanning at all.
+
+  `core/request_context.py` is a new, framework-agnostic `ContextVar`
+  (kept out of `api/` on purpose -- `core` importing FastAPI would need
+  nothing here, and the layers contract already forbids the reverse
+  direction). `api/middleware.py`'s new `request_id_middleware` is
+  registered as the *outermost* app middleware: it reuses an incoming
+  `X-Request-ID` header or generates a UUID4, threads it through every
+  structured log line for the rest of the request via a new
+  `RequestIdLogFilter`, and always returns it on the response. A real bug
+  surfaced by testing, not assumed: Starlette treats a handler registered
+  for the bare `Exception` type as `ServerErrorMiddleware`'s own handler,
+  which sits *outside* every `app.middleware("http")` callback -- so by
+  the time it runs, `request_id_middleware`'s own `finally` has already
+  reset the contextvar back to empty. Fixed by also stashing the ID on
+  `request.state`, which survives regardless of how the exception
+  unwound (verified with a real `TestClient` call before and after the
+  fix). The new global exception handler
+  (`api/app.py::_handle_unexpected_error`) leaves every existing
+  `HTTPException` response (401/403/404/422, ...) untouched -- verified
+  by a dedicated test -- and only catches genuinely unhandled exceptions,
+  logging the full traceback through this project's own structured
+  logger and returning `{"detail": "Internal server error", "request_id":
+  "..."}`, never `str(exc)` or a traceback fragment.
+
+  CSP added to both `deploy/nginx/edge.conf` and `frontend.conf`,
+  matching the existing per-layer duplication of the other three security
+  headers: `script-src` stays strict (no `'unsafe-inline'`/`'unsafe-
+  eval'` -- the SPA build has no inline `<script>`), `style-src` keeps a
+  documented, deliberate `'unsafe-inline'` exception for React/Recharts'
+  runtime inline `style="..."` attributes (no nonce/hash mechanism wired
+  yet).
+
+  CI gains three real, always-run gates in a new `security` extra
+  (`pip install -e ".[dev,security]"`, opt-in rather than folded into
+  `dev` since neither `verify-frontend` nor `docker` needs it):
+  `pip-audit` (20 CVEs across `aiohttp==3.13.4`/`pypdf==6.10.2`
+  individually `--ignore-vuln`'d and named in the workflow itself -- both
+  are exact-pinned transitive dependencies of `browser-use`, the
+  Submission Engine's real browser automation library; confirmed the
+  latest available release, 0.13.4, still pins the identical vulnerable
+  versions, a genuine upstream constraint rather than a shortcut --
+  `pip` itself was upgraded, fixing its own 5 CVEs for real), `npm audit`
+  (genuinely clean today, added as an unconditional gate), and a new
+  `.secrets.baseline` + `scripts/check_secrets_baseline.py` that fails CI
+  if a fresh scan no longer matches the committed baseline. Two real bugs
+  found and fixed while building the checker, both by actually running
+  the tool rather than assuming it would work: `detect-secrets`
+  enumerates scan targets via `git ls-files`, not a filesystem walk, so a
+  scratch copy with no `.git` silently scans nothing; and the baseline
+  file was scanning *itself*, treating its own recorded secret-hashes as
+  fresh high-entropy findings and snowballing on every regeneration,
+  fixed by excluding `.secrets.baseline` from its own scan.
+
+  Existing `InMemoryRateLimiter` (auth-only, process-local, ADR-0074) and
+  the CSRF decision (`SameSite=Lax` cookie, no CSRF token, ADR-0074's own
+  documented rationale) were re-examined against this phase's brief and
+  **reaffirmed, not reopened or duplicated**.
+
+  24 new backend tests (1349 -> 1368), 0 new frontend tests (no frontend
+  code touched this phase); full suite, ruff, both import-linter
+  contracts, and the frontend's type-check/lint/test/build all still
+  green. Zero changes to any existing route's status codes, response
+  bodies, or business logic.
+
 ---
 
 ## Deferred work (named, not forgotten)

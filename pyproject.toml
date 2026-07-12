@@ -56,6 +56,15 @@ web = [
     # brief's own "prefer APScheduler" instruction is followed as-is.
     "apscheduler>=3.10",
 ]
+security = [
+    # Dependency vulnerability scanning + secret-scanning baseline check
+    # (Phase 61, ADR-0079) -- their own extra, not folded into `dev`: every
+    # other CI job (`verify-frontend`, `docker`) never needs them, and
+    # `detect-secrets` shells out to `git`, an extra runtime assumption
+    # worth keeping opt-in rather than baked into the general dev install.
+    "pip-audit>=2.7",
+    "detect-secrets>=1.5",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
