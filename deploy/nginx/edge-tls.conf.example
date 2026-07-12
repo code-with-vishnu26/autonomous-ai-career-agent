@@ -1,0 +1,68 @@
+# HTTPS example for the edge reverse proxy (Phase 59, ADR-0076).
+#
+# Not wired in by default -- this repository ships no certificate, and
+# generating a self-signed one silently at build time would be a false
+# "it's secured" signal. To use this:
+#
+#   1. Obtain a real certificate (e.g. via certbot/Let's Encrypt, or your
+#      own CA) as cert.pem/key.pem.
+#   2. Mount them into the nginx edge container, e.g. in
+#      docker-compose.prod.yml:
+#        volumes:
+#          - ./certs:/etc/nginx/certs:ro
+#   3. Copy this file to deploy/nginx/edge.conf (replacing the plain-HTTP
+#      server block there), updating server_name/paths for your domain.
+#   4. Rebuild/restart the nginx service.
+#
+# See docs/deployment/production.md for the full walkthrough.
+
+server {
+    listen 80;
+    server_name _;
+    # Redirect all plain HTTP to HTTPS once a real certificate is mounted.
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location = /healthz {
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+
+    location ~ ^/(api|auth|user|coach)/ {
+        proxy_pass http://backend_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass_header Set-Cookie;
+    }
+
+    location = /health { proxy_pass http://backend_upstream/health; }
+    location = /ready  { proxy_pass http://backend_upstream/ready; }
+    location = /metrics { proxy_pass http://backend_upstream/metrics; }
+
+    location / {
+        proxy_pass http://frontend_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

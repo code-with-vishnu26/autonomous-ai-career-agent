@@ -19,6 +19,8 @@ imports this module.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -103,3 +105,27 @@ class Settings(BaseSettings):
     #: TLS). A production deployment behind HTTPS (Phase 59) should set
     #: this ``True`` via the environment.
     jwt_cookie_secure: bool = False
+
+    # Production deployment (Phase 59, ADR-0076).
+    #: Which environment this process is running in. Affects only
+    #: :func:`validate_startup` below (which variables are *required*) and
+    #: log formatting (:mod:`career_agent.core.logging_config`) -- it does
+    #: not change any business rule, gate, or safety boundary anywhere
+    #: else in this codebase.
+    environment: Literal["development", "testing", "production"] = "development"
+    #: Accepted and validated, but **not yet consumed** by the storage
+    #: layer. ``storage/sqlite.py`` is ~15 store classes built directly on
+    #: the standard library's ``sqlite3`` module with hand-written SQL --
+    #: there is no database-abstraction layer to swap a driver underneath.
+    #: Real PostgreSQL support would mean either duplicating every store
+    #: for a second backend or migrating the whole storage layer onto
+    #: something like SQLAlchemy; both are out of scope for an
+    #: infrastructure phase and were explicitly deferred (ADR-0076) rather
+    #: than faked. Set this and :func:`validate_startup` will only warn
+    #: that it is not yet honored -- ``database_path`` (SQLite) remains
+    #: the only backend actually used.
+    database_url: str | None = None
+    #: Emit structured (JSON) logs instead of default stdlib formatting --
+    #: on by default in ``production`` (see :func:`effective_json_logs`),
+    #: overridable either way via the environment for local debugging.
+    json_logs: bool | None = None

@@ -45,6 +45,13 @@ htmlcov/
 *.pem
 *.key
 credentials.json
+
+# ---- Docker/production env (Phase 59, ADR-0076) -- docker.env and
+# production.env.example are safe, tracked templates; a real filled-in
+# production.env is not. ----
+production.env
+!production.env.example
+certs/
 token.json
 gmail_token*.json
 

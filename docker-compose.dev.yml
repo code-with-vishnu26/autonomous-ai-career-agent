@@ -1,0 +1,45 @@
+# Development overlay (Phase 59, ADR-0076): hot reload, source mounted in,
+# SQLite only. Use with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Backend runs plain `uvicorn --reload` (the same dev entrypoint
+# `career-agent serve` uses locally) instead of gunicorn -- gunicorn's
+# multi-worker model doesn't reload on source change the way a single
+# uvicorn --reload process does. Frontend runs Vite's own dev server
+# (`npm run dev`) instead of the built nginx image, for the same reason.
+
+services:
+  backend:
+    build:
+      target: builder
+    command: >
+      uvicorn career_agent.api.app:create_app --factory
+      --host 0.0.0.0 --port 8000 --reload
+    environment:
+      ENVIRONMENT: development
+      JSON_LOGS: "false"
+    volumes:
+      - ./src:/build/src
+      - career_agent_data:/app/data
+      - career_agent_promptfoo:/app/promptfoo/results
+    working_dir: /build
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+    depends_on:
+      backend:
+        condition: service_started
+
+  nginx:
+    # The Vite dev server (port 5173) already proxies /api,/auth,/user,
+    # /coach to the backend itself (frontend/vite.config.ts) -- the edge
+    # proxy isn't needed for local development, only for the production-
+    # shaped stack.
+    profiles: ["edge-proxy-disabled-in-dev"]

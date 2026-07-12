@@ -3,10 +3,11 @@ name: CI
 # Zero-cost, fail-closed release gate (ADR-0057). Runs the full backend test
 # suite, architecture contracts, and a real packaging + clean-install +
 # offline smoke on every supported OS, plus (Phase 55, ADR-0073) the
-# frontend's type-check/lint/test/build in a parallel job. Never uses
-# continue-on-error, never references a secret, and never makes a live LLM
-# call -- the network guard in tests/conftest.py blocks it even if a key
-# were somehow present.
+# frontend's type-check/lint/test/build in a parallel job, plus (Phase 59,
+# ADR-0076) a real Docker build + Compose validation + container-startup
+# smoke test. Never uses continue-on-error, never references a secret, and
+# never makes a live LLM call -- the network guard in tests/conftest.py
+# blocks it even if a key were somehow present.
 
 on:
   push:
@@ -106,3 +107,79 @@ jobs:
 
       - name: Build (Vite)
         run: npm run build
+
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    # Linux-only: GitHub's ubuntu-latest runner ships Docker + Compose v2
+    # preinstalled; Windows/macOS runners' Docker support is either absent
+    # or Windows-container-only, and this project only ships Linux images
+    # (ADR-0056's existing documented Windows/macOS scope already draws
+    # this same line for the backend `verify` job's OS matrix).
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Compose files (base, dev overlay, prod overlay)
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+            --profile postgres --profile redis config --quiet
+
+      - name: Build backend image
+        run: docker build -f Dockerfile.backend -t career-agent-backend:ci .
+
+      - name: Verify Playwright's Chromium actually launches in the image
+        # Real verification, not an assumption -- the brief explicitly asks
+        # for this. Headless only: the Submission Engine's real workflow
+        # defaults to headed (see docs/deployment/docker.md's documented
+        # gap) -- this only proves the browser + its apt dependencies are
+        # genuinely present and launchable in the built image.
+        run: |
+          docker run --rm career-agent-backend:ci python -c "
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page()
+              page.goto('about:blank')
+              browser.close()
+          print('Chromium launched successfully inside the backend image')
+          "
+
+      - name: Build frontend image
+        run: docker build -f Dockerfile.frontend -t career-agent-frontend:ci .
+
+      - name: Build edge nginx image
+        run: docker build -t career-agent-nginx:ci ./deploy/nginx
+
+      - name: Start the full stack (backend + frontend + nginx)
+        run: docker compose -f docker-compose.yml up -d
+
+      - name: Wait for the backend to report ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost/ready; then
+              echo "backend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "backend never became ready" >&2
+          docker compose -f docker-compose.yml logs
+          exit 1
+
+      - name: Container startup smoke test (health, readiness, frontend)
+        run: |
+          set -e
+          curl -sf http://localhost/health | grep -q '"status":"ok"'
+          curl -sf http://localhost/metrics | grep -q career_agent_uptime_seconds
+          curl -sf http://localhost/ | grep -qi '<div id="root">'
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml down -v

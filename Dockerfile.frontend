@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+# Multi-stage build for the React dashboard (Phase 59, ADR-0076).
+#
+# Builder stage runs the exact same `npm ci && npm run build` CI already
+# runs (verify-frontend, ADR-0073) -- no new build path. Final stage
+# serves the static `dist/` output through nginx, non-root, with gzip,
+# cache headers, and SPA fallback (deploy/nginx/frontend.conf).
+
+FROM node:20-slim AS builder
+
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+# VITE_API_BASE_URL is read at *build* time by Vite (import.meta.env) --
+# unset, the app calls same-origin relative paths, which is exactly right
+# behind the nginx reverse proxy this image is designed to sit behind.
+ARG VITE_API_BASE_URL=""
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+RUN npm run build
+
+FROM nginx:1.27-alpine AS runtime
+
+RUN addgroup -S career-agent && adduser -S career-agent -G career-agent \
+    && rm -rf /usr/share/nginx/html/*
+
+COPY --from=builder /build/dist /usr/share/nginx/html
+COPY deploy/nginx/frontend.conf /etc/nginx/conf.d/default.conf
+COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
+
+# nginx needs write access to these to run as a non-root user.
+RUN mkdir -p /var/cache/nginx /var/run \
+    && chown -R career-agent:career-agent /var/cache/nginx /var/run /var/log/nginx /usr/share/nginx/html /etc/nginx
+
+USER career-agent
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://127.0.0.1:8080/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -91,6 +91,26 @@ describe("apiFetch", () => {
   });
 });
 
+describe("VITE_API_BASE_URL", () => {
+  it("prefixes every request path when set at build time", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.example.invalid");
+    vi.resetModules();
+    const { apiFetch: apiFetchWithBase } = await import("./http");
+
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({}),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiFetchWithBase("/api/applications");
+
+    const [calledUrl] = fetchMock.mock.calls[0];
+    expect(calledUrl).toBe("https://api.example.invalid/api/applications");
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+});
+
 describe("apiFetchJson", () => {
   it("returns the parsed body on success", async () => {
     vi.stubGlobal("fetch", vi.fn(() => jsonResponse({ hello: "world" })));

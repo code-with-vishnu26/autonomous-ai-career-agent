@@ -1562,6 +1562,87 @@ profile.
   `ats_scoring.py`, `domain/cover_letter.py`, or the real ATS-gated
   tailoring pipeline.
 
+- ✅ **Production Deployment & Infrastructure -- ADR-0076 (Phase 59).**
+  The audit found a real conflict inside the brief itself: real
+  PostgreSQL support would mean duplicating `storage/sqlite.py`'s ~15
+  `sqlite3`-based store classes for a second backend, or rewriting the
+  whole storage layer onto something like SQLAlchemy -- both directly
+  contradicting the brief's own "do not duplicate logic"/"do not rewrite
+  backend services" instructions. Surfaced to the user rather than
+  decided unilaterally; **chose to ship the Docker/Nginx/health/logging
+  infrastructure for real, with `DATABASE_URL` accepted and validated in
+  configuration but not consumed** -- SQLite remains the only backend the
+  storage layer actually reads from or writes to, named as a deferred
+  follow-up in ADR-0076, not faked.
+
+  `Dockerfile.backend`: two-stage build, installs the package plus
+  Playwright's Chromium (the exact browser this project already depends
+  on, `pyproject.toml`'s `playwright>=1.44` -- not a new one), runs as a
+  non-root user via gunicorn supervising 4 uvicorn workers.
+  `Dockerfile.frontend`: builds the same `npm ci && npm run build` CI
+  already runs (ADR-0073), serves the static output through nginx,
+  non-root. A third, small image (`deploy/nginx/`) is the edge reverse
+  proxy: `/` to the frontend container, `/api`/`/auth`/`/user`/`/coach`/
+  `/health`/`/ready`/`/metrics` to the backend -- the exact same path
+  list `frontend/vite.config.ts`'s dev-server proxy already uses, one
+  source of truth. `docker-compose.yml` (base: backend + frontend +
+  nginx, SQLite) / `.dev.yml` (hot reload, Vite dev server, edge proxy
+  disabled since Vite's own dev proxy already covers it) / `.prod.yml`
+  (resource limits, `restart: always`, `JWT_COOKIE_SECURE=true`) --
+  `postgres`/`redis` services exist and are startable but sit behind
+  Compose profiles (`--profile postgres`/`--profile redis`), off by
+  default, since neither is consumed by the application (redis: there is
+  no caching layer anywhere in this codebase to back with one, either --
+  adding one speculatively would be exactly the unrequested abstraction
+  this project's own discipline avoids).
+
+  New `/health` (liveness), `/ready` (readiness -- opens the real SQLite
+  database, returns `503` on failure, never a false `200`), and
+  `/metrics` (Prometheus text format: uptime + request counts by status
+  class, hand-formatted, no new dependency) routes join the unchanged
+  `/api/health` (Phase 54) in `api/routers/health.py` -- all GET-only, so
+  no change to the existing `/api/*`-GET-only / `/auth/`,`/user/`,
+  `/coach/`-are-the-only-write-capable-routers structural tests.
+  `core/logging_config.py::JsonFormatter` is one small stdlib
+  `logging.Formatter` subclass (no `structlog`/`python-json-logger`
+  dependency) for structured JSON logs, on by default in
+  `ENVIRONMENT=production`; `api/middleware.py::log_requests` logs one
+  line per request (method/path/status/duration) and **never logs
+  headers or bodies** (a token/password/API-key leak risk, the same care
+  Phase 56/57 already took). `core/startup_validation.py::validate_startup`
+  surfaces missing-config findings (a missing `JWT_SECRET_KEY` is an
+  error only in `ENVIRONMENT=production`, else a warning; a set-but-
+  unconsumed `DATABASE_URL` always warns) at process start via the
+  FastAPI `lifespan` hook -- changes no existing fail-closed enforcement,
+  only makes the same fact visible in the log stream before the first
+  request hits it.
+
+  New CI `docker` job (Linux-only, matching ADR-0056's existing Windows/
+  macOS Docker-scope line): validates all three Compose files, builds all
+  three images for real, **verifies Playwright's Chromium actually
+  launches** inside the built backend image (a real headless
+  `sync_playwright().chromium.launch()` call, not an assumption -- the
+  brief explicitly asked for this), starts the full stack, waits for
+  `/ready`, and smoke-tests `/health`/`/metrics`/the frontend's root HTML
+  through the edge proxy before tearing down. Browser automation stays
+  headed-by-design (`BrowserManager.launch`'s own `headless=False`
+  default, unchanged, in service of the human-in-the-loop review/
+  confirmation the Submission Engine's whole safety model depends on) --
+  the backend container has no display server, so `prepare`/`review`/
+  `submit` are not expected to run inside it; named honestly in
+  `docs/deployment/docker.md` rather than silently worked around, since
+  forcing headless automation to work would be a real Submission Engine
+  safety-posture change, explicitly out of scope for this phase.
+
+  `frontend/src/services/http.ts` gained a build-time
+  `VITE_API_BASE_URL` prefix (empty by default -- every existing
+  relative-path call is unaffected; only meaningful when backend and
+  frontend are genuinely served from different origins). 30 new backend
+  tests (1134 total), 1 new frontend test (33 total); full suites, ruff,
+  lint-imports, `tsc`/`oxlint`/`vite build` green. Zero changes to
+  `SubmissionEngine`, `BrowserApplicator`,
+  `BrowserManager`/`SessionManager`/`TabManager`, or any auth logic.
+
 ---
 
 ## Deferred work (named, not forgotten)

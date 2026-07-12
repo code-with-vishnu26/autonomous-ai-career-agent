@@ -1,0 +1,73 @@
+# syntax=docker/dockerfile:1
+# Multi-stage build for the FastAPI dashboard API (Phase 59, ADR-0076).
+#
+# Builder stage installs the package (editable-equivalent, via a wheel) and
+# Playwright's Chromium + its system libraries -- Browser Automation
+# (ADR-0065) and the Submission Engine (ADR-0071) are unchanged by this
+# phase, but they do need a real Chromium present at runtime. Final stage
+# copies only the installed site-packages + Chromium cache, runs as a
+# non-root user, and serves via gunicorn supervising uvicorn workers.
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+
+RUN pip install --no-cache-dir --upgrade pip build \
+    && pip install --no-cache-dir ".[web]"
+
+# Playwright's own installer pulls the Chromium binary + the apt packages
+# it depends on (--with-deps) -- the same browser this project already
+# depends on (pyproject.toml's playwright>=1.44), not a new one.
+RUN python -m playwright install --with-deps chromium
+
+FROM python:3.11-slim AS runtime
+
+# Chromium's own runtime libraries (fonts, X11/GTK shared libs) -- the
+# same set `playwright install --with-deps` would apt-install, reinstalled
+# here since the builder stage's apt cache isn't copied across stages.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+        libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+        libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
+        fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system career-agent && useradd --system --gid career-agent --home /app career-agent
+
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /root/.cache/ms-playwright /app/.cache/ms-playwright
+
+WORKDIR /app
+RUN mkdir -p /app/data /app/data/artifacts /app/data/sessions /app/promptfoo/results \
+    && chown -R career-agent:career-agent /app
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright \
+    PYTHONUNBUFFERED=1 \
+    DATABASE_PATH=/app/data/career_agent.db \
+    ARTIFACTS_DIR=/app/data/artifacts \
+    BROWSER_SESSION_DIR=/app/data/sessions \
+    PROMPTFOO_RESULTS_DIR=/app/promptfoo/results \
+    ENVIRONMENT=production
+
+USER career-agent
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"
+
+# gunicorn supervises 4 uvicorn workers with a graceful shutdown timeout;
+# `career-agent serve` (plain `uvicorn.run`) remains the local dev-server
+# entrypoint, unchanged -- this is the production process manager, not a
+# replacement for it.
+CMD ["gunicorn", "career_agent.api.app:create_app()", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--workers", "4", \
+     "--bind", "0.0.0.0:8000", \
+     "--graceful-timeout", "30", \
+     "--timeout", "60", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-"]

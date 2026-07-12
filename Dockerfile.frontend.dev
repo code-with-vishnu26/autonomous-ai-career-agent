@@ -1,0 +1,13 @@
+# Dev-only frontend image (Phase 59, ADR-0076): runs Vite's own dev server
+# with hot module reload, source mounted in by docker-compose.dev.yml.
+# Never used for a production build -- see Dockerfile.frontend for that.
+
+FROM node:20-slim
+
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+
+EXPOSE 5173
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

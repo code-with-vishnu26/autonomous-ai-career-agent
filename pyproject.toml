@@ -45,6 +45,11 @@ dashboard = ["streamlit>=1.30"]
 web = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    # Production ASGI process manager (Phase 59, ADR-0076) -- gunicorn
+    # supervises multiple uvicorn worker processes with graceful reload/
+    # shutdown; `career-agent serve`'s plain `uvicorn.run` remains the
+    # dev-server path, unchanged.
+    "gunicorn>=22.0; platform_system != 'Windows'",
 ]
 dev = [
     "pytest>=8.0",
@@ -59,6 +64,9 @@ dev = [
     "build>=1.2",
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    # Test-only: parses docker-compose.yml/.dev.yml/.prod.yml for structural
+    # validation (Phase 59, ADR-0076) -- never imported by any runtime code.
+    "pyyaml>=6.0",
 ]
 
 [project.urls]

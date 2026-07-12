@@ -9,6 +9,15 @@
  * this dispatches a `career-agent:session-expired` window event and
  * throws -- `AuthContext` listens for that event to show the session
  * timeout screen, rather than every call site handling it individually.
+ *
+ * `VITE_API_BASE_URL` (Phase 59, ADR-0076) is a build-time env var,
+ * empty by default -- every path this module fetches is a *relative*
+ * path (`/auth/...`, `/api/...`), so leaving it unset (the deployment
+ * this project actually ships: nginx reverse-proxies the API same-
+ * origin, ADR-0076) needs no prefix at all. Setting it points every
+ * request at a different origin instead, for the one real case that
+ * needs it -- backend and frontend served from genuinely different
+ * hosts.
  */
 
 import { getToken, setToken } from "./tokenStore";
@@ -16,13 +25,19 @@ import type { TokenResponse } from "@/types/api";
 
 export const SESSION_EXPIRED_EVENT = "career-agent:session-expired";
 
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "";
+
+function resolve(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
 let refreshInFlight: Promise<boolean> | null = null;
 
 async function refreshAccessToken(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
     try {
-      const response = await fetch("/auth/refresh", {
+      const response = await fetch(resolve("/auth/refresh"), {
         method: "POST",
         credentials: "include",
       });
@@ -47,11 +62,11 @@ function withAuthHeaders(init: RequestInit = {}): RequestInit {
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  let response = await fetch(path, withAuthHeaders(init));
+  let response = await fetch(resolve(path), withAuthHeaders(init));
   if (response.status === 401 && path !== "/auth/refresh" && path !== "/auth/login") {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
-      response = await fetch(path, withAuthHeaders(init));
+      response = await fetch(resolve(path), withAuthHeaders(init));
     } else {
       setToken(null);
       window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
