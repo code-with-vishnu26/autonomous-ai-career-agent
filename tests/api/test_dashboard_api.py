@@ -143,29 +143,66 @@ def test_applications_empty_store_returns_empty_list(client: TestClient) -> None
 def test_reviews_lists_every_review(client: TestClient) -> None:
     store = SqliteReviewSessionStore(_db_path())
     store.save(
-        _review_session(id="review-1", approval_status="WAITING"), user_id=TEST_USER_ID
+        _review_session(id="review-1", approval_status="APPROVED"), user_id=TEST_USER_ID
     )
     store.save(
-        _review_session(id="review-2", approval_status="APPROVED"), user_id=TEST_USER_ID
+        _review_session(id="review-2", approval_status="REJECTED"), user_id=TEST_USER_ID
     )
-    response = client.get("/api/reviews")
+    response = client.get("/reviews")
     assert response.status_code == 200
     assert {r["id"] for r in response.json()} == {"review-1", "review-2"}
 
 
-def test_reviews_pending_filters_to_waiting_only(client: TestClient) -> None:
-    store = SqliteReviewSessionStore(_db_path())
-    store.save(
-        _review_session(id="review-1", approval_status="WAITING"), user_id=TEST_USER_ID
+def test_reviews_pending_returns_sessions_with_no_decision_yet(
+    client: TestClient,
+) -> None:
+    """Phase 63 fix: ``ReviewSession.approval_status`` can never actually be
+    ``WAITING`` (no code path produces it), so "pending" means a
+    ``READY_FOR_REVIEW`` ``ApplicationSession`` with no recorded decision --
+    not a ``ReviewSession`` filter."""
+    session_store = SqliteApplicationSessionStore(_db_path())
+    session_store.save(
+        _application_session(id="sess-pending"), user_id=TEST_USER_ID
     )
-    store.save(
-        _review_session(id="review-2", approval_status="APPROVED"), user_id=TEST_USER_ID
+    session_store.save(
+        _application_session(id="sess-decided"), user_id=TEST_USER_ID
     )
-    response = client.get("/api/reviews/pending")
+    SqliteReviewSessionStore(_db_path()).save(
+        _review_session(
+            id="review-1",
+            application_session_id="sess-decided",
+            approval_status="APPROVED",
+        ),
+        user_id=TEST_USER_ID,
+    )
+    response = client.get("/reviews/pending")
     assert response.status_code == 200
     body = response.json()
     assert len(body) == 1
-    assert body[0]["id"] == "review-1"
+    assert body[0]["id"] == "sess-pending"
+
+
+def test_reviews_decide_approves_and_records_a_review_session(
+    client: TestClient,
+) -> None:
+    SqliteApplicationSessionStore(_db_path()).save(
+        _application_session(id="sess-pending"), user_id=TEST_USER_ID
+    )
+    response = client.post(
+        "/reviews/decide",
+        json={"application_session_id": "sess-pending", "approved": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["application_session_id"] == "sess-pending"
+    assert body["approval_status"] == "APPROVED"
+
+    # A second decision for the same session must be refused, not recorded twice.
+    again = client.post(
+        "/reviews/decide",
+        json={"application_session_id": "sess-pending", "approved": True},
+    )
+    assert again.status_code == 409
 
 
 def test_submissions_reflects_the_store(client: TestClient) -> None:
@@ -236,8 +273,8 @@ def test_settings_never_leaks_the_jwt_secret(client: TestClient) -> None:
     "path",
     [
         "/api/applications",
-        "/api/reviews",
-        "/api/reviews/pending",
+        "/reviews",
+        "/reviews/pending",
         "/api/submissions",
         "/api/resume-variants",
         "/api/analytics/summary",
@@ -323,7 +360,12 @@ def test_auth_and_user_are_the_only_write_capable_routers() -> None:
     adds `/organizations/*`, `/team/*`, and `/billing/*` for real
     organization/membership/plan mutations (`/roles`, `/admin`, `/audit`
     are GET-only and live under `/api/`, so they need no exception here).
-    This proves nothing else silently gained a POST/PUT/PATCH/DELETE.
+    Phase 63 (ADR-0081) adds `/discover` (trigger the discovery pipeline)
+    and `/submissions/prepare`/`/submissions/{token}/confirm` (prepare +
+    confirm a submission), and moves `/reviews` here too (it now has a
+    `/reviews/decide` action) -- each calls the same service layer the CLI
+    already uses, with every existing safety gate intact. This proves
+    nothing else silently gained a POST/PUT/PATCH/DELETE.
     """
     app = create_app()
     for route in _iter_routes(app):
@@ -342,6 +384,9 @@ def test_auth_and_user_are_the_only_write_capable_routers() -> None:
                 or path.startswith("/organizations")
                 or path.startswith("/team")
                 or path.startswith("/billing")
+                or path.startswith("/discover")
+                or path.startswith("/reviews")
+                or path.startswith("/submissions")
             )
             assert allowed, f"{path} allows {mutating} outside the write boundary"
 

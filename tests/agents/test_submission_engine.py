@@ -18,7 +18,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from career_agent.agents.submission.submission_engine import SubmissionEngine
+from career_agent.agents.submission.submission_engine import (
+    CancelledByUserError,
+    SubmissionEngine,
+)
 from career_agent.domain.application_session import ApplicationSession
 from career_agent.domain.execution import SubmissionOutcome
 from career_agent.domain.models import (
@@ -319,6 +322,28 @@ async def test_user_cancellation_never_touches_a_browser(tmp_path: Path) -> None
     assert result.submitted is False
 
 
+async def test_async_confirm_fn_is_actually_awaited(tmp_path: Path) -> None:
+    """Phase 63: confirm_fn may return an awaitable -- proven by an async
+    confirm_fn that only raises CancelledByUserError once actually awaited
+    (a real bug would call it, ignore the coroutine object, and proceed as
+    if confirmed)."""
+    engine = _engine(tmp_path)
+
+    async def _async_cancel() -> bool:
+        raise CancelledByUserError
+
+    result = await engine.submit(
+        _opportunity(),
+        _approved_application(),
+        _review_session(),
+        _application_session(),
+        _content(),
+        confirm_fn=_async_cancel,
+    )
+    assert result.status == "CANCELLED"
+    assert result.submitted is False
+
+
 # ---------------------------------------------------------------------------
 # Real-Chromium: the actual click only happens once every gate holds.
 # ---------------------------------------------------------------------------
@@ -413,3 +438,27 @@ async def test_failed_submission_without_diagnostics_dir_leaves_it_unset(
     )
     assert result.status == "FAILED"
     assert result.diagnostics_dir is None
+
+
+@pytestmark_browser
+async def test_auto_close_on_pause_closes_the_browser_and_returns_unknown(
+    tmp_path: Path,
+) -> None:
+    """Phase 63: a caller with no visible browser to point a human at (the
+    web API, until a future browser-monitor phase) sets
+    auto_close_on_pause=True -- a challenge pause must close the browser
+    and return UNKNOWN with a clear warning, never block on stdin nobody
+    can answer."""
+    engine = _engine(tmp_path)
+    result = await engine.submit(
+        _opportunity(source_url=f"{_GREENHOUSE_URL}?challenge=1"),
+        _approved_application(),
+        _review_session(),
+        _application_session(),
+        _content(),
+        confirm_fn=lambda: True,
+        auto_close_on_pause=True,
+    )
+    assert result.status == "UNKNOWN"
+    assert result.submitted is False
+    assert any("web dashboard cannot provide" in w for w in result.warnings)

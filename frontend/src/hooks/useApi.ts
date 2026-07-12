@@ -1,16 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/services/api";
+import { reviewsApi } from "@/services/reviewsApi";
 
 export function useApplications() {
   return useQuery({ queryKey: ["applications"], queryFn: api.applications });
 }
 
 export function useReviews() {
-  return useQuery({ queryKey: ["reviews"], queryFn: api.reviews });
+  return useQuery({ queryKey: ["reviews"], queryFn: reviewsApi.list });
 }
 
 export function usePendingReviews() {
-  return useQuery({ queryKey: ["reviews", "pending"], queryFn: api.pendingReviews });
+  return useQuery({ queryKey: ["reviews", "pending"], queryFn: reviewsApi.pending });
 }
 
 export function useSubmissions() {

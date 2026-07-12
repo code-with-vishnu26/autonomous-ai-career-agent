@@ -1960,6 +1960,129 @@ profile.
   launch default (ADR-0076's own prior decision, not reopened), or any
   authentication/organization logic.
 
+- ✅ **Web-Triggered Discover, Review, and Submit -- ADR-0081 (Phase 63).**
+  Explicit direction: move the interface to the web, never the business
+  logic -- retire the CLI-only boundary ADR-0072 drew for Discover,
+  Review, and Submit before authentication/RBAC existed. The audit found
+  `GET /api/reviews/pending`'s `approval_status == "WAITING"` filter has
+  always returned an empty list in production -- no code path in this
+  codebase ever produces a `WAITING` `ReviewSession`
+  (`ReviewEngine.review()` only ever returns
+  APPROVED/REJECTED/CANCELLED/TIMEOUT) -- a genuine, pre-existing bug
+  fixed here by redefining "pending" as a `READY_FOR_REVIEW`
+  `ApplicationSession` with no recorded decision yet. `MasterProfile` has
+  no per-user API store anywhere (unlike `JobPreferences`, which got one
+  in Phase 46/56) -- resolved by reusing the CLI's own
+  `Path("profile.json")` default rather than inventing a new store,
+  consistent with this project's continued single-operator profile
+  framing (ADR-0000/ADR-0078).
+
+  `POST /discover` runs `build_discovery_sources`/`run_discover_command`
+  -- the CLI's own functions, unmodified in behavior, given two new
+  optional observation hooks (`on_new_opportunity`/`on_source_error`,
+  both default `None` and skipped by every existing caller) so a caller
+  that can't inspect the function's return value can still build a
+  status summary -- inside a `BackgroundTasks` job, polled via a new
+  `DiscoveryRun` domain model + `SqliteDiscoveryRunStore` (a real upsert,
+  like `SqliteUserPreferencesStore` -- a run's status genuinely changes
+  in place). `GET /discover/opportunities` reads a new
+  `SqliteOpportunityRepository.list_recent()` (`ORDER BY rowid DESC
+  LIMIT ?`, no schema migration -- opportunities have no timestamp
+  column). Search preferences are read from the caller's existing
+  `JobPreferences` (`GET`/`PUT /user/preferences`) -- no second
+  configuration surface invented.
+
+  `POST /reviews/decide` calls
+  `ReviewEngine().review(session, input_fn=lambda _: "y" if approved
+  else "n")` -- the exact class `career-agent review` uses, only the
+  `input_fn` seam swapped; one decision per session is enforced (409 on
+  a second attempt for the same session, matching the append-only
+  `review_sessions` table). The whole `reviews.py` router moves off
+  `/api/reviews` onto `/reviews` (mixed GET/POST, the same "one feature,
+  one prefix" shape `notifications.py`/`team.py` already established),
+  since it now carries a real decision-making action.
+
+  The highest-risk piece: `cli.py::run_submit_command`'s core (fresh
+  re-tailor via `ResumeVariantEngine.build_materials()`, the promptfoo
+  gate, then `SubmissionEngine.submit()`) is extracted into
+  `submit_prepared_application(...)`, taking already-loaded domain
+  objects instead of file paths, so the CLI and the web API can never
+  drift apart on what re-tailoring/validation/submission actually does.
+  Two structural ordering tests
+  (`test_gates_before_constructing_the_live_verifier`,
+  `test_no_application_session_check_precedes_llm_wiring`) moved with
+  the logic they verify. `SubmissionEngine.submit()`'s `confirm_fn` now
+  accepts a plain `bool` *or* an awaitable (checked via
+  `inspect.isawaitable`, `await`ed if so -- zero behavior change for
+  every existing sync caller, since a plain `bool` is never awaitable);
+  the web path supplies an `async def confirm_fn()` that awaits a
+  bounded `asyncio.Future` (5-minute timeout), translating a timeout
+  into `CancelledByUserError` -- `submit()`'s *existing*
+  `except (KeyboardInterrupt, CancelledByUserError)` handling needed
+  zero new code. A new `auto_close_on_pause` flag on
+  `submit()`/`_resolve_pause()` (default `False`, unchanged CLI
+  behavior) closes a paused browser and returns `UNKNOWN` with a clear
+  message instead of blocking a background task on a second `input()`
+  prompt nobody can answer, when the browser pauses for direct human
+  interaction (a login wall, a challenge) after confirmation -- the
+  Browser Automation Monitor that would let a web caller resolve a pause
+  interactively is named as its own future phase, not solved here.
+
+  `api/routers/submission_actions.py` (`/submissions`, off `/api/`):
+  `POST /submissions/prepare` starts a background task running
+  `submit_prepared_application` and returns a token immediately (HTTP
+  202); the pending entry (in-memory, module-level dict, never
+  persisted -- tied to a live asyncio `Task` that can't survive a
+  process restart anyway, the same reasoning
+  `BrowserApplicator`'s own pause-token dict already relies on) tracks
+  `PREPARING -> AWAITING_CONFIRMATION -> SUBMITTING -> DONE|FAILED`.
+  `POST /submissions/{token}/confirm` resolves the same `asyncio.Future`
+  the background task's `confirm_fn` is blocked awaiting -- declining,
+  double-confirming, or confirming out-of-turn are all refused (404/409),
+  never silently re-triggering anything. Both routes are declared
+  `async def` deliberately (not plain `def`): FastAPI runs `async def`
+  routes directly on the main event loop -- the same loop the background
+  task runs on -- so the coordinating `Future` is only ever touched from
+  one thread; a plain `def` route would run in a worker thread pool
+  instead, making it thread-unsafe.
+
+  34 new backend tests (1384 -> 1418): domain/storage tests for
+  `DiscoveryRun`/`SqliteDiscoveryRunStore`/`list_recent`, API tests for
+  all three routers (including a real Chromium test proving
+  `auto_close_on_pause` actually closes the browser on a real challenge
+  pause, and coroutine-level tests driving `confirm_fn`'s asyncio
+  coordination directly -- a full live two-step HTTP round trip can't be
+  observed through `TestClient`, which blocks until the entire ASGI
+  cycle including background tasks completes). Every existing safety
+  gate (human review, human confirmation, fail-closed execution,
+  never-submit-twice) verified unchanged by running the full
+  pre-existing `test_submission_engine.py`/`test_cli_submit.py`/
+  `test_cli_discover.py` suites unmodified except the two structural-test
+  relocations noted above.
+
+  Frontend wiring shipped in the same phase: Search Jobs (a real filter
+  form bound to Job Search Preferences via the existing
+  `PUT /user/preferences`, a Search button that saves then triggers a
+  run, a polled status callout, and a real results list from
+  `GET /discover/opportunities` -- "Prepare via CLI" stays an honest
+  `CliOnlyAction` hint, tailoring's own real headed-browser complexity
+  not migrated here); Review Queue (`GET /reviews/pending` now renders
+  directly -- no join needed, since a pending item *is* the
+  `ApplicationSession` -- with an inline Approve/Reject-then-confirm
+  step before `POST /reviews/decide` fires); Submission Queue (Submit
+  starts `POST /submissions/prepare`, polls status, and shows a real
+  Confirm/Cancel step once `AWAITING_CONFIRMATION` is reached, calling
+  `POST /submissions/{token}/confirm`). `lib/derive.ts`'s
+  `joinReviewsWithSessions` (Phase 55) was removed as genuinely dead
+  code once Review Queue stopped needing it. 14 new frontend tests.
+  `career-agent prepare` (tailoring) is the only workflow `CliOnlyAction`
+  still names.
+
+  Analytics overhaul/Interview Tracking/Email Integration/Calendar
+  Integration/Kanban Application Pipeline/Browser Automation Monitor
+  (items 4-7, 9-10 of the originating request) are tracked separately,
+  named below, not folded into this already-large phase.
+
 ---
 
 ## Deferred work (named, not forgotten)

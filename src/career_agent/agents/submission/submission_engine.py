@@ -20,6 +20,7 @@ asking them to confirm something that was always going to be refused.
 
 from __future__ import annotations
 
+import inspect
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -113,9 +114,32 @@ class SubmissionEngine:
         stored_variant_content: TailoredContent | None,
         *,
         prior_outcome: SubmissionOutcome = SubmissionOutcome.NOT_ATTEMPTED,
-        confirm_fn: Callable[[], bool] = _default_confirm,
+        confirm_fn: Callable[[], bool | Awaitable[bool]] = _default_confirm,
+        auto_close_on_pause: bool = False,
     ) -> SubmissionResult:
-        """Attempt one submission. Fail-closed at every step; never guesses."""
+        """Attempt one submission. Fail-closed at every step; never guesses.
+
+        ``confirm_fn`` may return a plain ``bool`` (checked via
+        ``inspect.isawaitable`` -- unchanged for every existing sync caller)
+        or an awaitable (Phase 63): a caller with no terminal to block on
+        (the web API) can supply an ``async def`` that awaits a bounded
+        wait for an explicit human action elsewhere, raising
+        :class:`CancelledByUserError` on timeout so silence can never imply
+        "yes" -- the same discipline :func:`_default_confirm`'s blocking
+        ``input()`` already enforces by construction.
+
+        ``auto_close_on_pause`` (Phase 63, default ``False`` -- unchanged
+        behavior): when the browser pauses for direct human interaction
+        (:class:`~career_agent.core.events.HumanActionRequired`, e.g. a
+        login wall or challenge), the default behavior blocks on a second
+        ``input()`` prompt in :meth:`_resolve_pause`, since a human is
+        expected to resolve it directly on the visible browser window. A
+        caller with no visible browser to point the human at (the web API,
+        until a future browser-monitor phase) sets this ``True`` instead:
+        the browser is closed and the attempt ends ``UNKNOWN`` with a clear
+        warning, rather than blocking a background task indefinitely on
+        stdin nobody can answer.
+        """
         result_id = str(uuid.uuid4())
         started_at = datetime.now(UTC)
 
@@ -189,7 +213,9 @@ class SubmissionEngine:
 
         # The real, final, un-bypassable human gate.
         try:
-            confirm_fn()
+            outcome = confirm_fn()
+            if inspect.isawaitable(outcome):
+                await outcome
         except (KeyboardInterrupt, CancelledByUserError):
             return _finish(status="CANCELLED", submitted=False)
 
@@ -256,12 +282,19 @@ class SubmissionEngine:
             )
 
         if isinstance(event, HumanActionRequired):
-            return await self._resolve_pause(applicator, event, _finish)
+            return await self._resolve_pause(
+                applicator, event, _finish, auto_close_on_pause=auto_close_on_pause
+            )
 
         return _finish(status="UNKNOWN", submitted=False, warnings=[str(event)])
 
     async def _resolve_pause(
-        self, applicator: BrowserApplicator, event: HumanActionRequired, finish
+        self,
+        applicator: BrowserApplicator,
+        event: HumanActionRequired,
+        finish,
+        *,
+        auto_close_on_pause: bool = False,
     ) -> SubmissionResult:
         """One resume attempt for a Phase A/B pause -- never an unbounded loop.
 
@@ -270,11 +303,37 @@ class SubmissionEngine:
         either itself), then this prompts once for acknowledgment. If
         still unresolved, records ``UNKNOWN`` and tells the human to check
         the browser directly rather than guessing or retrying silently.
+
+        ``auto_close_on_pause=True`` (Phase 63) skips the blocking prompt
+        entirely -- there is no visible browser the caller can point a
+        human at (e.g. a web API background task) -- and instead closes
+        the paused browser itself before returning ``UNKNOWN``, so the
+        attempt fails visibly rather than leaving an unresolved browser
+        process open with nobody watching it.
         """
         pause_tokens = list(applicator._paused)  # noqa: SLF001 -- same-package access
         if not pause_tokens:
             return finish(status="UNKNOWN", submitted=False)
         pause_token = pause_tokens[-1]
+
+        if auto_close_on_pause:
+            paused = applicator._paused.get(pause_token)  # noqa: SLF001
+            if paused is not None:
+                try:
+                    await paused.browser.close()
+                except Exception:  # noqa: BLE001 -- best-effort cleanup only
+                    pass
+            return finish(
+                status="UNKNOWN",
+                submitted=False,
+                warnings=[
+                    f"Paused ({event.reason}): this attempt needs direct "
+                    "browser interaction the web dashboard cannot provide "
+                    "yet. Run `career-agent submit` from the CLI to "
+                    "complete it."
+                ],
+            )
+
         print(f"Action required ({event.reason}): complete it on the visible browser.")
         input("Press ENTER once resolved: ")
         ack = PauseAcknowledgment(

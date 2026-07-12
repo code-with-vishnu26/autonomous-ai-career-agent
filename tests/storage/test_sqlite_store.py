@@ -64,13 +64,21 @@ def test_sqlite_repo_satisfies_the_contract(tmp_path: Path) -> None:
 
 
 def test_sqlite_repo_exposes_only_the_contract_methods(tmp_path: Path) -> None:
-    """Same fidelity guard as the in-memory impl: add + get, nothing more."""
+    """Same fidelity guard as the in-memory impl, plus ``list_recent``.
+
+    ``add``/``get`` are the ``OpportunityRepository`` protocol itself
+    (still fully satisfied, per ``test_sqlite_repo_satisfies_the_contract``
+    above) -- ``list_recent`` is a Phase 63 addition for the web Search
+    Jobs page (a shared, deduplicated catalog with no per-user listing
+    method anywhere else), deliberately not added to the in-memory
+    implementation or the protocol since nothing outside the API needs it.
+    """
     public = {
         name
         for name in vars(SqliteOpportunityRepository)
         if not name.startswith("_")
     }
-    assert public == {"add", "get"}
+    assert public == {"add", "get", "list_recent"}
 
 
 async def test_add_is_idempotent_by_id(tmp_path: Path) -> None:
@@ -108,6 +116,21 @@ async def test_round_trip_survives_close_and_reopen(tmp_path: Path) -> None:
     loaded = await reopened.get("id-1")
     assert loaded == stored  # full model equality, not just presence
     assert await reopened.add(stored) is False  # dedup state persisted too
+
+
+async def test_list_recent_returns_newest_first_up_to_the_limit(
+    tmp_path: Path,
+) -> None:
+    repo = SqliteOpportunityRepository(tmp_path / "db.sqlite")
+    for i in range(5):
+        await repo.add(_opp(f"id-{i}", ats_ref=f"native-{i}"))
+    recent = await repo.list_recent(limit=3)
+    assert [o.id for o in recent] == ["id-4", "id-3", "id-2"]
+
+
+async def test_list_recent_on_empty_repo_returns_empty_list(tmp_path: Path) -> None:
+    repo = SqliteOpportunityRepository(tmp_path / "db.sqlite")
+    assert await repo.list_recent() == []
 
 
 def _application(app_id: str = "app-1") -> Application:

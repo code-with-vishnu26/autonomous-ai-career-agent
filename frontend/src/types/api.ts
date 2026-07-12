@@ -369,3 +369,53 @@ export interface AdminOrganization {
   slug: string;
   member_count: number;
 }
+
+/**
+ * Phase 63, ADR-0081: web-triggered Discover, Review, and Submit. Mirrors
+ * `domain/discovery_run.py`, `domain/models.py::Opportunity`, and
+ * `api/routers/submission_actions.py::PendingSubmissionStatus`
+ * field-for-field.
+ */
+export type DiscoveryRunStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+
+export interface DiscoveryRun {
+  id: string;
+  user_id: string;
+  status: DiscoveryRunStatus;
+  started_at: string;
+  completed_at: string | null;
+  new_count: number;
+  source_labels: string[];
+  errors: string[];
+}
+
+export interface Opportunity {
+  id: string;
+  company_id: string;
+  canonical_company: string;
+  title: string;
+  source: "ats_api" | "yc" | "hn" | "career_page" | "web_search" | "job_board";
+  source_url: string;
+  ats_ref: string | null;
+  posted_at: string | null;
+  location: string | null;
+  remote: boolean | null;
+  description_raw: string;
+  discovered_at: string;
+}
+
+export type PendingSubmissionState =
+  | "PREPARING"
+  | "AWAITING_CONFIRMATION"
+  | "SUBMITTING"
+  | "DONE"
+  | "FAILED";
+
+export interface PendingSubmissionStatus {
+  token: string;
+  status: PendingSubmissionState;
+  company: string | null;
+  job_title: string | null;
+  error: string | null;
+  result_id: string | null;
+}

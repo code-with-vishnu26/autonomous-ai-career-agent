@@ -42,7 +42,7 @@ import getpass
 import json
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -88,6 +88,7 @@ from career_agent.domain.models import (
     SubmissionPreview,
 )
 from career_agent.domain.pareto import ObjectivePoint, analyze_frontier
+from career_agent.domain.resume_variants import ResumeVariant
 from career_agent.domain.review import ReviewSession, build_review_session
 from career_agent.domain.submission import SubmissionResult
 from career_agent.integrations.adapters.base import FeatureUnavailableError
@@ -813,6 +814,118 @@ def _countdown_and_confirm(
     return True
 
 
+class SubmissionMaterialsError(Exception):
+    """A refusal in :func:`submit_prepared_application` before any browser touch.
+
+    Carries the exact human-readable message ``run_submit_command`` would
+    have printed (and exited 1 for) -- callers decide how to surface it
+    (the CLI prints and exits 1; the web API turns it into an HTTP 422).
+    """
+
+
+async def submit_prepared_application(
+    *,
+    opportunity: Opportunity,
+    profile: MasterProfile,
+    review: ReviewSession,
+    application_session: ApplicationSession,
+    stored_variant: ResumeVariant | None,
+    settings: Settings,
+    confirm_fn: Callable[[], bool | Awaitable[bool]],
+    auto_close_on_pause: bool = False,
+) -> SubmissionResult:
+    """Fresh re-tailor, promptfoo gate, then ``SubmissionEngine.submit``.
+
+    The exact sequence ``career-agent submit`` runs, extracted (Phase 63)
+    from ``run_submit_command`` at its file-I/O boundary: this function
+    takes already-loaded domain objects, so a caller that has them from
+    somewhere other than a file path (the web API's ``POST
+    /submissions/prepare``, Phase 63) can reuse the identical logic rather
+    than reimplementing it -- the CLI and the API can never drift apart on
+    what re-tailoring/validation/submission actually does.
+
+    Raises :class:`SubmissionMaterialsError` for a refusal that happens
+    before any browser is ever touched (no LLM provider configured, the
+    promptfoo gate not passed, re-tailoring itself refused).
+    :class:`~career_agent.integrations.adapters.base.FeatureUnavailableError`
+    (no ``FormFiller`` for this ATS) propagates unchanged, exactly as it
+    already did from ``SubmissionEngine.submit``.
+    """
+    try:
+        claim_verifier = select_claim_verifier(settings)
+    except NoLLMProviderConfiguredError as exc:
+        raise SubmissionMaterialsError(str(exc)) from exc
+    results_dir = Path(settings.promptfoo_results_dir)
+    try:
+        verify_promptfoo_results(
+            claim_verifier.prompt_version,
+            results_dir,
+            provider_id=claim_verifier.provider_id,
+        )
+    except PromptfooNotValidatedError as exc:
+        raise SubmissionMaterialsError(str(exc)) from exc
+    try:
+        content_drafter = select_content_drafter(settings)
+    except NoLLMProviderConfiguredError as exc:
+        raise SubmissionMaterialsError(str(exc)) from exc
+
+    generator = LLMResumeGenerator(content_drafter)
+    gate = LLMTruthfulnessGate(claim_verifier)
+    semantic_matcher = select_semantic_matcher(settings)
+    pipeline = ResumeTailoringPipeline(
+        generator,
+        gate,
+        EventBus(),
+        artifacts_dir=Path(settings.artifacts_dir),
+        ats_threshold=settings.ats_threshold,
+        semantic_matcher=semantic_matcher,
+    )
+    variant_engine = ResumeVariantEngine(pipeline)
+    variant_store = SqliteResumeVariantStore(Path(settings.database_path))
+    category = opportunity.title
+    try:
+        materials = await variant_engine.build_materials(
+            opportunity,
+            profile,
+            category=category,
+            prior_variants=variant_store.by_category(category),
+        )
+    except MissingSummaryError as exc:
+        raise SubmissionMaterialsError(f"Cannot tailor a resume: {exc}") from exc
+    except AtsScoreBelowThresholdError as exc:
+        raise SubmissionMaterialsError(
+            f"The ATS score gate refused this application:\n{exc}"
+        ) from exc
+
+    if materials.tailoring.submittable is None:
+        raise SubmissionMaterialsError(
+            "The truthfulness gate rejected the freshly re-tailored draft -- "
+            "refusing to submit."
+        )
+
+    submission_store = SqliteSubmissionResultStore(Path(settings.database_path))
+    prior_outcome = _resolve_prior_submission_outcome(
+        submission_store.by_opportunity(opportunity.id)
+    )
+    session_store = EncryptedSessionStore(
+        Path(settings.browser_session_dir), KeyringKeyProvider()
+    )
+    engine = SubmissionEngine(
+        session_store,
+        diagnostics_dir=Path(settings.artifacts_dir) / "browser_failures",
+    )
+    return await engine.submit(
+        opportunity,
+        materials.tailoring.submittable,
+        review,
+        application_session,
+        stored_variant.content if stored_variant is not None else None,
+        prior_outcome=prior_outcome,
+        confirm_fn=confirm_fn,
+        auto_close_on_pause=auto_close_on_pause,
+    )
+
+
 async def run_submit_command(
     *,
     review_session_path: Path,
@@ -884,87 +997,23 @@ async def run_submit_command(
     )
 
     try:
-        claim_verifier = select_claim_verifier(settings)
-    except NoLLMProviderConfiguredError as exc:
-        print(str(exc))
-        return 1
-    results_dir = Path(settings.promptfoo_results_dir)
-    try:
-        verify_promptfoo_results(
-            claim_verifier.prompt_version,
-            results_dir,
-            provider_id=claim_verifier.provider_id,
-        )
-    except PromptfooNotValidatedError as exc:
-        print(str(exc))
-        return 1
-    try:
-        content_drafter = select_content_drafter(settings)
-    except NoLLMProviderConfiguredError as exc:
-        print(str(exc))
-        return 1
-
-    generator = LLMResumeGenerator(content_drafter)
-    gate = LLMTruthfulnessGate(claim_verifier)
-    semantic_matcher = select_semantic_matcher(settings)
-    pipeline = ResumeTailoringPipeline(
-        generator,
-        gate,
-        EventBus(),
-        artifacts_dir=Path(settings.artifacts_dir),
-        ats_threshold=settings.ats_threshold,
-        semantic_matcher=semantic_matcher,
-    )
-    variant_engine = ResumeVariantEngine(pipeline)
-    category = opportunity.title
-    try:
-        materials = await variant_engine.build_materials(
-            opportunity,
-            profile,
-            category=category,
-            prior_variants=variant_store.by_category(category),
-        )
-    except MissingSummaryError as exc:
-        print(f"Cannot tailor a resume: {exc}")
-        return 1
-    except AtsScoreBelowThresholdError as exc:
-        print("The ATS score gate refused this application:")
-        print(str(exc))
-        return 1
-
-    if materials.tailoring.submittable is None:
-        print(
-            "The truthfulness gate rejected the freshly re-tailored draft -- "
-            "refusing to submit."
-        )
-        return 1
-
-    submission_store = SqliteSubmissionResultStore(Path(settings.database_path))
-    prior_outcome = _resolve_prior_submission_outcome(
-        submission_store.by_opportunity(opportunity.id)
-    )
-
-    session_store = EncryptedSessionStore(
-        Path(settings.browser_session_dir), KeyringKeyProvider()
-    )
-    engine = SubmissionEngine(
-        session_store,
-        diagnostics_dir=Path(settings.artifacts_dir) / "browser_failures",
-    )
-    try:
-        result = await engine.submit(
-            opportunity,
-            materials.tailoring.submittable,
-            review,
-            application_session,
-            stored_variant.content if stored_variant is not None else None,
-            prior_outcome=prior_outcome,
+        result = await submit_prepared_application(
+            opportunity=opportunity,
+            profile=profile,
+            review=review,
+            application_session=application_session,
+            stored_variant=stored_variant,
+            settings=settings,
             confirm_fn=confirm_fn or _countdown_and_confirm,
         )
+    except SubmissionMaterialsError as exc:
+        print(str(exc))
+        return 1
     except FeatureUnavailableError as exc:
         print(str(exc))
         return 1
 
+    submission_store = SqliteSubmissionResultStore(Path(settings.database_path))
     submission_store.save(result, user_id=operator_user_id)
 
     _submission_category = {
@@ -1108,6 +1157,8 @@ async def run_discover_command(
     out_dir: Path,
     profile: MasterProfile | None = None,
     scorer: object | None = None,
+    on_new_opportunity: Callable[[Opportunity], None] | None = None,
+    on_source_error: Callable[[str, Exception], None] | None = None,
 ) -> int:
     """Run every configured source, dedup via ``repo``, write handoff files.
 
@@ -1118,6 +1169,14 @@ async def run_discover_command(
     for real for the first time). A failing source is reported and
     skipped -- one broken API must not sink the whole run -- but is never
     silently absent from the summary.
+
+    ``on_new_opportunity``/``on_source_error`` are optional observation
+    hooks (Phase 63) -- both default to ``None`` and are simply skipped,
+    so every existing caller (the CLI, existing tests) keeps today's exact
+    behavior. They let a caller that cannot inspect this function's return
+    value (always ``0``) build its own summary -- e.g. the web API's
+    ``DiscoveryRun`` status record -- by observing the *same* run rather
+    than re-implementing source iteration/dedup.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     new_count = 0
@@ -1127,6 +1186,8 @@ async def run_discover_command(
             found = await source.fetch(since)  # type: ignore[attr-defined]
         except Exception as exc:  # noqa: BLE001 -- per-source isolation
             print(f"[{name}] FAILED: {exc}")
+            if on_source_error is not None:
+                on_source_error(name, exc)
             continue
         fresh = 0
         for opportunity in found:
@@ -1134,6 +1195,8 @@ async def run_discover_command(
                 fresh += 1
                 new_count += 1
                 new_opportunities.append(opportunity)
+                if on_new_opportunity is not None:
+                    on_new_opportunity(opportunity)
                 handoff = out_dir / f"{opportunity.id}.json"
                 # Explicit encoding="utf-8": model_dump_json() (unlike
                 # stdlib json.dumps' ensure_ascii=True default) writes real
@@ -2484,8 +2547,10 @@ def main(argv: list[str] | None = None) -> None:
 
     serve_parser = subparsers.add_parser(
         "serve",
-        help="Run the read-only Web Dashboard API (Phase 54, ADR-0072). "
-        "Cannot discover, tailor, approve, or submit -- those stay CLI-only.",
+        help="Run the Web Dashboard API (Phase 54, ADR-0072). Discover, "
+        "review, and submit are reachable from the dashboard too (Phase "
+        "63, ADR-0081) -- calling the same service layer and safety gates "
+        "as this CLI. Tailoring (prepare) remains CLI-only.",
     )
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8000)

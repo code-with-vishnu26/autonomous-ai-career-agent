@@ -150,20 +150,24 @@ def test_no_matching_application_session_returns_one_before_any_llm_wiring(
 
 def test_gates_before_constructing_the_live_verifier() -> None:
     """Mirrors test_apply_and_auto_gate_before_constructing_the_live_verifier
-    (Phase 28, ADR-0054) for the new submit command."""
-    src = inspect.getsource(cli_module.run_submit_command)
+    (Phase 28, ADR-0054). Phase 63 extracted this ordering guarantee out of
+    ``run_submit_command`` into ``submit_prepared_application`` (now shared
+    with the web API's submission endpoint, ADR-0081) -- this test moved
+    with the logic it verifies."""
+    src = inspect.getsource(cli_module.submit_prepared_application)
     assert "select_claim_verifier" in src
     assert "verify_promptfoo_results" in src
     assert src.index("verify_promptfoo_results") < src.index(
         "LLMResumeGenerator"
-    ), "run_submit_command: promptfoo gate must run before verifier construction"
+    ), "submit_prepared_application: promptfoo gate must precede verifier construction"
 
 
 def test_no_application_session_check_precedes_llm_wiring() -> None:
     """Structural proof: the ApplicationSession lookup (and its refusal path)
-    textually precedes select_claim_verifier -- so a wrong/missing session
-    is caught before any LLM provider is ever touched."""
+    textually precedes the handoff to ``submit_prepared_application`` --
+    where all LLM-provider wiring now lives (Phase 63) -- so a wrong/missing
+    session is caught before any LLM provider is ever touched."""
     src = inspect.getsource(cli_module.run_submit_command)
     assert src.index("SqliteApplicationSessionStore(") < src.index(
-        "select_claim_verifier"
+        "submit_prepared_application("
     )
