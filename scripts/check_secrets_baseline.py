@@ -36,19 +36,34 @@ _EXCLUDES = (
 
 
 def _normalized(baseline_text: str) -> dict:
-    """Strip fields that vary by machine/checkout path, not by content.
+    r"""Strip/canonicalize fields that vary by machine or OS, not by content.
 
     ``generated_at`` changes on every run. The ``is_baseline_file`` filter
     entry records ``--baseline``'s *absolute path*, which is this
     repository's checkout location -- different between a contributor's
     machine and CI's runner, so comparing it raw would fail this check on
     every single run regardless of whether any secret actually changed.
+
+    ``results`` keys and each entry's own ``filename`` use ``\\`` path
+    separators on Windows and ``/`` everywhere else -- confirmed by a real
+    CI failure (a fresh Windows scan reporting every single file under a
+    backslash-joined path while the baseline, generated on Linux, records
+    the identical files under forward slashes). Canonicalized to ``/`` so
+    the comparison is about secrets, not which OS generated the JSON.
     """
     data = json.loads(baseline_text)
     data.pop("generated_at", None)
     for entry in data.get("filters_used", []):
         if entry.get("path") == "detect_secrets.filters.common.is_baseline_file":
             entry.pop("filename", None)
+    results = data.get("results", {})
+    data["results"] = {
+        filename.replace("\\", "/"): [
+            {**finding, "filename": finding["filename"].replace("\\", "/")}
+            for finding in findings
+        ]
+        for filename, findings in results.items()
+    }
     return data
 
 
@@ -106,13 +121,12 @@ def main() -> int:
     for pattern in _EXCLUDES:
         args += ["--exclude-files", pattern]
     # PYTHONUTF8 forces every open() detect-secrets makes to default to
-    # UTF-8 regardless of OS locale (PEP 540) -- without it, Windows'
-    # default locale encoding (not UTF-8) reads non-ASCII file content
-    # (e.g. "résumé" in test fixtures) differently than Linux/macOS,
-    # producing different hashes for text near it and making a scan of
-    # identical committed content disagree by platform alone. Real bug,
-    # confirmed by the exact same class of mojibake this project already
-    # documented for its own code in ADR-0056.
+    # UTF-8 regardless of OS locale (PEP 540) -- defensive, not the actual
+    # fix for the real Windows CI failure found here (that was `results`'
+    # backslash-vs-forward-slash path keys, handled in `_normalized`
+    # below). Kept anyway: Windows' non-UTF-8 default locale reading
+    # non-ASCII fixture content (e.g. "résumé") differently than Linux is
+    # a real, separate risk this project has hit before (ADR-0056).
     subprocess.run(
         args, cwd=_REPO_ROOT, check=True, env={**os.environ, "PYTHONUTF8": "1"}
     )
