@@ -1,0 +1,59 @@
+# Production overlay (Phase 59, ADR-0076): resource limits, restart
+# policies, structured JSON logs on, and the postgres/redis profiles
+# enabled by default (still not consumed by the app -- see ADR-0076 and
+# docker-compose.yml's own comment -- but present and healthy so a
+# production operator who wants them running has them, without this
+# phase pretending the storage layer reads from postgres yet). Use with
+# the base file and your own production env file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     --env-file production.env --profile postgres up -d
+
+services:
+  backend:
+    environment:
+      ENVIRONMENT: production
+      JSON_LOGS: "true"
+      JWT_COOKIE_SECURE: "true"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          memory: 512M
+    restart: always
+
+  frontend:
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 256M
+    restart: always
+
+  nginx:
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 128M
+    restart: always
+    # Uncomment once a certificate is mounted (docs/deployment/production.md):
+    # ports:
+    #   - "443:443"
+    # volumes:
+    #   - ./certs:/etc/nginx/certs:ro
+
+  postgres:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  redis:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M

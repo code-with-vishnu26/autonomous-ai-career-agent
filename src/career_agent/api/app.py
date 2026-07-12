@@ -1,11 +1,21 @@
-"""FastAPI app factory for the Web Dashboard backend (Phase 54/56, ADR-0072/0074)."""
+"""FastAPI app factory for the Web Dashboard backend (Phase 54/56, ADR-0072/0074).
+
+Phase 59 (ADR-0076) adds structured logging, request logging, and a
+startup-validation log pass -- none of it changes what any route does or
+what it's allowed to do; see ``core/logging_config.py``/
+``core/startup_validation.py``.
+"""
 
 from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from career_agent import __version__
+from career_agent.api.middleware import log_requests
 from career_agent.api.routers import (
     analytics,
     applications,
@@ -18,6 +28,11 @@ from career_agent.api.routers import (
     submissions,
     user,
 )
+from career_agent.core.config import Settings
+from career_agent.core.logging_config import configure_logging
+from career_agent.core.startup_validation import validate_startup
+
+logger = logging.getLogger(__name__)
 
 #: Local Vite dev server origins only -- this is a single-user-per-install,
 #: self-hosted tool (README's own framing), not a public multi-tenant SaaS;
@@ -43,6 +58,34 @@ _READ_ONLY_ROUTERS = (
 _WRITE_CAPABLE_ROUTERS = (auth, user, coach)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Configure logging, then log (never raise on) startup validation findings.
+
+    Deliberately never refuses to start the process here even on a
+    ``StartupReport`` error -- the per-request fail-closed checks already
+    in place (``api/security.py::require_jwt_secret``) are the actual
+    enforcement; this only makes the same fact visible before the first
+    request arrives instead of on it, which is what a container
+    orchestrator's log stream needs to alert on a misconfigured
+    deployment quickly.
+    """
+    settings = Settings()
+    configure_logging(settings)
+    report = validate_startup(settings)
+    for message in report.errors:
+        logger.error(message)
+    for message in report.warnings:
+        logger.warning(message)
+    logger.info(
+        "Starting Autonomous AI Career Agent dashboard API v%s (environment=%s)",
+        __version__,
+        settings.environment,
+    )
+    yield
+    logger.info("Shutting down Autonomous AI Career Agent dashboard API")
+
+
 def create_app() -> FastAPI:
     """Build the FastAPI app: CORS for the local dev frontend, then routers."""
     app = FastAPI(
@@ -55,6 +98,7 @@ def create_app() -> FastAPI:
             "API can trigger discovery, tailoring, review approval, or "
             "submission -- those remain exclusively CLI actions."
         ),
+        lifespan=_lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -63,6 +107,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT"],
         allow_headers=["*"],
     )
+    app.middleware("http")(log_requests)
     for router_module in (*_READ_ONLY_ROUTERS, *_WRITE_CAPABLE_ROUTERS):
         app.include_router(router_module.router)
     return app

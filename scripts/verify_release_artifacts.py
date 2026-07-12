@@ -65,6 +65,20 @@ _SDIST_ALLOWED_TOP_LEVEL = frozenset(
         "scripts",
         "src",
         "tests",
+        # Phase 59 (ADR-0076): real, tracked deployment infrastructure --
+        # not a leaked local artifact. docker.env/production.env.example
+        # are safe, placeholder-only templates (never a real secret; see
+        # .gitignore's own carve-out next to `.env`/`.env.*`).
+        ".dockerignore",
+        "Dockerfile.backend",
+        "Dockerfile.frontend",
+        "Dockerfile.frontend.dev",
+        "deploy",
+        "docker-compose.yml",
+        "docker-compose.dev.yml",
+        "docker-compose.prod.yml",
+        "docker.env",
+        "production.env.example",
     }
 )
 

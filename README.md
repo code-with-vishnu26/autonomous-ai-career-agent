@@ -486,6 +486,40 @@ Requires `GROQ_API_KEY` or `ANTHROPIC_API_KEY` (same as every other LLM
 feature); the deterministic features (Resume Analysis, Job Match Score,
 Skill Gap Analysis) work without either.
 
+## Production Deployment (Phase 59, [ADR-0076](docs/adr/0076-production-deployment-and-infrastructure.md))
+
+```bash
+docker compose up --build   # http://localhost — backend, frontend, and an edge nginx proxy
+```
+
+Multi-stage `Dockerfile.backend` (gunicorn + uvicorn workers, non-root,
+Playwright's Chromium installed) and `Dockerfile.frontend` (nginx-served
+static build, non-root), fronted by a small edge reverse-proxy container
+(`deploy/nginx/`) that routes `/` to the frontend and
+`/api`/`/auth`/`/user`/`/coach`/`/health`/`/ready`/`/metrics` to the
+backend. New `/health` (liveness), `/ready` (readiness — verifies the
+real SQLite database is reachable, returns `503` rather than a false
+`200`), and `/metrics` (Prometheus text format) endpoints; structured
+JSON logging (`ENVIRONMENT=production`); a `docker` CI job that builds
+every image for real and verifies Playwright's Chromium actually
+launches inside the backend image.
+
+`docker-compose.dev.yml` overlays hot reload (source mounted, Vite dev
+server); `docker-compose.prod.yml` overlays resource limits and secure
+cookies. `postgres`/`redis` containers exist and are startable
+(`--profile postgres`/`--profile redis`) but are **not yet consumed by
+the application** — the storage layer is SQLite-only today; see
+ADR-0076 for why real PostgreSQL support was explicitly deferred rather
+than built by duplicating or rewriting `storage/sqlite.py`.
+
+See [`docs/deployment/docker.md`](docs/deployment/docker.md) (quick
+start, dev/prod overlays, browser-automation-in-Docker caveats),
+[`docs/deployment/production.md`](docs/deployment/production.md) (HTTPS,
+backups, troubleshooting), [`docs/deployment/environment.md`](docs/deployment/environment.md)
+(every variable, across `.env.example`/`docker.env`/`production.env.example`),
+and [`docs/deployment/monitoring.md`](docs/deployment/monitoring.md)
+(health endpoints, structured logs, Prometheus metrics).
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered

@@ -1,0 +1,86 @@
+# Base stack (Phase 59, ADR-0076): backend + frontend + edge nginx, SQLite
+# by default. `docker compose up` (no -f overrides) launches exactly this.
+#
+# `postgres`/`redis` are defined but gated behind Compose profiles
+# (`--profile postgres` / `--profile redis`) -- neither is wired into the
+# application today (see ADR-0076: the storage layer is SQLite-only, and
+# there is no caching layer anywhere in this codebase to back with Redis).
+# They exist so the infrastructure shape the brief asked for is present
+# and startable, without pretending either is actually consumed.
+#
+# Use docker-compose.dev.yml on top of this for local development (hot
+# reload, source mounted in) or docker-compose.prod.yml for production
+# tuning (resource limits, restart policies, the postgres/redis profiles
+# enabled by default) -- see docs/deployment/docker.md.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - docker.env
+    environment:
+      DATABASE_PATH: /app/data/career_agent.db
+    volumes:
+      - career_agent_data:/app/data
+      - career_agent_promptfoo:/app/promptfoo/results
+    # Overrides Dockerfile.backend's HEALTHCHECK (which only checks
+    # liveness, /health) with a readiness check (/ready, verifies the
+    # database is reachable) -- frontend's `depends_on: service_healthy`
+    # below should wait for "can actually serve," not just "process is up."
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: ./deploy/nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-career_agent}
+      POSTGRES_USER: ${POSTGRES_USER:-career_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-career_agent}
+    volumes:
+      - career_agent_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-career_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["redis"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  career_agent_data:
+  career_agent_promptfoo:
+  career_agent_postgres:
