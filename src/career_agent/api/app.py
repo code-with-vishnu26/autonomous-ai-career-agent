@@ -22,6 +22,8 @@ from career_agent.api.routers import (
     auth,
     coach,
     health,
+    notification_settings,
+    notifications,
     resume_variants,
     reviews,
     settings_,
@@ -31,6 +33,7 @@ from career_agent.api.routers import (
 from career_agent.core.config import Settings
 from career_agent.core.logging_config import configure_logging
 from career_agent.core.startup_validation import validate_startup
+from career_agent.scheduler import build_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +47,11 @@ _DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 #: only routers this API has ever allowed to mutate anything (or, for
 #: ``coach``, to trigger a real costed LLM call) -- Phase 56 scoped an
 #: account and its own preferences; Phase 57 (ADR-0075) scopes the Career
-#: Coach's stateless, self-contained requests. Still nothing here can
-#: trigger discovery, tailoring, review approval, or submission.
+#: Coach's stateless, self-contained requests. Phase 58 (ADR-0077) adds
+#: ``notifications``/``notification_settings`` -- read/mark-read/delete on
+#: the caller's own notifications and their own delivery preferences, still
+#: never anything that can trigger discovery, tailoring, review approval,
+#: or submission.
 _READ_ONLY_ROUTERS = (
     health,
     applications,
@@ -55,7 +61,7 @@ _READ_ONLY_ROUTERS = (
     analytics,
     settings_,
 )
-_WRITE_CAPABLE_ROUTERS = (auth, user, coach)
+_WRITE_CAPABLE_ROUTERS = (auth, user, coach, notifications, notification_settings)
 
 
 @asynccontextmanager
@@ -82,7 +88,11 @@ async def _lifespan(app: FastAPI):
         __version__,
         settings.environment,
     )
+    scheduler = build_scheduler(settings)
+    scheduler.start()
+    logger.info("Background scheduler started (%d job(s))", len(scheduler.get_jobs()))
     yield
+    scheduler.shutdown(wait=False)
     logger.info("Shutting down Autonomous AI Career Agent dashboard API")
 
 
@@ -104,7 +114,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=_DEV_ORIGINS,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["*"],
     )
     app.middleware("http")(log_requests)

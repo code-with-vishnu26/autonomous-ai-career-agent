@@ -129,3 +129,25 @@ class Settings(BaseSettings):
     #: on by default in ``production`` (see :func:`effective_json_logs`),
     #: overridable either way via the environment for local debugging.
     json_logs: bool | None = None
+
+    # Notifications & Background Processing (Phase 58, ADR-0077).
+    #: SMTP transport for real email delivery -- unset means email
+    #: notifications are recorded (in-app) but never sent (delivery
+    #: status ``SKIPPED``, never fabricated ``SENT``). No default host:
+    #: there is no shared, safe-to-assume SMTP relay for a self-hosted
+    #: single-install tool.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+    #: The ``From`` address on every outbound email -- distinct from
+    #: ``smtp_username`` since some providers authenticate under a
+    #: different address than the one mail should appear to come from.
+    smtp_from_address: str | None = None
+    #: Reminders/digests are computed on a scheduled pass, not per
+    #: request -- how often the background scheduler checks (minutes).
+    reminder_interval_minutes: int = 60
+    #: How long an already-read notification survives before the
+    #: cleanup job deletes it (days).
+    notification_retention_days: int = 30

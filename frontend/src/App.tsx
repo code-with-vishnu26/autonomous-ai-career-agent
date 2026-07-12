@@ -19,6 +19,8 @@ import { AnalyticsPage } from "@/pages/AnalyticsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { AccountPage } from "@/pages/AccountPage";
+import { NotificationsPage } from "@/pages/NotificationsPage";
+import { NotificationSettingsPage } from "@/pages/NotificationSettingsPage";
 import { CareerCoachPage } from "@/pages/coach/CareerCoachPage";
 import { ResumeAnalysisPage } from "@/pages/coach/ResumeAnalysisPage";
 import { JobMatchPage } from "@/pages/coach/JobMatchPage";
@@ -54,6 +56,8 @@ function AppRoutes() {
           <Route path="/submission" element={<SubmissionQueuePage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/notification-settings" element={<NotificationSettingsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/account" element={<AccountPage />} />

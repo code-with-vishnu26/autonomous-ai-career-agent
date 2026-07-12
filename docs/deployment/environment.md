@@ -31,6 +31,23 @@ values -- **never commit the filled-in file**; all three real variants
 | `DATABASE_URL` | unset | Accepted, validated, **not yet consumed** -- see `production.md`'s database section and ADR-0076 |
 | `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` | `career_agent`/`career_agent`/`career_agent` | Only used if you start the `postgres` Compose profile; the running Postgres container itself, not the application |
 
+## Optional -- notifications / background processing (Phase 58)
+
+| Variable | Default | Notes |
+|---|---|---|
+| `SMTP_HOST` | unset | Set together with `SMTP_FROM_ADDRESS` to enable real email delivery. Unset means email attempts are recorded `SKIPPED`, never fabricated as sent -- see ADR-0077 |
+| `SMTP_PORT` | `587` | |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | unset | Only used if both are set; otherwise the SMTP connection skips `login()` |
+| `SMTP_USE_TLS` | `true` | Calls `starttls()` before login/send |
+| `SMTP_FROM_ADDRESS` | unset | The `From:` address on every notification email |
+| `REMINDER_INTERVAL_MINUTES` | `60` | How often the scheduler's `reminders` job runs |
+| `NOTIFICATION_RETENTION_DAYS` | `30` | Already-read notifications older than this are deleted by the `notification_cleanup` job |
+
+A per-user webhook URL (Slack/Discord/Teams incoming webhook, or any
+service accepting a JSON POST) is set from the dashboard's Notification
+Settings page, not an environment variable -- it is per-account, not
+per-deployment.
+
 ## Optional -- existing application config (Phases 1-57, unchanged)
 
 Every variable `.env.example` already documents is unaffected by this

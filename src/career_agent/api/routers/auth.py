@@ -22,9 +22,11 @@ cross-origin frontend).
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
@@ -49,6 +51,7 @@ from career_agent.core.security import (
 from career_agent.domain.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 _REFRESH_COOKIE_NAME = "refresh_token"
 
@@ -326,6 +329,7 @@ def forgot_password(
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
 def reset_password(
     body: ResetPasswordRequest,
+    settings: Settings = Depends(get_settings),
     user_store=Depends(get_user_store),
     reset_store=Depends(get_password_reset_token_store),
     refresh_store=Depends(get_refresh_token_store),
@@ -334,7 +338,9 @@ def reset_password(
 
     Revokes every refresh token for the account -- a password reset
     (self-initiated or attacker-initiated after a leak) should end every
-    existing session, not just future ones.
+    existing session, not just future ones. Notifies the account
+    (Phase 58, ADR-0077) -- a real password change, and the one real
+    trigger point this codebase has for the "password changed" event.
     """
     invalid = HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -353,3 +359,54 @@ def reset_password(
         found["user_id"], hashed_password=hash_password(body.new_password)
     )
     refresh_store.revoke_all_for_user(found["user_id"])
+    _notify_password_changed(settings, user_id=found["user_id"])
+
+
+def _notify_password_changed(settings: Settings, *, user_id: str) -> None:
+    """Best-effort notification -- never blocks/fails the reset itself."""
+    import asyncio
+
+    from career_agent.agents.notifications.dispatcher import NotificationDispatcher
+    from career_agent.agents.notifications.engine import NotificationEngine
+    from career_agent.agents.notifications.templates import password_changed_email
+    from career_agent.integrations.webhook import WebhookSender
+    from career_agent.scheduler import HttpxClient, build_email_sender
+    from career_agent.storage.sqlite import (
+        SqliteDeliveryAttemptStore,
+        SqliteNotificationPreferencesStore,
+        SqliteNotificationStore,
+        SqliteUserStore,
+        SqliteWebhookSubscriptionStore,
+    )
+
+    async def _run() -> None:
+        db_path = Path(settings.database_path)
+        subject, body = password_changed_email()
+        notification = NotificationEngine(SqliteNotificationStore(db_path)).create(
+            user_id=user_id,
+            type="WARNING",
+            category="password_changed",
+            title=subject,
+            message=body,
+        )
+        preferences = SqliteNotificationPreferencesStore(db_path).get_or_default(
+            user_id
+        )
+        user = SqliteUserStore(db_path).by_id(user_id)
+        dispatcher = NotificationDispatcher(
+            delivery_store=SqliteDeliveryAttemptStore(db_path),
+            email_sender=build_email_sender(settings),
+            webhook_sender=WebhookSender(HttpxClient()),
+        )
+        await dispatcher.dispatch(
+            notification,
+            user_id=user_id,
+            preferences=preferences,
+            email_address=user.email if user else None,
+            webhook_url=SqliteWebhookSubscriptionStore(db_path).get(user_id),
+        )
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001 -- never fail the reset itself
+        logger.warning("password-changed notification failed: %s", exc)

@@ -50,6 +50,11 @@ web = [
     # shutdown; `career-agent serve`'s plain `uvicorn.run` remains the
     # dev-server path, unchanged.
     "gunicorn>=22.0; platform_system != 'Windows'",
+    # Background scheduler (Phase 58, ADR-0077) -- reminders/digests/
+    # cleanup jobs, run in-process alongside the dashboard API via
+    # AsyncIOScheduler. No prior scheduler existed in this codebase; the
+    # brief's own "prefer APScheduler" instruction is followed as-is.
+    "apscheduler>=3.10",
 ]
 dev = [
     "pytest>=8.0",
