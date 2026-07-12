@@ -1887,6 +1887,79 @@ profile.
   green. Zero changes to any existing route's status codes, response
   bodies, or business logic.
 
+- ✅ **Browser Automation Robustness -- ADR-0080 (Phase 62).** Continuing
+  Phase 61's hardening-not-features direction into the part of this
+  project most likely to fail silently against a real, live ATS
+  posting -- it had never been exercised against one. The audit found
+  zero retry logic anywhere (`agents/planner/execution_plan.py`'s own
+  `max_retries` field is declared plan metadata, its docstring stating
+  outright it is "not enforced ... anywhere in this codebase"), zero
+  failure capture (no screenshot/HTML/console-log anywhere in
+  `integrations/`/`agents/`), and -- the most consequential finding --
+  `BrowserApplicator._click_submit_and_check_challenge()` and both of
+  `resume()`'s click-completing paths had **no exception handling at
+  all**, leaving the browser open and unclosed on any failure there.
+  Never-submit-twice (`domain/execution.py`'s `execute_allowed()`,
+  ADR-0050, plus the CLI's own pre-tailoring idempotency guard,
+  ADR-0048) confirmed already real and settled -- not reopened or
+  duplicated.
+
+  `integrations/browser/retry.py` (new, no `tenacity` dependency --
+  the same "a small helper beats a library" precedent
+  `core/logging_config.py`'s `JsonFormatter` already established):
+  `retry_async()` wraps only `_open_page`'s `page.goto()` and
+  `submit()`'s pre-click field-fill step, retrying up to 3 times on a
+  real `playwright.async_api.TimeoutError`. **The submit click itself
+  is never wrapped in retry** -- its own docstring states why directly:
+  retrying it risks a second real-world submission if the first attempt
+  actually succeeded but the response was slow, exactly the ambiguity
+  the never-submit-twice guarantee exists to prevent.
+
+  `integrations/browser/diagnostics.py` (new): `ConsoleLogCollector`
+  (attached to every page `_open_page` creates, bounded to the last 500
+  lines) and `capture_failure_diagnostics()` (screenshot + `page.
+  content()` + the collected console log, written to
+  `<diagnostics_dir>/<correlation_id>_<timestamp>/`) -- best-effort by
+  construction, every capture step swallows its own exceptions so a
+  failure while diagnosing a failure never masks the real one. Wired
+  into `BrowserApplicator` via a new `_fail_with_diagnostics()` helper
+  at all three browser-touching failure points (closing the resource
+  leak found in the audit as a direct byproduct). `diagnostics_dir`
+  defaults to `None` (capture disabled) -- every existing caller/test
+  keeps today's exact behavior unless it opts in; `SubmissionEngine`/CLI
+  wire `Path(settings.artifacts_dir) / "browser_failures"` through by
+  default. `SubmissionResult` gains one additive, optional field
+  (`diagnostics_dir: str | None`), read off the caught exception's own
+  new `diagnostics_dir` attribute in `SubmissionEngine.submit()`'s two
+  `except` blocks and a new catch-all added to `_resolve_pause()`
+  (mirroring `submit()`'s own "an exception during a click doesn't
+  prove it never fired, so it's `UNKNOWN`" reasoning exactly -- a gap
+  found while implementing this, since `_resolve_pause()` previously
+  caught only the two "not yet resolved" pause exceptions and let
+  anything else propagate uncaught).
+
+  16 new backend tests (1368 -> 1384): pure-asyncio tests proving
+  `retry_async`'s exact contract (succeeds first try, recovers after
+  N-1 failures, exhausts and re-raises, never retries a non-matching
+  exception type); real-Chromium tests proving diagnostics capture
+  actually writes a real screenshot/HTML/console-log file (and degrades
+  gracefully, never raising, when the page is already closed); a
+  real-Chromium test proving the retry wrapping *actually recovers*
+  from two injected transient timeouts before succeeding, not just
+  compiles; and an end-to-end `SubmissionEngine` test proving
+  `SubmissionResult.diagnostics_dir` is populated from a real browser
+  failure through the full engine, not only at the `BrowserApplicator`
+  layer. `tests/integrations/test_browser_purity.py`'s import allowlist
+  (the enforced "zero domain knowledge" contract for
+  `integrations/browser/`, ADR-0065) gained four legitimate stdlib
+  entries (`collections`/`dataclasses`/`datetime`/`logging`) the new
+  diagnostics module needs -- none weaken the guarantee it enforces.
+  0 new frontend tests (no frontend code touched this phase). Zero
+  changes to `BrowserApplicator`'s existing pause/resume/challenge/
+  refusal semantics, the headed-by-design (`headless=False`) Chromium
+  launch default (ADR-0076's own prior decision, not reopened), or any
+  authentication/organization logic.
+
 ---
 
 ## Deferred work (named, not forgotten)

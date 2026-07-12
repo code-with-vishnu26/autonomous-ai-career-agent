@@ -218,6 +218,7 @@ async def _applicator(
     *,
     fixture_path: Path = _FIXTURE,
     form_fillers: dict | None = None,
+    diagnostics_dir: Path | None = None,
 ) -> BrowserApplicator:
     repo = InMemoryOpportunityRepository()
     await repo.add(opportunity)
@@ -228,6 +229,7 @@ async def _applicator(
         form_fillers=form_fillers,
         chromium_executable_path=_chromium_executable(),
         on_context_ready=_route_to(fixture_path),
+        diagnostics_dir=diagnostics_dir,
     )
 
 
@@ -264,7 +266,9 @@ async def test_fill_form_writes_the_real_applicants_name_and_email(
         applicant=BasicsSection(name="Grace Beatrice Hopper", email="grace@navy.mil"),
     )
 
-    page, context, browser = await applicator._open_page("opp-1", _fixture_url())
+    page, context, browser, _console_log = await applicator._open_page(
+        "opp-1", _fixture_url()
+    )
     try:
         await GreenhouseFormFiller().fill_identity_and_resume(page, app)
         # rsplit(" ", 1): everything but the last token is first_name, the
@@ -286,7 +290,9 @@ async def test_fill_form_single_token_name_falls_back_to_empty_last_name(
         "opp-1", applicant=BasicsSection(name="Cher", email="cher@example.com")
     )
 
-    page, context, browser = await applicator._open_page("opp-1", _fixture_url())
+    page, context, browser, _console_log = await applicator._open_page(
+        "opp-1", _fixture_url()
+    )
     try:
         await GreenhouseFormFiller().fill_identity_and_resume(page, app)
         assert await page.input_value("#first_name") == "Cher"
@@ -359,7 +365,9 @@ async def test_unhandled_required_fields_is_empty_for_the_ordinary_fixture(
     tmp_path: Path,
 ) -> None:
     applicator = await _applicator(tmp_path, _opportunity("opp-1"))
-    page, context, browser = await applicator._open_page("opp-1", _fixture_url())
+    page, context, browser, _console_log = await applicator._open_page(
+        "opp-1", _fixture_url()
+    )
     try:
         unhandled = await _unhandled_required_fields(
             page, GreenhouseFormFiller.known_field_selectors
@@ -375,7 +383,7 @@ async def test_unhandled_required_fields_finds_the_extra_question(
     applicator = await _applicator(
         tmp_path, _opportunity("opp-1"), fixture_path=_EXTRA_QUESTION_FIXTURE
     )
-    page, context, browser = await applicator._open_page(
+    page, context, browser, _console_log = await applicator._open_page(
         "opp-1", f"file://{_EXTRA_QUESTION_FIXTURE}"
     )
     try:
@@ -413,7 +421,7 @@ async def test_unhandled_field_is_detected_before_any_click_on_the_live_page(
     applicator = await _applicator(
         tmp_path, _opportunity("opp-1"), fixture_path=_EXTRA_QUESTION_FIXTURE
     )
-    page, context, browser = await applicator._open_page(
+    page, context, browser, _console_log = await applicator._open_page(
         "opp-1", f"file://{_EXTRA_QUESTION_FIXTURE}"
     )
     try:
@@ -429,6 +437,102 @@ async def test_unhandled_field_is_detected_before_any_click_on_the_live_page(
         assert await page.is_visible("#application-success") is False
     finally:
         await browser.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase 62 (ADR-0080): failure-diagnostics capture and bounded retry.
+# ---------------------------------------------------------------------------
+
+
+async def test_submit_failure_captures_diagnostics_when_a_dir_is_configured(
+    tmp_path: Path,
+) -> None:
+    diagnostics_dir = tmp_path / "diagnostics"
+    applicator = await _applicator(
+        tmp_path / "session",
+        _opportunity("opp-1"),
+        fixture_path=_EXTRA_QUESTION_FIXTURE,
+        diagnostics_dir=diagnostics_dir,
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    with pytest.raises(UnsupportedFormFieldsError) as excinfo:
+        await applicator.submit(preview, _confirmation(preview.preview_token))
+
+    captured_dir = Path(excinfo.value.diagnostics_dir)
+    assert captured_dir.is_dir()
+    assert captured_dir.is_relative_to(diagnostics_dir)
+    assert (captured_dir / "screenshot.png").exists()
+    assert (captured_dir / "screenshot.png").stat().st_size > 0
+    assert "apply" in (captured_dir / "page.html").read_text(encoding="utf-8").lower()
+
+
+async def test_submit_failure_without_a_diagnostics_dir_configured_sets_nothing(
+    tmp_path: Path,
+) -> None:
+    """Default behavior (no ``diagnostics_dir`` passed) is unchanged from
+    before Phase 62 -- existing callers/tests keep working exactly as they
+    did, with no new attribute on the raised exception."""
+    applicator = await _applicator(
+        tmp_path, _opportunity("opp-1"), fixture_path=_EXTRA_QUESTION_FIXTURE
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    with pytest.raises(UnsupportedFormFieldsError) as excinfo:
+        await applicator.submit(preview, _confirmation(preview.preview_token))
+    assert getattr(excinfo.value, "diagnostics_dir", None) is None
+
+
+class _FlakyThenGreenhouseFormFiller(GreenhouseFormFiller):
+    """Raises a real Playwright timeout the first ``fail_times`` calls,
+    then delegates to the real GreenhouseFormFiller -- proves
+    ``submit()``'s retry wrapping actually retries a real transient
+    failure rather than just being present in the source."""
+
+    def __init__(self, fail_times: int) -> None:
+        self.fail_times = fail_times
+        self.calls = 0
+
+    async def fill_identity_and_resume(self, page, application) -> None:
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+            raise PlaywrightTimeoutError(f"simulated transient failure #{self.calls}")
+        await super().fill_identity_and_resume(page, application)
+
+
+async def test_submit_retries_a_transient_fill_timeout_and_still_succeeds(
+    tmp_path: Path,
+) -> None:
+    filler = _FlakyThenGreenhouseFormFiller(fail_times=2)
+    applicator = await _applicator(
+        tmp_path, _opportunity("opp-1"), form_fillers={"greenhouse": filler}
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    event = await applicator.submit(preview, _confirmation(preview.preview_token))
+    assert isinstance(event, ApplicationSubmitted)
+    # 2 failures + 1 success == exactly the 3-attempt retry budget, not an
+    # unbounded loop or a lucky single retry.
+    assert filler.calls == 3
+
+
+async def test_submit_gives_up_after_exhausting_retries_on_persistent_timeouts(
+    tmp_path: Path,
+) -> None:
+    filler = _FlakyThenGreenhouseFormFiller(fail_times=10)
+    applicator = await _applicator(
+        tmp_path, _opportunity("opp-1"), form_fillers={"greenhouse": filler}
+    )
+    app = _approved_application("opp-1")
+    preview = await applicator.prepare(app)
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    with pytest.raises(PlaywrightTimeoutError):
+        await applicator.submit(preview, _confirmation(preview.preview_token))
+    # Exactly the retry budget (3), never retried indefinitely.
+    assert filler.calls == 3
 
 
 async def test_submit_closes_the_browser_after_refusing_an_unsupported_field(
@@ -486,7 +590,7 @@ async def test_unhandled_required_fields_matches_name_based_selectors(
     applicator = await _applicator(
         tmp_path, _opportunity("opp-1"), fixture_path=_LEVER_SHAPED_FIXTURE
     )
-    page, context, browser = await applicator._open_page(
+    page, context, browser, _console_log = await applicator._open_page(
         "opp-1", f"file://{_LEVER_SHAPED_FIXTURE}"
     )
     try:
@@ -951,7 +1055,7 @@ async def test_lever_fills_single_fullname_field_and_attaches_the_real_docx(
     app = _lever_application_with_artifact(tmp_path)
     docx_name = Path(app.application.resume.artifacts[0].path).name
 
-    page, context, browser = await applicator._open_page(
+    page, context, browser, _console_log = await applicator._open_page(
         "opp-1", f"file://{_LEVER_REAL_FIXTURE}"
     )
     try:

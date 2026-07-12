@@ -642,6 +642,25 @@ latest available `browser-use` release, not a shortcut), `npm audit`
 potential secret. Existing rate limiting (auth-only) and the CSRF decision
 (`SameSite=Lax`, no token) were re-examined and reaffirmed, not reopened.
 
+## Browser Automation Robustness (Phase 62, [ADR-0080](docs/adr/0080-browser-automation-robustness.md))
+
+Continuing Phase 61's hardening direction into the Submission Engine's
+real, live-browser code path. A transient Playwright timeout during page
+navigation or field-filling now retries up to 3 times before giving up —
+**the submit click itself is never retried**, since retrying it risks a
+second real-world submission if the first attempt actually succeeded but
+responded slowly; never-submit-twice
+(`domain/execution.py`, ADR-0048/ADR-0050) is unchanged and untouched.
+Any browser-action failure now captures a screenshot, the page's HTML,
+and its console log to `data/artifacts/browser_failures/` (configurable),
+recorded on the resulting `SubmissionResult.diagnostics_dir` — so a
+`FAILED`/`UNKNOWN` submission leaves something to actually look at. Found
+and fixed along the way: `BrowserApplicator`'s submit-click and both of
+`resume()`'s click-completing paths previously had **no exception
+handling at all**, leaking an open, unclosed browser on any failure
+there — now closed cleanly every time, matching the behavior every other
+failure path already had.
+
 ## Privacy
 
 Your profile, CV proposals, SQLite database, spreadsheet exports, rendered

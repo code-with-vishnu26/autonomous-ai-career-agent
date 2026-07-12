@@ -25,6 +25,13 @@ ALLOWED_TOP_LEVEL_IMPORTS = {
     "asyncio",
     "pathlib",
     "typing",
+    # Phase 62 (ADR-0080): failure-diagnostics capture (screenshot/HTML/
+    # console-log dump on a browser-action failure) -- all domain-free,
+    # same as the four already listed above.
+    "collections",
+    "dataclasses",
+    "datetime",
+    "logging",
     # the reason this package exists: real Chromium automation
     "playwright",
     # this project's own existing session-persistence primitive (ADR-0020)

@@ -70,3 +70,10 @@ class SubmissionResult(BaseModel):
     #: or a precondition name this module checks before ever consulting
     #: that boundary (e.g. ``"review_not_approved"``).
     refusal_reason: str | None = None
+    #: Set only when a real browser-action failure occurred during a
+    #: ``FAILED``/``UNKNOWN`` attempt and diagnostics capture was enabled
+    #: and succeeded -- the directory containing a screenshot, the page's
+    #: HTML, and its console log at the moment of failure (Phase 62,
+    #: ADR-0080). Never set on ``SUBMITTED``/``REFUSED``/``CANCELLED``: a
+    #: refusal never touches a browser, and a success needs no diagnosis.
+    diagnostics_dir: str | None = None

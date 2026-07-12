@@ -42,6 +42,12 @@ if TYPE_CHECKING:
     from playwright.async_api import BrowserContext
 
 _FIXTURE = Path(__file__).parent.parent / "fixtures" / "greenhouse" / "apply_form.html"
+_EXTRA_QUESTION_FIXTURE = (
+    Path(__file__).parent.parent
+    / "fixtures"
+    / "greenhouse"
+    / "apply_form_with_extra_question.html"
+)
 _GREENHOUSE_URL = "https://boards.greenhouse.io/acme/jobs/12345"
 _ASHBY_URL = "https://jobs.ashbyhq.com/acme/12345"
 _ROUTE_PATTERNS = [
@@ -149,12 +155,18 @@ def _review_session(**overrides: object) -> ReviewSession:
     return ReviewSession(**fields)
 
 
-def _engine(tmp_path: Path, *, fixture_path: Path = _FIXTURE) -> SubmissionEngine:
+def _engine(
+    tmp_path: Path,
+    *,
+    fixture_path: Path = _FIXTURE,
+    diagnostics_dir: Path | None = None,
+) -> SubmissionEngine:
     session_store = EncryptedSessionStore(tmp_path, FakeKeyProvider())
     return SubmissionEngine(
         session_store,
         chromium_executable_path=_chromium_executable(),
         on_context_ready=_route_to(fixture_path),
+        diagnostics_dir=diagnostics_dir,
     )
 
 
@@ -353,3 +365,51 @@ async def test_ashby_stub_raises_feature_unavailable(tmp_path: Path) -> None:
             _content(),
             confirm_fn=lambda: True,
         )
+
+
+@pytestmark_browser
+async def test_failed_submission_records_a_real_diagnostics_dir(
+    tmp_path: Path,
+) -> None:
+    """Phase 62 (ADR-0080): a real browser-action failure (an unhandled
+    required field, exactly like ``test_browser_applicator.py``'s own
+    refusal test) surfaces its diagnostics through the full engine, not
+    just at the ``BrowserApplicator`` layer."""
+    diagnostics_dir = tmp_path / "diagnostics"
+    engine = _engine(
+        tmp_path / "session",
+        fixture_path=_EXTRA_QUESTION_FIXTURE,
+        diagnostics_dir=diagnostics_dir,
+    )
+    result = await engine.submit(
+        _opportunity(),
+        _approved_application(),
+        _review_session(),
+        _application_session(),
+        _content(),
+        confirm_fn=lambda: True,
+    )
+    assert result.status == "FAILED"
+    assert result.submitted is False
+    assert result.diagnostics_dir is not None
+    captured_dir = Path(result.diagnostics_dir)
+    assert captured_dir.is_relative_to(diagnostics_dir)
+    assert (captured_dir / "screenshot.png").exists()
+    assert (captured_dir / "page.html").exists()
+
+
+@pytestmark_browser
+async def test_failed_submission_without_diagnostics_dir_leaves_it_unset(
+    tmp_path: Path,
+) -> None:
+    engine = _engine(tmp_path, fixture_path=_EXTRA_QUESTION_FIXTURE)
+    result = await engine.submit(
+        _opportunity(),
+        _approved_application(),
+        _review_session(),
+        _application_session(),
+        _content(),
+        confirm_fn=lambda: True,
+    )
+    assert result.status == "FAILED"
+    assert result.diagnostics_dir is None
