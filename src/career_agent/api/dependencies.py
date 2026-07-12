@@ -19,8 +19,10 @@ from career_agent.storage.organization_store import SqliteOrganizationStore
 from career_agent.storage.sqlite import (
     SqliteApplicationSessionStore,
     SqliteDeliveryAttemptStore,
+    SqliteDiscoveryRunStore,
     SqliteNotificationPreferencesStore,
     SqliteNotificationStore,
+    SqliteOpportunityRepository,
     SqlitePasswordResetTokenStore,
     SqliteRefreshTokenStore,
     SqliteResumeVariantStore,
@@ -139,3 +141,13 @@ def get_subscription_store() -> SqliteSubscriptionStore:
 def get_usage_counter_store() -> SqliteUsageCounterStore:
     """Billing-stub usage-counter store (Phase 60, ADR-0078)."""
     return SqliteUsageCounterStore(_database_path())
+
+
+def get_discovery_run_store() -> SqliteDiscoveryRunStore:
+    """Status store for web-triggered ``POST /discover`` runs (Phase 63)."""
+    return SqliteDiscoveryRunStore(_database_path())
+
+
+def get_opportunity_repository() -> SqliteOpportunityRepository:
+    """The same deduplicating opportunity catalog ``career-agent discover`` uses."""
+    return SqliteOpportunityRepository(_database_path())

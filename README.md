@@ -383,17 +383,28 @@ pip install 'career-agent[web]'
 career-agent serve --host 127.0.0.1 --port 8000
 ```
 
-A **read-only** FastAPI layer (Phase 54, [ADR-0072](docs/adr/0072-web-dashboard-read-api.md))
-over the same data the CLI already produces — `GET /api/applications`,
-`/api/reviews` (and `/api/reviews/pending`), `/api/submissions`,
-`/api/resume-variants`, `/api/analytics/summary`, `/api/settings`
-(secrets redacted to a `configured: bool` flag, never their values). Each
-route wraps exactly one existing store class; there is no duplicated
-business logic here and no new database schema. Every route is a `GET` —
-structurally enforced by a test that enumerates the app's actual routes —
-so **nothing reachable through this API can trigger a search, a tailoring
-run, a review approval, or a submission**; those remain exclusively CLI
-actions (`discover`/`prepare`/`review`/`submit`). The React frontend
+A FastAPI layer over the same data and service layer the CLI already
+uses. The `/api/*` prefix (Phase 54, [ADR-0072](docs/adr/0072-web-dashboard-read-api.md))
+stays **read-only** by structural test (every `/api/*` route is a `GET`,
+enforced by a test that enumerates the app's actual routes):
+`GET /api/applications`, `/api/submissions`, `/api/resume-variants`,
+`/api/analytics/summary`, `/api/settings` (secrets redacted to a
+`configured: bool` flag, never their values). Discover, Review, and
+Submit moved off that boundary in Phase 63
+([ADR-0081](docs/adr/0081-web-triggered-discover-review-submit.md)) —
+each calls the *exact same* function the CLI does, never a
+reimplementation: `POST /discover` runs `build_discovery_sources`/
+`run_discover_command` in the background, polled via `GET /discover/{run_id}`
+(`/discover/runs`, `/discover/opportunities`); `GET /reviews/pending` +
+`POST /reviews/decide` call `ReviewEngine` (one decision per session,
+409 on a second attempt); `POST /submissions/prepare` +
+`POST /submissions/{token}/confirm` call `submit_prepared_application`/
+`SubmissionEngine` with the exact same fail-closed preconditions and a
+real, un-bypassable human-confirmation gate (a bounded wait, 5-minute
+timeout, silence never implies "yes" — never auto-confirms).
+`career-agent prepare` (tailoring) remains CLI-only; `career-agent
+discover`/`review`/`submit` remain fully available too — the CLI is a
+supported power-user interface, not replaced. The React frontend
 consuming this API is documented next.
 
 ## Web Dashboard frontend (`frontend/`)
@@ -430,13 +441,21 @@ already-fetched responses (`frontend/src/lib/derive.ts`), the same
 "aggregation is presentation logic" precedent the API's own
 `analytics.py` already established server-side.
 
-**Actions with no backing endpoint are still named, not faked.** Search
-Jobs' Search button, Review Queue's Approve/Reject, and Submission
-Queue's Submit all render as disabled buttons naming the exact CLI
-command to run instead (`career-agent discover`/`review`/`submit`) —
-approving a review and submitting an application stay exclusively CLI
-actions, preserving ADR-0071's terminal-only countdown/confirmation gate
-untouched.
+**Search Jobs, Review Queue, and Submission Queue are real, web-triggered
+workflows (Phase 63, [ADR-0081](docs/adr/0081-web-triggered-discover-review-submit.md)).**
+Search Jobs saves your filters to Job Search Preferences, then triggers
+and polls a discovery run, listing real results. Review Queue's
+Approve/Reject requires an explicit confirm step before calling
+`POST /reviews/decide` — the same `ReviewEngine` the CLI uses. Submission
+Queue's Submit starts a real attempt (`POST /submissions/prepare`), polls
+its status, and only proceeds after an explicit `POST
+/submissions/{token}/confirm` — the same fail-closed
+`SubmissionEngine`/`domain/execution.py` gate ADR-0071 built, with the
+same never-auto-confirm-on-silence discipline, just reached over HTTP
+instead of a terminal countdown. **Preparing** a résumé/cover letter for
+a result (`career-agent prepare`) still renders as a disabled button
+naming the exact CLI command — it has its own real headed-browser
+complexity not yet migrated.
 
 Build for production with `npm run build` (output in `frontend/dist/`);
 test with `npm test` (Vitest + React Testing Library); type-check with
@@ -557,10 +576,11 @@ Per-user preferences (`/notification-settings`) control which channels
 are enabled, whether reminders/digests are on, quiet hours (channel
 delivery pauses; notifications are still recorded, never lost), and the
 webhook URL. **Several events named in early planning have no real
-trigger point in this codebase and are not built**: job-discovery and
-application-outcome notifications (discovery/outcome-recording remain
-CLI-only pipelines never wired to the dashboard), interview reminders and
-incomplete-profile reminders (no interview-tracking or profile-
+trigger point in this codebase and are not built**: a job-discovery
+notification (discovery is now web-triggerable, see below, but nothing
+notifies on a completed run yet), application-outcome notifications
+(`career-agent outcome` remains a CLI-only pipeline), interview reminders
+and incomplete-profile reminders (no interview-tracking or profile-
 completeness store exists), and an expired-API-key notification (no
 key-expiry concept exists) — see ADR-0077 for the full list and revisit
 criteria. (Invitation notifications were deferred here for the same

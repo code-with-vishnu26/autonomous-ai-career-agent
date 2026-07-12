@@ -46,6 +46,7 @@ from pathlib import Path
 
 from career_agent.core.security import hash_password
 from career_agent.domain.application_session import ApplicationSession
+from career_agent.domain.discovery_run import DiscoveryRun
 from career_agent.domain.identity import canonical_fingerprint
 from career_agent.domain.job_preferences import JobPreferences
 from career_agent.domain.journal import RunEvent
@@ -217,6 +218,18 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 );
 """
 
+_DISCOVERY_RUN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS discovery_runs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    started_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_runs_user
+    ON discovery_runs (user_id);
+"""
+
 _NOTIFICATION_SCHEMA = """
 CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
@@ -316,6 +329,24 @@ class SqliteOpportunityRepository:
         if row is None:
             return None
         return Opportunity.model_validate(json.loads(row["payload"]))
+
+    async def list_recent(self, limit: int = 50) -> list[Opportunity]:
+        """The most recently *stored* opportunities (Phase 63's Search Jobs page).
+
+        Opportunities are a shared, deduplicated catalog with no per-user
+        ownership column (``add``'s dedup-by-fingerprint logic means two
+        users discovering the same job get the same stored row) and no
+        timestamp column -- ``rowid`` (SQLite's own implicit insertion
+        order) is the recency signal, the same "no schema migration needed"
+        reasoning ``rowid`` already gets used for nowhere else in this file
+        only because no other table needed it until now.
+        """
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM opportunities ORDER BY rowid DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [Opportunity.model_validate(json.loads(row["payload"])) for row in rows]
 
 
 class SqliteApplicationStore:
@@ -1129,6 +1160,61 @@ class SqliteUserPreferencesStore:
         if row is None:
             return None
         return JobPreferences.model_validate(json.loads(row["payload"]))
+
+
+class SqliteDiscoveryRunStore:
+    """Per-user status record for a web-triggered ``POST /discover`` run (Phase 63).
+
+    A real upsert, like :class:`SqliteUserPreferencesStore` -- a run
+    transitions ``PENDING`` -> ``RUNNING`` -> ``COMPLETED``/``FAILED`` in
+    place, unlike the append-only audit-trail stores above, since there is
+    exactly one row per run and callers poll it for its *current* state,
+    not its history.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_DISCOVERY_RUN_SCHEMA)
+
+    def save(self, run: DiscoveryRun) -> None:
+        """Upsert ``run`` -- insert if new, overwrite if this id already exists."""
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO discovery_runs (id, user_id, status, payload, started_at)"
+                " VALUES (?, ?, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET status = excluded.status,"
+                " payload = excluded.payload",
+                (
+                    run.id,
+                    run.user_id,
+                    run.status,
+                    run.model_dump_json(),
+                    run.started_at.isoformat(),
+                ),
+            )
+
+    def get(self, run_id: str, *, user_id: str) -> DiscoveryRun | None:
+        """One run, only if owned by ``user_id`` -- never cross-user."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM discovery_runs WHERE id = ? AND user_id = ?",
+                (run_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return DiscoveryRun.model_validate(json.loads(row["payload"]))
+
+    def by_user(self, user_id: str) -> list[DiscoveryRun]:
+        """Every run owned by ``user_id``, most recently started first."""
+        with _connect(self._path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM discovery_runs WHERE user_id = ?"
+                " ORDER BY started_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [DiscoveryRun.model_validate(json.loads(row["payload"])) for row in rows]
 
 
 class SqliteNotificationStore:

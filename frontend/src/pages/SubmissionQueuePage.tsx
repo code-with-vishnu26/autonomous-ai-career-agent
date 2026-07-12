@@ -1,12 +1,95 @@
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Send } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { StatusBadge } from "@/components/StatusBadge";
-import { CliOnlyAction } from "@/components/CliOnlyAction";
 import { QueryState } from "@/components/QueryState";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useReviews, useSubmissions } from "@/hooks/useApi";
+import {
+  useConfirmSubmission,
+  usePendingSubmissionStatus,
+  usePrepareSubmission,
+} from "@/hooks/useSubmissionActions";
 import { readyForSubmission } from "@/lib/derive";
+import type { ReviewSession } from "@/types/api";
+
+function SubmissionCard({ review }: { review: ReviewSession }) {
+  const queryClient = useQueryClient();
+  const prepare = usePrepareSubmission();
+  const confirm = useConfirmSubmission();
+  const [token, setToken] = useState<string | undefined>(undefined);
+  const status = usePendingSubmissionStatus(token);
+  const entry = status.data;
+
+  useEffect(() => {
+    if (entry?.status === "DONE") {
+      queryClient.invalidateQueries({ queryKey: ["submissions"] });
+    }
+  }, [entry?.status, queryClient]);
+
+  function startSubmit() {
+    prepare.mutate(review.application_session_id, {
+      onSuccess: (result) => setToken(result.token),
+    });
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">{review.job_title}</p>
+          <p className="text-xs text-muted-foreground">{review.company}</p>
+        </div>
+        {!token && (
+          <Button size="sm" onClick={startSubmit} disabled={prepare.isPending}>
+            <Send className="h-4 w-4" />
+            {prepare.isPending ? "Starting…" : "Submit"}
+          </Button>
+        )}
+      </div>
+
+      {prepare.isError && (
+        <p className="text-xs text-destructive">{(prepare.error as Error).message}</p>
+      )}
+
+      {token && entry && (
+        <div className="rounded-md bg-muted/50 p-2 text-sm">
+          {entry.status === "PREPARING" && (
+            <p>Preparing — re-tailoring the résumé and running the promptfoo gate…</p>
+          )}
+          {entry.status === "AWAITING_CONFIRMATION" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span>Every precondition holds. Confirm the real submission?</span>
+              <Button
+                size="sm"
+                onClick={() => confirm.mutate({ token, approved: true })}
+                disabled={confirm.isPending}
+              >
+                Confirm submit
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => confirm.mutate({ token, approved: false })}
+                disabled={confirm.isPending}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+          {entry.status === "SUBMITTING" && <p>Submitting…</p>}
+          {entry.status === "DONE" && <p>Done — see Recorded attempts below.</p>}
+          {entry.status === "FAILED" && (
+            <p className="text-destructive">Failed: {entry.error}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function SubmissionQueuePage() {
   const reviews = useReviews();
@@ -22,10 +105,13 @@ export function SubmissionQueuePage() {
       <h1 className="text-2xl font-semibold">Submission Queue</h1>
 
       <Callout>
-        There is no live browser state or countdown to show here: submission only
-        happens inside a real, supervised <code>career-agent submit</code> terminal
-        session -- a 5-second countdown plus a blocking ENTER confirmation
-        (ADR-0071) that this dashboard cannot safely reproduce over HTTP.
+        Submitting here calls the exact same <code>submit_prepared_application</code>/
+        <code>SubmissionEngine</code> <code>career-agent submit</code> uses (ADR-0071,
+        extended over HTTP by ADR-0081) -- the same fail-closed preconditions, and a
+        real, un-bypassable confirmation gate (a bounded wait; declining or letting it
+        time out never submits). If the browser pauses for a login wall or challenge
+        mid-attempt, it closes and reports <code>FAILED</code> -- finish that one from
+        the CLI.
       </Callout>
 
       <QueryState isLoading={isLoading} isError={isError}>
@@ -40,24 +126,7 @@ export function SubmissionQueuePage() {
                   No approved applications waiting on a submission attempt.
                 </p>
               ) : (
-                ready.map((review) => (
-                  <div
-                    key={review.id}
-                    className="flex items-center justify-between rounded-md border border-border p-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{review.job_title}</p>
-                      <p className="text-xs text-muted-foreground">{review.company}</p>
-                    </div>
-                    <CliOnlyAction
-                      command={`career-agent submit --review-session <artifacts_dir>/reviews/${review.id}.json --opportunity-file <path> --profile <path>`}
-                      size="sm"
-                    >
-                      <Send className="h-4 w-4" />
-                      Submit
-                    </CliOnlyAction>
-                  </div>
-                ))
+                ready.map((review) => <SubmissionCard key={review.id} review={review} />)
               )}
             </CardContent>
           </Card>

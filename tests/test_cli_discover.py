@@ -70,3 +70,29 @@ async def test_discover_persists_dedups_and_writes_handoff_files(
     assert "[broken] FAILED: api down" in output  # visible, never silent
     assert "[two] 1 fetched, 0 new" in output
     assert "2 new opportunities" in output
+
+
+async def test_discover_observation_hooks_are_optional_and_additive(
+    tmp_path: Path,
+) -> None:
+    """Phase 63: on_new_opportunity/on_source_error are opt-in, no behavior change."""
+    repo = SqliteOpportunityRepository(tmp_path / "db.sqlite")
+    out_dir = tmp_path / "opps"
+    sources = [
+        ("one", _FakeSource([_opp("a"), _opp("b")])),
+        ("two", _FakeSource([_opp("a")])),  # duplicate across sources
+        ("broken", _BrokenSource()),
+    ]
+    new_ids: list[str] = []
+    errors: list[str] = []
+    code = await run_discover_command(
+        sources,
+        repo,
+        since=datetime(2026, 1, 1, tzinfo=UTC),
+        out_dir=out_dir,
+        on_new_opportunity=lambda opp: new_ids.append(opp.id),
+        on_source_error=lambda name, exc: errors.append(f"{name}: {exc}"),
+    )
+    assert code == 0
+    assert sorted(new_ids) == ["a", "b"]
+    assert errors == ["broken: api down"]

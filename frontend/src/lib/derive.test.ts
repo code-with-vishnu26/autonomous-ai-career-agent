@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  applicationsPerDay,
-  countBy,
-  joinReviewsWithSessions,
-  readyForSubmission,
-} from "./derive";
+import { applicationsPerDay, countBy, readyForSubmission } from "./derive";
 import type { ApplicationSession, ReviewSession, SubmissionResult } from "@/types/api";
 
 function session(overrides: Partial<ApplicationSession> = {}): ApplicationSession {
@@ -63,22 +58,6 @@ function submissionResult(overrides: Partial<SubmissionResult> = {}): Submission
     ...overrides,
   };
 }
-
-describe("joinReviewsWithSessions", () => {
-  it("pairs each review with its matching session", () => {
-    const result = joinReviewsWithSessions([review()], [session()]);
-    expect(result).toHaveLength(1);
-    expect(result[0].session?.id).toBe("sess-1");
-  });
-
-  it("leaves session undefined when no match exists", () => {
-    const result = joinReviewsWithSessions(
-      [review({ application_session_id: "missing" })],
-      [session()],
-    );
-    expect(result[0].session).toBeUndefined();
-  });
-});
 
 describe("readyForSubmission", () => {
   it("includes an approved review with no submission attempt", () => {

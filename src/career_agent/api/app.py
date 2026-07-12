@@ -27,6 +27,7 @@ from career_agent.api.routers import (
     auth,
     billing,
     coach,
+    discover,
     health,
     notification_settings,
     notifications,
@@ -35,6 +36,7 @@ from career_agent.api.routers import (
     reviews,
     roles,
     settings_,
+    submission_actions,
     submissions,
     team,
     user,
@@ -69,12 +71,18 @@ _DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 #: GET-only, so they live under ``/api/`` and join this group) and
 #: ``organizations``/``team``/``billing`` (real mutations -- creating an
 #: organization, inviting/removing a member, changing a plan -- so they
-#: join the write-capable group below instead). Still nothing here can
-#: trigger discovery, tailoring, review approval, or submission.
+#: join the write-capable group below instead). Phase 63 (ADR-0081) adds
+#: ``discover``/``submission_actions`` (trigger discovery, prepare/confirm
+#: a submission) and moves ``reviews`` (now able to record an
+#: approve/reject decision) into the write-capable group below -- each
+#: calls the *same* service layer the CLI already uses
+#: (``build_discovery_sources``/``run_discover_command``, ``ReviewEngine``,
+#: ``submit_prepared_application``/``SubmissionEngine``), so no safety gate
+#: this project already relies on (human review, human confirmation,
+#: fail-closed execution boundary) is bypassed -- only the interface moved.
 _READ_ONLY_ROUTERS = (
     health,
     applications,
-    reviews,
     submissions,
     resume_variants,
     analytics,
@@ -92,6 +100,9 @@ _WRITE_CAPABLE_ROUTERS = (
     organizations,
     team,
     billing,
+    discover,
+    reviews,
+    submission_actions,
 )
 
 
@@ -175,11 +186,13 @@ def create_app() -> FastAPI:
         title="Autonomous AI Career Agent -- Dashboard API",
         version=__version__,
         description=(
-            "Read-only dashboard data API (Phase 54) plus authentication "
-            "and per-user account/preferences endpoints (Phase 56) and "
-            "advisory Career Coach endpoints (Phase 57). No route in this "
-            "API can trigger discovery, tailoring, review approval, or "
-            "submission -- those remain exclusively CLI actions."
+            "Dashboard data API (Phase 54) plus authentication and "
+            "per-user account/preferences endpoints (Phase 56), advisory "
+            "Career Coach endpoints (Phase 57), and web-triggered "
+            "discover/review/submit endpoints (Phase 63) that call the "
+            "exact same service layer the CLI uses -- every existing "
+            "safety gate (human review, human confirmation, fail-closed "
+            "execution boundary) still applies; only the interface moved."
         ),
         lifespan=_lifespan,
     )

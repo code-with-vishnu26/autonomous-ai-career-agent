@@ -9,22 +9,6 @@
 
 import type { ApplicationSession, ReviewSession, SubmissionResult } from "@/types/api";
 
-export interface ReviewWithSession {
-  review: ReviewSession;
-  session: ApplicationSession | undefined;
-}
-
-export function joinReviewsWithSessions(
-  reviews: ReviewSession[],
-  sessions: ApplicationSession[],
-): ReviewWithSession[] {
-  const byId = new Map(sessions.map((session) => [session.id, session]));
-  return reviews.map((review) => ({
-    review,
-    session: byId.get(review.application_session_id),
-  }));
-}
-
 /** Approved reviews whose application session has no recorded submission
  * attempt yet -- the Submission Queue's "Ready" bucket. Never itself
  * triggers a submission; `career-agent submit` is the only entry point
