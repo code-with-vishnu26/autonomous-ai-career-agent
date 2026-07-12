@@ -27,6 +27,13 @@ def test_defaults_are_empty_not_none() -> None:
     assert result.confirmation_id is None
     assert result.confirmation_url is None
     assert result.submitted_at is None
+    assert result.diagnostics_dir is None
+
+
+def test_diagnostics_dir_round_trips_through_json() -> None:
+    result = _result(status="FAILED", diagnostics_dir="/tmp/browser_failures/opp-1_x")
+    restored = SubmissionResult.model_validate_json(result.model_dump_json())
+    assert restored.diagnostics_dir == "/tmp/browser_failures/opp-1_x"
 
 
 def test_round_trips_through_json() -> None:

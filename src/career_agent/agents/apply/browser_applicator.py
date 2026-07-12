@@ -82,7 +82,8 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, NamedTuple, NoReturn
 
 from career_agent.agents.apply.field_inspection import (
     fields_still_empty as _fields_still_empty,
@@ -110,6 +111,11 @@ from career_agent.domain.models import (
     SubmissionPreview,
     SubmittableApplication,
 )
+from career_agent.integrations.browser.diagnostics import (
+    ConsoleLogCollector,
+    capture_failure_diagnostics,
+)
+from career_agent.integrations.browser.retry import retry_async
 from career_agent.integrations.browser_session import EncryptedSessionStore
 
 if TYPE_CHECKING:
@@ -177,6 +183,10 @@ class _PausedSession(NamedTuple):
     #: Selectors the human must fill directly on the live page before a
     #: Phase A resume() will proceed. Always empty for a "challenge" pause.
     manifest: tuple[str, ...] = ()
+    #: The same collector ``_open_page`` attached -- carried through a
+    #: pause so a ``resume()`` failure can still be captured with the
+    #: session's full console history, not just what happened after resume.
+    console_log: ConsoleLogCollector | None = None
 
 
 class BrowserApplicator:
@@ -190,6 +200,7 @@ class BrowserApplicator:
         form_fillers: dict[str, FormFiller] | None = None,
         chromium_executable_path: str | None = None,
         on_context_ready: Callable[[BrowserContext], Awaitable[None]] | None = None,
+        diagnostics_dir: Path | None = None,
     ) -> None:
         """Configure session persistence, opportunity lookup, and Chromium.
 
@@ -209,6 +220,12 @@ class BrowserApplicator:
         ``resolve_ats_kind`` resolves the same ``ats_kind`` a real posting
         would) to a local offline fixture, without ever making a real
         network request.
+
+        ``diagnostics_dir`` (Phase 62, ADR-0080): when set, a screenshot +
+        page HTML + console log are captured to a subdirectory of it on any
+        browser-action failure. ``None`` (the default) disables capture
+        entirely -- existing callers/tests that never pass it keep today's
+        exact behavior.
         """
         self._session_store = session_store
         self._opportunity_repo = opportunity_repo
@@ -217,6 +234,7 @@ class BrowserApplicator:
         )
         self._chromium_executable_path = chromium_executable_path
         self._on_context_ready = on_context_ready
+        self._diagnostics_dir = diagnostics_dir
         self._pending: dict[
             str, tuple[SubmissionPreview, SubmittableApplication, FormFiller]
         ] = {}
@@ -292,10 +310,21 @@ class BrowserApplicator:
             )
         del self._pending[preview.preview_token]
 
+        from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
         session_id = application.application.opportunity_id
-        page, context, browser = await self._open_page(session_id, preview.target)
+        page, context, browser, console_log = await self._open_page(
+            session_id, preview.target
+        )
         try:
-            await filler.fill_identity_and_resume(page, application)
+            # Only the field-filling step retries -- a transient timeout
+            # while locating/filling one input is safe to retry from
+            # scratch; the submit click below never is (Phase 62, ADR-0080).
+            await retry_async(
+                lambda: filler.fill_identity_and_resume(page, application),
+                attempts=3,
+                retry_on=(PlaywrightTimeoutError,),
+            )
             hard_refuse, manifest = await _triage_unhandled_fields(
                 page, filler.known_field_selectors, application.application.legal_status
             )
@@ -307,9 +336,14 @@ class BrowserApplicator:
                     f"handing a human a blank, context-free field "
                     f"(ADR-0032)"
                 )
-        except BaseException:
-            await browser.close()
-            raise
+        except BaseException as exc:
+            await self._fail_with_diagnostics(
+                exc,
+                page=page,
+                browser=browser,
+                console_log=console_log,
+                correlation_id=session_id,
+            )
 
         if manifest:
             pause_token = str(uuid.uuid4())
@@ -322,6 +356,7 @@ class BrowserApplicator:
                 filler,
                 reason="fields_need_human_input",
                 manifest=tuple(field.selector for field in manifest),
+                console_log=console_log,
             )
             return HumanActionRequired(
                 correlation_id=application.application.opportunity_id,
@@ -329,9 +364,18 @@ class BrowserApplicator:
                 reason="fields_need_human_input",
             )
 
-        return await self._click_submit_and_check_challenge(
-            session_id, page, context, browser, application, filler
-        )
+        try:
+            return await self._click_submit_and_check_challenge(
+                session_id, page, context, browser, application, filler, console_log
+            )
+        except BaseException as exc:
+            await self._fail_with_diagnostics(
+                exc,
+                page=page,
+                browser=browser,
+                console_log=console_log,
+                correlation_id=session_id,
+            )
 
     async def resume(self, pause_token: str, ack: PauseAcknowledgment) -> Event:
         """Continue a paused submission, only if ``ack`` names this exact pause.
@@ -367,14 +411,23 @@ class BrowserApplicator:
                     f"submission"
                 )
             del self._paused[pause_token]
-            await paused.page.click(paused.filler.submit_selector)
-            return await self._finish(
-                paused.session_id,
-                paused.page,
-                paused.context,
-                paused.browser,
-                paused.application,
-            )
+            try:
+                await paused.page.click(paused.filler.submit_selector)
+                return await self._finish(
+                    paused.session_id,
+                    paused.page,
+                    paused.context,
+                    paused.browser,
+                    paused.application,
+                )
+            except BaseException as exc:
+                await self._fail_with_diagnostics(
+                    exc,
+                    page=paused.page,
+                    browser=paused.browser,
+                    console_log=paused.console_log,
+                    correlation_id=paused.session_id,
+                )
 
         still_empty = await _fields_still_empty(paused.page, paused.manifest)
         if still_empty:
@@ -384,14 +437,24 @@ class BrowserApplicator:
                 f"complete the submission"
             )
         del self._paused[pause_token]
-        return await self._click_submit_and_check_challenge(
-            paused.session_id,
-            paused.page,
-            paused.context,
-            paused.browser,
-            paused.application,
-            paused.filler,
-        )
+        try:
+            return await self._click_submit_and_check_challenge(
+                paused.session_id,
+                paused.page,
+                paused.context,
+                paused.browser,
+                paused.application,
+                paused.filler,
+                paused.console_log,
+            )
+        except BaseException as exc:
+            await self._fail_with_diagnostics(
+                exc,
+                page=paused.page,
+                browser=paused.browser,
+                console_log=paused.console_log,
+                correlation_id=paused.session_id,
+            )
 
     async def _click_submit_and_check_challenge(
         self,
@@ -401,7 +464,10 @@ class BrowserApplicator:
         browser: Browser,
         application: SubmittableApplication,
         filler: FormFiller,
+        console_log: ConsoleLogCollector | None = None,
     ) -> Event:
+        # Exactly one click, never retried -- see retry_async's own
+        # docstring for why (Phase 62, ADR-0080).
         await page.click(filler.submit_selector)
 
         if await page.is_visible(filler.challenge_selector):
@@ -409,6 +475,7 @@ class BrowserApplicator:
             self._paused[pause_token] = _PausedSession(
                 session_id, page, context, browser, application, filler,
                 reason="challenge",
+                console_log=console_log,
             )
             return HumanActionRequired(
                 correlation_id=application.application.opportunity_id,
@@ -418,9 +485,38 @@ class BrowserApplicator:
 
         return await self._finish(session_id, page, context, browser, application)
 
+    async def _fail_with_diagnostics(
+        self,
+        exc: BaseException,
+        *,
+        page: Page,
+        browser: Browser,
+        console_log: ConsoleLogCollector | None,
+        correlation_id: str,
+    ) -> NoReturn:
+        """Best-effort diagnostics capture, then always close and re-raise.
+
+        Never lets a diagnostics-capture failure change, replace, or
+        suppress ``exc`` -- only ever adds an attribute to it before the
+        browser is closed and the original exception propagates unchanged
+        (Phase 62, ADR-0080).
+        """
+        if self._diagnostics_dir is not None:
+            diagnostics = await capture_failure_diagnostics(
+                page,
+                artifacts_dir=self._diagnostics_dir,
+                correlation_id=correlation_id,
+                console_log=console_log,
+            )
+            if diagnostics is not None:
+                exc.diagnostics_dir = str(diagnostics.directory)  # type: ignore[attr-defined]
+        await browser.close()
+        raise exc
+
     async def _open_page(
         self, session_id: str, target_url: str
-    ) -> tuple[Page, BrowserContext, Browser]:
+    ) -> tuple[Page, BrowserContext, Browser, ConsoleLogCollector]:
+        from playwright.async_api import TimeoutError as PlaywrightTimeoutError
         from playwright.async_api import async_playwright
 
         playwright = await async_playwright().start()
@@ -434,8 +530,18 @@ class BrowserApplicator:
         if self._on_context_ready is not None:
             await self._on_context_ready(context)
         page = await context.new_page()
-        await page.goto(target_url)
-        return page, context, browser
+        console_log = ConsoleLogCollector()
+        console_log.attach(page)
+        # Navigation is the single most common transient Playwright failure
+        # (a slow-loading ATS page, a momentary network hiccup) -- retried
+        # here, before any form-filling begins, never around the submit
+        # click itself (Phase 62, ADR-0080).
+        await retry_async(
+            lambda: page.goto(target_url),
+            attempts=3,
+            retry_on=(PlaywrightTimeoutError,),
+        )
+        return page, context, browser, console_log
 
     async def _finish(
         self,

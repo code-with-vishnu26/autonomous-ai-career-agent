@@ -947,7 +947,10 @@ async def run_submit_command(
     session_store = EncryptedSessionStore(
         Path(settings.browser_session_dir), KeyringKeyProvider()
     )
-    engine = SubmissionEngine(session_store)
+    engine = SubmissionEngine(
+        session_store,
+        diagnostics_dir=Path(settings.artifacts_dir) / "browser_failures",
+    )
     try:
         result = await engine.submit(
             opportunity,

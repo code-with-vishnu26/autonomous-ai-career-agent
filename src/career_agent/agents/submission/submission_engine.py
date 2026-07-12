@@ -23,6 +23,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from career_agent.agents.apply.browser_applicator import (
@@ -84,6 +85,7 @@ class SubmissionEngine:
         form_fillers: dict[str, FormFiller] | None = None,
         chromium_executable_path: str | None = None,
         on_context_ready: Callable[[BrowserContext], Awaitable[None]] | None = None,
+        diagnostics_dir: Path | None = None,
     ) -> None:
         """Configure the session store and Chromium.
 
@@ -91,11 +93,16 @@ class SubmissionEngine:
         constructs one internally per call, never reusing a
         cross-invocation live browser handle (none can survive a process
         boundary anyway).
+
+        ``diagnostics_dir`` (Phase 62, ADR-0080) is passed straight through
+        to the ``BrowserApplicator`` this class constructs -- see that
+        class's own docstring.
         """
         self._session_store = session_store
         self._form_fillers = form_fillers
         self._chromium_executable_path = chromium_executable_path
         self._on_context_ready = on_context_ready
+        self._diagnostics_dir = diagnostics_dir
 
     async def submit(
         self,
@@ -115,6 +122,7 @@ class SubmissionEngine:
         def _finish(
             *, status: str, submitted: bool, warnings: list[str] | None = None,
             refusal_reason: str | None = None, confirmation_id: str | None = None,
+            diagnostics_dir: str | None = None,
         ) -> SubmissionResult:
             return SubmissionResult(
                 id=result_id,
@@ -131,6 +139,7 @@ class SubmissionEngine:
                 duration_seconds=(datetime.now(UTC) - started_at).total_seconds(),
                 warnings=warnings or [],
                 refusal_reason=refusal_reason,
+                diagnostics_dir=diagnostics_dir,
             )
 
         # -- Preconditions this module checks itself, before ever consulting
@@ -192,6 +201,7 @@ class SubmissionEngine:
             form_fillers=self._form_fillers,
             chromium_executable_path=self._chromium_executable_path,
             on_context_ready=self._on_context_ready,
+            diagnostics_dir=self._diagnostics_dir,
         )
         try:
             preview = await applicator.prepare(application)
@@ -213,7 +223,12 @@ class SubmissionEngine:
             # happens entirely inside a try block that closes the browser
             # and re-raises *before* _click_submit_and_check_challenge is
             # ever reached). Safe to record as a definite non-submission.
-            return _finish(status="FAILED", submitted=False, warnings=[str(exc)])
+            return _finish(
+                status="FAILED",
+                submitted=False,
+                warnings=[str(exc)],
+                diagnostics_dir=getattr(exc, "diagnostics_dir", None),
+            )
         except FormFillerNotImplementedError as exc:
             raise FeatureUnavailableError(str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 -- an unforeseen failure anywhere
@@ -222,7 +237,12 @@ class SubmissionEngine:
             # is UNKNOWN (never FAILED): the same "ambiguous evidence can
             # never become a definite result" discipline
             # domain.execution.outcome_from_ack already enforces.
-            return _finish(status="UNKNOWN", submitted=False, warnings=[str(exc)])
+            return _finish(
+                status="UNKNOWN",
+                submitted=False,
+                warnings=[str(exc)],
+                diagnostics_dir=getattr(exc, "diagnostics_dir", None),
+            )
 
         if isinstance(event, ApplicationSubmitted):
             return _finish(
@@ -272,6 +292,16 @@ class SubmissionEngine:
                     f"still unresolved after one resume attempt: {exc}. Check "
                     f"the browser window directly."
                 ],
+            )
+        except Exception as exc:  # noqa: BLE001 -- resume() also contains a
+            # click (either phase) -- an exception here does NOT prove that
+            # click never fired, so this is UNKNOWN, mirroring submit()'s
+            # own outer except Exception below exactly (Phase 62, ADR-0080).
+            return finish(
+                status="UNKNOWN",
+                submitted=False,
+                warnings=[str(exc)],
+                diagnostics_dir=getattr(exc, "diagnostics_dir", None),
             )
         if isinstance(resumed, ApplicationSubmitted):
             return finish(
