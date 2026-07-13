@@ -28,12 +28,14 @@ that cannot survive a restart anyway.
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from career_agent.agents.resume.generator import MissingSummaryError
 from career_agent.api.dependencies import (
@@ -49,6 +51,7 @@ from career_agent.cli import (
     prepare_application_for_review,
 )
 from career_agent.domain.ats_scoring import AtsScoreBelowThresholdError
+from career_agent.domain.models import Opportunity, Provenance
 from career_agent.domain.user import User
 from career_agent.llm.promptfoo_gate import PromptfooNotValidatedError
 from career_agent.llm.providers import NoLLMProviderConfiguredError
@@ -88,6 +91,55 @@ class PrepareRequest(BaseModel):
     """Body for ``POST /prepare``."""
 
     opportunity_id: str
+
+
+class PastedJobRequest(BaseModel):
+    """Body for ``POST /prepare/pasted`` -- a job the user pasted by hand.
+
+    The assisted-apply path for platforms this project deliberately never
+    scrapes (LinkedIn, Indeed, Naukri, Workday -- standing invariant 7,
+    ADR-0036): the user pastes a posting they found there, the AI tailors a
+    résumé + cover letter for it, and they submit on the platform's own
+    site. There is no auto-submit here -- a pasted posting's URL resolves
+    to no known ATS, so the submission engine already refuses it
+    (UNSUPPORTED_PROVIDER); the human applies themselves.
+    """
+
+    title: str = Field(min_length=1)
+    company: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    url: str | None = None
+
+
+def _slugify(value: str) -> str:
+    """A stable, lowercase company_id from a pasted company name."""
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "pasted"
+
+
+def _opportunity_from_paste(body: PastedJobRequest) -> Opportunity:
+    """Build an ad-hoc Opportunity from a hand-pasted posting.
+
+    ``source="job_board"`` and ``method="text_extraction"`` are the honest
+    labels for "a human pasted this from a job board"; confidence is 1.0
+    because a human curated it (not a heuristic scrape of prose). The
+    ``source_url`` is the platform link the user will apply on, if given.
+    """
+    return Opportunity(
+        id=str(uuid.uuid4()),
+        company_id=_slugify(body.company),
+        canonical_company=body.company,
+        title=body.title,
+        source="job_board",
+        source_url=body.url or "",
+        provenance=Provenance(
+            method="text_extraction",
+            reference=body.url or "user-pasted",
+            extraction_confidence=1.0,
+        ),
+        description_raw=body.description,
+        discovered_at=datetime.now(UTC),
+    )
 
 
 class PendingPreparationStatus(BaseModel):
@@ -188,6 +240,35 @@ async def start_preparation(
     _pending[token] = _PendingPreparation(current_user.id)
     background_tasks.add_task(
         _run_prepare, token, current_user.id, body.opportunity_id
+    )
+    return _status_response(token, _pending[token])
+
+
+@router.post(
+    "/pasted",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=PendingPreparationStatus,
+)
+async def start_pasted_preparation(
+    body: PastedJobRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    opportunity_repository=Depends(get_opportunity_repository),
+) -> PendingPreparationStatus:
+    """Tailor for a job the user pasted from a site we don't auto-search.
+
+    Builds an ad-hoc Opportunity from the pasted fields, persists it (so
+    the résumé variant and Review Queue can reference it like any other),
+    then delegates to the *same* ``_run_prepare`` the discovered-job path
+    uses -- one tailoring path, two ways in.
+    """
+    opportunity = _opportunity_from_paste(body)
+    await opportunity_repository.add(opportunity)
+    _prune_stale_entries()
+    token = str(uuid.uuid4())
+    _pending[token] = _PendingPreparation(current_user.id)
+    background_tasks.add_task(
+        _run_prepare, token, current_user.id, opportunity.id
     )
     return _status_response(token, _pending[token])
 

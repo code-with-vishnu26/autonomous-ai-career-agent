@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Callout } from "@/components/ui/callout";
 import { PrepareButton } from "@/components/PrepareButton";
+import { PasteJobCard } from "@/components/PasteJobCard";
 import { QueryState } from "@/components/QueryState";
 import { useJobPreferences, useUpdateJobPreferences } from "@/hooks/useJobPreferences";
 import {
@@ -260,6 +261,8 @@ export function SearchJobsPage() {
           </QueryState>
         </CardContent>
       </Card>
+
+      <PasteJobCard />
     </div>
   );
 }

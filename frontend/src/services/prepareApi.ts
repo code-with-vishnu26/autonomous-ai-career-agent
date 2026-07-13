@@ -5,7 +5,7 @@
  */
 
 import { apiFetchJson } from "./http";
-import type { PendingPreparationStatus } from "@/types/api";
+import type { PastedJobRequest, PendingPreparationStatus } from "@/types/api";
 
 export const prepareApi = {
   start: (opportunityId: string) =>
@@ -13,6 +13,12 @@ export const prepareApi = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ opportunity_id: opportunityId }),
+    }),
+  startPasted: (job: PastedJobRequest) =>
+    apiFetchJson<PendingPreparationStatus>("/prepare/pasted", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(job),
     }),
   status: (token: string) =>
     apiFetchJson<PendingPreparationStatus>(`/prepare/${token}`),

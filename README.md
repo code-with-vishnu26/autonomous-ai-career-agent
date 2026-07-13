@@ -464,6 +464,16 @@ live form is filled and the résumé uploaded at submit, behind the
 human-confirmation gate. `career-agent prepare` (with its headed-browser
 form pre-fill) remains available for CLI operators.
 
+For jobs on **LinkedIn, Indeed, or Naukri** — platforms this project
+deliberately never scrapes or auto-applies on (their ToS prohibit it;
+ADR-0036/[ADR-0086](docs/adr/0086-assisted-apply-pasted-jobs.md)) — the
+Search Jobs page has a **Paste a job** card: paste the posting's title,
+company, and description, and the AI tailors a résumé + cover letter for
+it from your profile (`POST /prepare/pasted`), then routes you to the
+Review Queue. You apply on the platform's own site with the tailored
+materials. There is no auto-submit there — a pasted posting resolves to
+no known ATS, so the submission engine refuses it by design.
+
 **Master Profile onboarding is a real web wizard (Phase 64,
 [ADR-0082](docs/adr/0082-per-user-master-profile-onboarding.md)).** A
 dashboard account no longer needs `profile.json` or a terminal to tell
