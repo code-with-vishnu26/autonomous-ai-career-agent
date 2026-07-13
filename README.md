@@ -471,6 +471,15 @@ Preferences and Notification Settings pages rather than duplicating
 them. CV upload (`import-cv`/`promote-cv`) remains CLI-only for now — it
 needs new multipart-upload infrastructure this phase didn't build.
 
+**Excel download is web-native (Phase 65,
+[ADR-0083](docs/adr/0083-web-excel-export.md)).** The formatted,
+filterable application-tracker workbook the CLI has produced since Phase
+13 is now a one-click download in the browser: the Applications page
+exports your prepared applications and the History page exports your
+submissions, each scoped to your own rows (`GET /export/applications.xlsx`
+/ `GET /export/submissions.xlsx`, read-only). `career-agent export` still
+works identically for CLI users.
+
 Build for production with `npm run build` (output in `frontend/dist/`);
 test with `npm test` (Vitest + React Testing Library); type-check with
 `npx tsc -b`; lint with `npm run lint`.

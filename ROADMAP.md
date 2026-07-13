@@ -2137,6 +2137,52 @@ profile.
   are completely unchanged -- the two profile sources (CLI file, web DB
   store) are independent by design, never synchronized or merged.
 
+- ✅ **Excel Export over the Web -- ADR-0083 (Phase 65).** The "store the
+  details in an Excel sheet" step of the end-to-end apply flow, moved
+  into the browser so a dashboard user never needs a terminal for it. The
+  audit found the rich, formatted, filterable workbook (company, title/
+  role, source/provider, ATS score, truthfulness, status, dates, files,
+  latest outcome) has existed since Phase 13 (`storage/excel.py`,
+  `openpyxl` already a dependency) -- but CLI-only, writing to a `Path` --
+  and that the dashboard's own "applications" surface is
+  `ApplicationSession` (the `prepare` pipeline's record, a genuinely
+  different type from the old `apply` pipeline's `Application`, never
+  unified -- ADR-0069/0070/0071 each note this), which had no export at
+  all.
+
+  `storage/excel.py` gains a shared `_build_workbook` extracted from the
+  two existing exports (their on-disk output stays byte-for-byte
+  identical -- proven by the pre-existing `test_sqlite_store.py`/
+  `test_submission_result_store.py` assertions, which still pass
+  untouched), a `_workbook_bytes` serializer (openpyxl's `save` accepts a
+  file-like object, so the same bytes stream from memory without a temp
+  file), a third sibling `export_application_sessions`/
+  `application_sessions_xlsx_bytes` for the dashboard's
+  `ApplicationSession` rows (list-valued fields like filled/missing
+  fields rendered as counts or joined text -- a spreadsheet cell can't
+  hold a Python list), and `applications_xlsx_bytes`/
+  `submissions_xlsx_bytes` for symmetry.
+
+  A new GET-only `api/routers/export.py` -- `GET /export/applications.xlsx`
+  and `GET /export/submissions.xlsx` -- reads the caller's own rows
+  (`by_user(current_user.id)`), builds the workbook in memory, and returns
+  it as an `.xlsx` attachment. Read-only: it triggers no discovery/
+  preparation/submission and writes to no store, so no safety gate this
+  project relies on is involved. It lives under `/export` (a binary
+  attachment) rather than `/api` (JSON), joining `_READ_ONLY_ROUTERS`
+  since it has no mutating method -- the `/api/*` GET-only structural
+  proof is untouched.
+
+  Frontend: `services/exportApi.ts` (reuses the existing `apiFetch`, so
+  the access-token + refresh-on-401 logic is identical -- only the
+  response is a blob, click-downloaded rather than parsed), a reusable
+  `DownloadExcelButton` with local pending/error state, wired into the
+  Applications page (applications export) and the History page
+  (submissions export). 5 new backend tests (each loads the returned
+  bytes with openpyxl and asserts on the actual sheet plus cross-user
+  isolation), 3 new frontend tests. The CLI's `career-agent export`
+  output is unchanged.
+
 ---
 
 ## Deferred work (named, not forgotten)

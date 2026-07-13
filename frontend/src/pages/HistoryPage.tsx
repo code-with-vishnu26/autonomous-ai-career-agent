@@ -4,6 +4,8 @@ import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { QueryState } from "@/components/QueryState";
+import { DownloadExcelButton } from "@/components/DownloadExcelButton";
+import { exportApi } from "@/services/exportApi";
 import { useReviews, useSubmissions } from "@/hooks/useApi";
 
 interface TimelineEntry {
@@ -55,7 +57,13 @@ export function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">History</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">History</h1>
+        <DownloadExcelButton
+          onDownload={exportApi.submissions}
+          label="Download submissions (Excel)"
+        />
+      </div>
 
       <div className="flex flex-wrap gap-3">
         <Input

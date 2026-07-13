@@ -28,6 +28,7 @@ from career_agent.api.routers import (
     billing,
     coach,
     discover,
+    export,
     health,
     master_profile,
     notification_settings,
@@ -85,6 +86,11 @@ _DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 #: Profile store (``SqliteMasterProfileStore``), mirroring
 #: ``SqliteUserPreferencesStore``'s exact shape. The CLI's file-based
 #: loader is untouched; this is the dashboard's own analogue.
+#: Phase 65 (ADR-0083) adds ``export`` -- GET-only ``.xlsx`` downloads of
+#: the caller's own applications/submissions. It lives under ``/export``
+#: (a binary attachment, not JSON) rather than ``/api``, so it is
+#: read-only but outside the ``/api/*`` GET-only JSON proof; it joins this
+#: group because it has no mutating method.
 _READ_ONLY_ROUTERS = (
     health,
     applications,
@@ -95,6 +101,7 @@ _READ_ONLY_ROUTERS = (
     roles,
     admin,
     audit_log,
+    export,
 )
 _WRITE_CAPABLE_ROUTERS = (
     auth,
