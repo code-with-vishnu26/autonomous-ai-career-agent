@@ -453,9 +453,16 @@ its status, and only proceeds after an explicit `POST
 `SubmissionEngine`/`domain/execution.py` gate ADR-0071 built, with the
 same never-auto-confirm-on-silence discipline, just reached over HTTP
 instead of a terminal countdown. **Preparing** a résumé/cover letter for
-a result (`career-agent prepare`) still renders as a disabled button
-naming the exact CLI command — it has its own real headed-browser
-complexity not yet migrated.
+a result is now web-native too (Phase 67,
+[ADR-0085](docs/adr/0085-web-triggered-prepare.md)): each Search Jobs
+result has a **Prepare application** button that tailors a résumé + cover
+letter from your onboarded Master Profile (`POST /prepare`, polled), runs
+the same truthfulness + ATS gates the CLI does, and routes you to the
+Review Queue — completing the fully web-driven loop **search → prepare →
+review → submit**. Tailoring is browserless (so it runs anywhere); the
+live form is filled and the résumé uploaded at submit, behind the
+human-confirmation gate. `career-agent prepare` (with its headed-browser
+form pre-fill) remains available for CLI operators.
 
 **Master Profile onboarding is a real web wizard (Phase 64,
 [ADR-0082](docs/adr/0082-per-user-master-profile-onboarding.md)).** A

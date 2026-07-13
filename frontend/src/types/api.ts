@@ -427,6 +427,18 @@ export interface PendingSubmissionStatus {
   result_id: string | null;
 }
 
+/** Phase 67 (ADR-0085): web-triggered Prepare (tailor a résumé for a job). */
+export type PreparationState = "PREPARING" | "DONE" | "FAILED";
+
+export interface PendingPreparationStatus {
+  token: string;
+  status: PreparationState;
+  company: string | null;
+  job_title: string | null;
+  error: string | null;
+  application_session_id: string | null;
+}
+
 /**
  * Phase 64, ADR-0082: `/user/master-profile`. Mirrors
  * `domain/models.py`'s `MasterProfile` and its nested sections

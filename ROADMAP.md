@@ -2218,6 +2218,52 @@ profile.
   ceiling that still catches a genuine hang, the same real-runner
   accommodation as ADR-0056's Windows CI notes.
 
+- ✅ **Web-Triggered Prepare / Guided Apply Flow -- ADR-0085 (Phase 67).**
+  The missing middle of the fully web-driven loop (search -> **prepare**
+  -> review -> submit), on the owner's explicit direction that the whole
+  journey run from the website: "first the AI asks the details, searches
+  jobs, creates a CV/résumé/cover letter using the job description, fills
+  the form, and at last asks the user to review." The audit found
+  `run_prepare_command` has two halves -- tailoring
+  (`ResumeVariantEngine.build_materials`: the truthfulness gate, ATS
+  threshold, and cover-letter assembly, **no browser**) and a browser
+  `build_session` that only *pre-fills* the live form for preview (the
+  authoritative fill and résumé upload happen at submit, which re-tailors
+  fresh and drives the browser itself). It also found the web Submit flow
+  still loads `profile.json`, not the onboarded DB Master Profile (Phase
+  64) -- so the stored profile wasn't actually driving tailoring.
+
+  `cli.py::prepare_application_for_review` (new) is the web analogue of
+  `run_prepare_command`, taking loaded objects (`Opportunity`,
+  `MasterProfile`, `Settings`): it runs the *exact same* `build_materials`
+  then constructs a `READY_FOR_REVIEW` `ApplicationSession` directly from
+  the tailored materials -- deliberately **browserless**, keeping web
+  preparation deterministic and runnable on a headless server; a new
+  `TruthfulnessRejectedError` carries the gate's rejection reasons.
+  `api/routers/prepare_actions.py` (new) mirrors `submission_actions`'
+  background-task + poll shape: `POST /prepare` returns a token,
+  `GET /prepare/{token}` polls. The background task loads the caller's
+  **stored Master Profile** -- the bridge that makes "the AI builds your
+  résumé from the details you entered" real -- failing with a clear
+  onboarding prompt if none exists, then saves the `ApplicationSession`
+  under the caller's `user_id`. Fire-and-poll with no confirm of its own:
+  tailoring sends nothing outward, so the only human gate that matters
+  (submit, ADR-0071) is unchanged and un-bypassable.
+
+  Frontend: `prepareApi`/`usePrepare` (2s poll while `PREPARING`, the same
+  shape as discovery-run polling) and a `PrepareButton` on each Search
+  Jobs result -- click tailors, then routes to the Review Queue; the old
+  "Prepare via CLI" `CliOnlyAction` placeholder is removed and the Search
+  Jobs help text now describes the real web flow. 8 new backend tests (6
+  router: auth, unknown-token 404, no-profile, opportunity-not-found,
+  happy-path-saves-a-reviewable-session, cross-user isolation; 2 unit on
+  the browserless session build and the truthfulness-rejection path), 2
+  new frontend tests. The CLI's browser-based prepare and the
+  `/api/*`-GET-only structural proof are untouched. Bridging web *submit*
+  to the DB profile too (it still reads `profile.json`) is named follow-up
+  work, not done here -- but a session prepared from the DB profile
+  already carries the tailored résumé variant submit needs.
+
 ---
 
 ## Deferred work (named, not forgotten)

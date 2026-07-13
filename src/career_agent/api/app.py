@@ -34,6 +34,7 @@ from career_agent.api.routers import (
     notification_settings,
     notifications,
     organizations,
+    prepare_actions,
     resume_variants,
     reviews,
     roles,
@@ -114,6 +115,7 @@ _WRITE_CAPABLE_ROUTERS = (
     billing,
     discover,
     master_profile,
+    prepare_actions,
     reviews,
     submission_actions,
 )
