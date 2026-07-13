@@ -504,6 +504,17 @@ submissions, each scoped to your own rows (`GET /export/applications.xlsx`
 / `GET /export/submissions.xlsx`, read-only). `career-agent export` still
 works identically for CLI users.
 
+The applications workbook is **enriched** (Phase 69,
+[ADR-0087](docs/adr/0087-enriched-excel-company-research.md)): each row
+joins the posting's accurate details (location, remote, source, posted
+date) with clickable public links (the **job posting** and the company's
+**careers page**), a source-backed **company-research** summary, and the
+tailored **cover letter** inline. Company research uses real web search —
+add an **Exa** or **Google Custom Search** API key in Settings to enable
+it; with no key it honestly says so rather than inventing anything. No
+personal data about individuals is ever collected — public company
+channels only (their ToS forbid scraping people, and so do we).
+
 Build for production with `npm run build` (output in `frontend/dist/`);
 test with `npm test` (Vitest + React Testing Library); type-check with
 `npx tsc -b`; lint with `npm run lint`.

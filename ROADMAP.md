@@ -2294,6 +2294,56 @@ profile.
   auto-discovered ones. 3 new backend tests + 1 new frontend test.
   Standing invariant 7 upheld, not reopened.
 
+- ✅ **Enriched Excel Export + Web-Search Company Research -- ADR-0087
+  (Phase 69).** The owner wanted the applications Excel to hold accurate
+  job details, company links, and company research -- emphasizing that the
+  details must be *accurate*. Two tensions were resolved by asking rather
+  than guessing: (1) an LLM-generated company brief isn't reliably
+  accurate, so the owner chose **web-search-backed research with real
+  source links** over an approximate AI summary; (2) scraping named HR or
+  employees violates those platforms' ToS and is a privacy line
+  (ADR-0036), so the owner chose **public company channels only**, no
+  individuals. The audit found the accurate posting details
+  (location/remote/source/posted date/job URL) live on the `Opportunity`
+  (joinable by id), that a `SearchProvider` protocol (ADR-0002) with Exa
+  and Google CSE adapters already exists (the deferred "Company Research"
+  coach page never had a data source), and that a *private* résumé link
+  inside a downloaded Excel can't carry the browser's in-memory access
+  token (public URLs have no such problem).
+
+  `domain/company_research.py` adds a `CompanyResearch` model with an
+  explicit `unavailable()` factory -- the honest "no search key, we didn't
+  look" signal, distinct from "we looked, found nothing" -- and carries no
+  personal data by design. `agents/research/company_research.py::
+  research_company` takes the `SearchProvider` *protocol* (never a
+  concrete plugin -- the composition root injects Exa/Google CSE, keeping
+  the layers contract intact), runs one company-overview search, keeps the
+  top results as linked sources, picks a careers/jobs URL, and **never**
+  asks an LLM to invent facts; a provider error degrades to
+  empty-but-available. `get_search_provider()` builds Exa (preferred) or
+  Google CSE from configured keys, or `None`. `storage/excel.py`'s
+  `_build_workbook` gains a `link_keys` option (public-URL columns become
+  real clickable hyperlinks) plus `enriched_applications_xlsx_bytes` for
+  the richer column set (Prepared, Company, Role, Location, Remote,
+  Source, Posted, Status, Job URL, Careers Page, Company Research,
+  Research Sources, Cover Letter). `GET /export/applications.xlsx` (now
+  `async`) joins each session to its `Opportunity`, looks up company
+  research once per distinct company (cached; none at all with no key),
+  and inlines the caller's own cover letter -- still read-only, still
+  per-user scoped, still off the `/api/*` prefix.
+
+  Honest about its own absence: with no Exa/Google CSE key the research
+  cell says so rather than inventing a summary; adding a key in Settings
+  enables it with no code change (dependencies build fresh per request).
+  No personal data about individuals is ever collected. 6 new backend
+  tests (5 research unit incl. no-provider/careers-detection/error-degrade/
+  source-cap + 1 enriched-export asserting the accurate job link, real
+  location, inline cover letter, the honest no-key note, and a real
+  hyperlink). The résumé link is deferred (a private link can't
+  authenticate from a downloaded file -- the tailored résumé stays
+  viewable in the Review Queue); the submissions export is unchanged this
+  phase.
+
 ---
 
 ## Deferred work (named, not forgotten)

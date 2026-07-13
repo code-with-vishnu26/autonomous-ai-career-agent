@@ -20,10 +20,12 @@ from career_agent.api.app import create_app
 from career_agent.api.rate_limit import auth_rate_limiter
 from career_agent.core.security import create_access_token, hash_password
 from career_agent.domain.application_session import ApplicationSession
+from career_agent.domain.models import Opportunity, Provenance
 from career_agent.domain.submission import SubmissionResult
 from career_agent.domain.user import User
 from career_agent.storage.sqlite import (
     SqliteApplicationSessionStore,
+    SqliteOpportunityRepository,
     SqliteSubmissionResultStore,
     SqliteUserStore,
 )
@@ -136,6 +138,59 @@ def test_applications_export_returns_a_real_xlsx(client: TestClient) -> None:
     values = [cell.value for cell in sheet[2]]
     assert "Acme Corp" in values
     assert "Backend Engineer" in values
+
+
+async def test_applications_export_is_enriched_with_posting_details_and_research(
+    client: TestClient,
+) -> None:
+    token = _create_user(_OWNER_ID, "owner@example.com")
+    SqliteApplicationSessionStore(_db_path()).save(
+        _application_session(
+            company="Acme Corp",
+            opportunity_id="opp-9",
+            url="https://boards.greenhouse.io/acme/jobs/9",
+            cover_letter_body="Dear Acme, I am excited...",
+        ),
+        user_id=_OWNER_ID,
+    )
+    await SqliteOpportunityRepository(_db_path()).add(
+        Opportunity(
+            id="opp-9",
+            company_id="acme",
+            canonical_company="Acme Corp",
+            title="Backend Engineer",
+            source="ats_api",
+            source_url="https://boards.greenhouse.io/acme/jobs/9",
+            provenance=Provenance(
+                method="structured_api",
+                reference="https://boards.greenhouse.io/acme/jobs/9",
+                extraction_confidence=1.0,
+            ),
+            location="Remote - India",
+            remote=True,
+            description_raw="Python role.",
+            discovered_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    response = client.get(
+        "/export/applications.xlsx", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    sheet = load_workbook(BytesIO(response.content)).active
+    header = [cell.value for cell in sheet[1]]
+    for expected in ("Job URL", "Careers Page", "Company Research", "Cover Letter"):
+        assert expected in header
+    values = [cell.value for cell in sheet[2]]
+    assert "https://boards.greenhouse.io/acme/jobs/9" in values  # accurate job link
+    assert "Remote - India" in values  # accurate location from the opportunity
+    assert "Dear Acme, I am excited..." in values  # cover letter inline
+    # No search key configured in tests -> honest "no key" note, never fabricated.
+    assert any(
+        isinstance(v, str) and "no web-search key" in v.lower() for v in values
+    )
+    # The job URL cell is a real clickable hyperlink.
+    job_url_col = header.index("Job URL") + 1
+    assert sheet.cell(row=2, column=job_url_col).hyperlink is not None
 
 
 def test_submissions_export_returns_a_real_xlsx(client: TestClient) -> None:
