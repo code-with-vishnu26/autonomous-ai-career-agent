@@ -2083,6 +2083,60 @@ profile.
   (items 4-7, 9-10 of the originating request) are tracked separately,
   named below, not folded into this already-large phase.
 
+- ✅ **Per-User Master Profile + Web Onboarding Wizard -- ADR-0082
+  (Phase 64).** The start of the v2.0 program: "a normal user should
+  never need to open a terminal." Three ADRs (0017, 0078, 0081)
+  independently named this exact moment as the correct time to give
+  `MasterProfile` a real per-user store, mirroring
+  `SqliteUserPreferencesStore` -- this phase executes that named trigger
+  rather than reopening it. The audit found `storage/profile.py`'s pure
+  functions (`_validate_ids`, the `_map_*` mappers, `_content_hash`) were
+  already separated from file I/O, so a second, DB-backed source could
+  reuse them directly once made independently callable --
+  `_content_hash` renamed to public `compute_profile_version`, plus a
+  new `validate_master_profile_ids(profile)` wrapper reusing
+  `_validate_ids` against `profile.model_dump(mode="json")` (the raw
+  JSON Resume shape and the Pydantic dump share the same `"id"` key, so
+  one loop validates both). ADR-0017 suggested a `Protocol` as the
+  eventual resolution; deliberately not built here -- the CLI always
+  uses the file loader, the API always uses the DB store, and no call
+  site needs to be implementation-agnostic, so a `Protocol` would be
+  pure indirection with no beneficiary.
+
+  **Built:** `SqliteMasterProfileStore` (`user_id`/`payload`/
+  `updated_at`, upsert via `INSERT ... ON CONFLICT DO UPDATE`, mirrors
+  `SqliteUserPreferencesStore` field-for-field) plus a new
+  `api/routers/master_profile.py` (`GET`/`PUT /user/master-profile`)
+  deliberately kept separate from `user.py`'s existing
+  `PUT /user/profile` -- that endpoint's own docstring already warns
+  against conflating "account profile" (display name) with
+  `MasterProfile` (candidate data). The `PUT` request body omits
+  `version` entirely so a client-submitted value can never masquerade as
+  real; the server always recomputes it via `compute_profile_version`.
+
+  Frontend: `useMasterProfile`/`useUpdateMasterProfile` (TanStack Query)
+  and a new 8-step `OnboardingWizardPage` (Welcome / Personal / Work /
+  Education / Skills / Projects / Legal / Review) built on
+  `react-hook-form` + `useFieldArray` for the repeatable work/education/
+  skills/projects sections, pre-filling from any existing stored profile
+  (idempotent re-entry, not a one-time-only flow). The Review step links
+  out to the existing Job Preferences (Search Jobs page) and Notification
+  Settings pages rather than duplicating either -- those already have
+  working, separate flows from Phase 46/56 and Phase 58. Routed at
+  `/onboarding`, added to the account nav as "Master Profile".
+
+  CV upload and the `import-cv`/`promote-cv` migration -- which needs
+  genuinely new multipart-upload infrastructure (none exists anywhere in
+  `api/` today) and a `domain/ingestion.py`-backed `FactProposal` review
+  UI -- is explicitly deferred to a dedicated future phase, not silently
+  dropped, matching the "Prepare via CLI" honest-narrowing precedent from
+  Phase 63.
+
+  13 new backend tests, 3 new frontend tests. The CLI's `profile.json`/
+  `setup`/`import-cv`/`promote-cv` workflow and every `--profile` flag
+  are completely unchanged -- the two profile sources (CLI file, web DB
+  store) are independent by design, never synchronized or merged.
+
 ---
 
 ## Deferred work (named, not forgotten)

@@ -21,6 +21,7 @@ import {
   CalendarClock,
   Map,
   Bell,
+  IdCard,
 } from "lucide-react";
 
 export interface NavItem {
@@ -71,6 +72,7 @@ export const ORGANIZATION_NAV_ITEMS: NavItem[] = [
 ];
 
 export const ACCOUNT_NAV_ITEMS: NavItem[] = [
+  { to: "/onboarding", label: "Master Profile", icon: IdCard },
   { to: "/profile", label: "Profile", icon: UserCircle },
   { to: "/account", label: "Account", icon: ShieldCheck },
   { to: "/notification-settings", label: "Notification Settings", icon: Bell },

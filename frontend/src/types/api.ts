@@ -419,3 +419,69 @@ export interface PendingSubmissionStatus {
   error: string | null;
   result_id: string | null;
 }
+
+/**
+ * Phase 64, ADR-0082: `/user/master-profile`. Mirrors
+ * `domain/models.py`'s `MasterProfile` and its nested sections
+ * field-for-field -- the same JSON-Resume-shaped source of truth
+ * `career-agent prepare`/`submit`/`apply`/`auto` build against, now given
+ * a real per-user database store alongside the CLI's file-based one.
+ */
+export interface BasicsSection {
+  name: string;
+  email: string;
+  phone: string | null;
+  summary: string | null;
+  location: string | null;
+}
+
+export interface WorkEntry {
+  id: string;
+  name: string;
+  position: string;
+  start_date: string;
+  end_date: string | null;
+  highlights: string[];
+}
+
+export interface EducationEntry {
+  id: string;
+  institution: string;
+  area: string | null;
+  study_type: string | null;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+export interface SkillEntry {
+  id: string;
+  name: string;
+  level: string | null;
+  keywords: string[];
+}
+
+export interface ProjectEntry {
+  id: string;
+  name: string;
+  description: string | null;
+  highlights: string[];
+  keywords: string[];
+}
+
+export interface LegalStatusSection {
+  work_authorized_us: boolean | null;
+  requires_sponsorship: boolean | null;
+}
+
+export interface MasterProfile {
+  version: string;
+  basics: BasicsSection;
+  work: WorkEntry[];
+  education: EducationEntry[];
+  skills: SkillEntry[];
+  projects: ProjectEntry[];
+  legal_status: LegalStatusSection;
+}
+
+/** Body for `PUT /user/master-profile` -- no `version`, always server-computed. */
+export type MasterProfileUpdate = Omit<MasterProfile, "version">;

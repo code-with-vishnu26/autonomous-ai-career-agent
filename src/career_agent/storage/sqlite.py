@@ -50,13 +50,17 @@ from career_agent.domain.discovery_run import DiscoveryRun
 from career_agent.domain.identity import canonical_fingerprint
 from career_agent.domain.job_preferences import JobPreferences
 from career_agent.domain.journal import RunEvent
-from career_agent.domain.models import Application, Opportunity
+from career_agent.domain.models import Application, MasterProfile, Opportunity
 from career_agent.domain.notification import DeliveryAttempt, Notification
 from career_agent.domain.notification_preferences import NotificationPreferences
 from career_agent.domain.resume_variants import ResumeVariant
 from career_agent.domain.review import ReviewSession
 from career_agent.domain.submission import SubmissionResult
 from career_agent.domain.user import User
+from career_agent.storage.profile import (
+    compute_profile_version,
+    validate_master_profile_ids,
+)
 
 _OPPORTUNITY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS opportunities (
@@ -212,6 +216,14 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user
 
 _USER_PREFERENCES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+_MASTER_PROFILE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS master_profiles (
     user_id TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -1160,6 +1172,64 @@ class SqliteUserPreferencesStore:
         if row is None:
             return None
         return JobPreferences.model_validate(json.loads(row["payload"]))
+
+
+class SqliteMasterProfileStore:
+    """Per-user Master Profile (Phase 64, ADR-0082).
+
+    Extends :class:`~career_agent.domain.models.MasterProfile` -- unmodified
+    -- from a single CWD-relative ``profile.json`` file to one row per
+    dashboard user, keyed by ``user_id``, mirroring
+    :class:`SqliteUserPreferencesStore` exactly. The CLI's file-based loader
+    (:mod:`career_agent.storage.profile`) is untouched and still exactly
+    what ``career-agent prepare``/``submit``/``apply``/``auto`` use for the
+    local operator (ADR-0000/ADR-0078: the CLI remains single-operator) --
+    this is the dashboard's per-dashboard-user analogue, not a replacement.
+    ``id`` validation and the content-hash ``version`` are both reused
+    directly from ``storage.profile``, never reimplemented here.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Open (creating if needed) the SQLite database at ``path``."""
+        self._path = path
+        with _connect(path) as connection:
+            connection.executescript(_MASTER_PROFILE_SCHEMA)
+
+    def save(self, user_id: str, profile: MasterProfile) -> MasterProfile:
+        """Validate ids, recompute ``version``, and upsert ``user_id``'s profile.
+
+        Returns the stored profile (with its server-computed ``version``)
+        so the caller (the API route) can hand the caller back exactly
+        what was persisted rather than echoing the possibly-stale
+        client-submitted version.
+        """
+        validate_master_profile_ids(profile)
+        versioned = profile.model_copy(
+            update={"version": compute_profile_version(profile)}
+        )
+        with _connect(self._path) as connection:
+            connection.execute(
+                "INSERT INTO master_profiles (user_id, payload, updated_at)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload,"
+                " updated_at = excluded.updated_at",
+                (
+                    user_id,
+                    versioned.model_dump_json(),
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+        return versioned
+
+    def get(self, user_id: str) -> MasterProfile | None:
+        """``user_id``'s stored profile, or ``None`` if never saved."""
+        with _connect(self._path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM master_profiles WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return MasterProfile.model_validate(json.loads(row["payload"]))
 
 
 class SqliteDiscoveryRunStore:

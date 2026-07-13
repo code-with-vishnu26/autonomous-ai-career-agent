@@ -170,7 +170,21 @@ def load_master_profile(path: Path) -> MasterProfile:
         # stay None -- "never asked," never an implicit "no."
         legal_status=LegalStatusSection(**raw.get("legal_status", {})),
     )
-    return profile.model_copy(update={"version": _content_hash(profile)})
+    return profile.model_copy(update={"version": compute_profile_version(profile)})
+
+
+def validate_master_profile_ids(profile: MasterProfile) -> None:
+    """Re-run the same id-stability checks on an already-constructed profile.
+
+    Phase 64 (ADR-0082): a web-submitted profile (JSON body, not a JSON
+    Resume file) never goes through :func:`load_master_profile` at all, but
+    must satisfy the exact same "every id present, none reused across
+    sections" guarantee -- reuses :func:`_validate_ids` directly rather than
+    re-implementing the check, since a validated :class:`MasterProfile`'s
+    own ``model_dump`` uses the identical ``"id"`` key per entry that the
+    raw-file check already expects.
+    """
+    _validate_ids(profile.model_dump(mode="json"))
 
 
 def _validate_ids(raw: dict[str, Any]) -> None:
@@ -261,12 +275,15 @@ def _map_project(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _content_hash(profile: MasterProfile) -> str:
+def compute_profile_version(profile: MasterProfile) -> str:
     """A deterministic hash over exactly the grounding-relevant fields.
 
     Same modeled content -> same hash, regardless of the raw file's key
     order or whitespace -- computed from the already-validated
     :class:`MasterProfile`'s own canonical dump, not the raw JSON text.
+    Public (Phase 64, ADR-0082): a DB-backed store recomputes ``version``
+    the same way :func:`load_master_profile` always has, rather than
+    reimplementing the hash.
     """
     grounding = profile.model_dump(mode="json", exclude={"version"})
     canonical = json.dumps(grounding, sort_keys=True, separators=(",", ":"))

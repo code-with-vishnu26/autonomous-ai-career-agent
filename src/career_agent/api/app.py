@@ -29,6 +29,7 @@ from career_agent.api.routers import (
     coach,
     discover,
     health,
+    master_profile,
     notification_settings,
     notifications,
     organizations,
@@ -80,6 +81,10 @@ _DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 #: ``submit_prepared_application``/``SubmissionEngine``), so no safety gate
 #: this project already relies on (human review, human confirmation,
 #: fail-closed execution boundary) is bypassed -- only the interface moved.
+#: Phase 64 (ADR-0082) adds ``master_profile`` -- a real per-user Master
+#: Profile store (``SqliteMasterProfileStore``), mirroring
+#: ``SqliteUserPreferencesStore``'s exact shape. The CLI's file-based
+#: loader is untouched; this is the dashboard's own analogue.
 _READ_ONLY_ROUTERS = (
     health,
     applications,
@@ -101,6 +106,7 @@ _WRITE_CAPABLE_ROUTERS = (
     team,
     billing,
     discover,
+    master_profile,
     reviews,
     submission_actions,
 )
