@@ -82,6 +82,17 @@ jobs:
         # same vulnerable versions, so there is no fixed version to move
         # to today. Named here, not silently skipped -- revisit when
         # browser-use relaxes or bumps its own pins (Phase 61, ADR-0079).
+        #
+        # 6 more newly-disclosed CVEs (2026-07-13) in two further
+        # transitive deps -- click (pulled by uvicorn/import-linter) and
+        # pillow (pulled by the browser-automation stack), neither a
+        # direct dependency of this project. Fix versions do exist
+        # (click 8.3.3, pillow 12.3.0), so this is a resolver-lag issue,
+        # not an unfixable pin: consistent with ADR-0079's decision not to
+        # force version floors onto non-direct deps (which risks a
+        # conflict with browser-use's own pins), they are ignored with a
+        # named revisit trigger -- drop each entry once the resolved
+        # dependency tree moves to click>=8.3.3 / pillow>=12.3.0.
         run: >
           pip-audit --skip-editable
           --ignore-vuln PYSEC-2026-237 --ignore-vuln CVE-2026-34993
@@ -94,6 +105,9 @@ jobs:
           --ignore-vuln CVE-2026-49461 --ignore-vuln CVE-2026-49460
           --ignore-vuln CVE-2026-54531 --ignore-vuln CVE-2026-54530
           --ignore-vuln GHSA-jm82-fx9c-mx94 --ignore-vuln CVE-2026-54651
+          --ignore-vuln PYSEC-2026-2132 --ignore-vuln PYSEC-2026-2253
+          --ignore-vuln PYSEC-2026-2254 --ignore-vuln PYSEC-2026-2255
+          --ignore-vuln PYSEC-2026-2256 --ignore-vuln PYSEC-2026-2257
 
       - name: Secret-scanning baseline check
         run: python scripts/check_secrets_baseline.py
