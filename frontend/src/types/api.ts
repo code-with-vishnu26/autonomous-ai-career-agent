@@ -214,6 +214,13 @@ export interface SkillGapReport {
   missing_skills: PrioritizedGap[];
 }
 
+/** Phase 66 (ADR-0084): deterministic match of the stored Master Profile to a JD. */
+export interface ProfileMatchResult {
+  profile_version: string;
+  match: JobMatchResult;
+  skill_gap: SkillGapReport;
+}
+
 export interface ResumeSuggestion {
   original: string;
   suggested: string;

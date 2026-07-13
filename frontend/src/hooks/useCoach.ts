@@ -49,3 +49,9 @@ export function useInterviewPrep() {
     mutationFn: ({ jdText }: { jdText: string }) => coachApi.interviewPrep(jdText),
   });
 }
+
+export function useProfileMatch() {
+  return useMutation({
+    mutationFn: ({ jdText }: { jdText: string }) => coachApi.profileMatch(jdText),
+  });
+}

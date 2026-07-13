@@ -29,6 +29,7 @@ import { AuditLogPage } from "@/pages/AuditLogPage";
 import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
 import { AdminPage } from "@/pages/AdminPage";
 import { CareerCoachPage } from "@/pages/coach/CareerCoachPage";
+import { ProfileMatchPage } from "@/pages/coach/ProfileMatchPage";
 import { ResumeAnalysisPage } from "@/pages/coach/ResumeAnalysisPage";
 import { JobMatchPage } from "@/pages/coach/JobMatchPage";
 import { ResumeSuggestionsPage } from "@/pages/coach/ResumeSuggestionsPage";
@@ -70,6 +71,7 @@ function AppRoutes() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/coach" element={<CareerCoachPage />} />
+          <Route path="/coach/profile-match" element={<ProfileMatchPage />} />
           <Route path="/coach/resume-analysis" element={<ResumeAnalysisPage />} />
           <Route path="/coach/job-match" element={<JobMatchPage />} />
           <Route path="/coach/resume-suggestions" element={<ResumeSuggestionsPage />} />

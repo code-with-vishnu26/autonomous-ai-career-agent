@@ -12,6 +12,7 @@ import type {
   CoverLetterTransformResult,
   InterviewPrepResult,
   JobMatchResult,
+  ProfileMatchResult,
   ResumeAnalysis,
   ResumeSuggestion,
   SkillGapReport,
@@ -38,4 +39,6 @@ export const coachApi = {
     postJson<CoverLetterTransformResult>("/coach/cover-letter/transform", { body, mode }),
   interviewPrep: (jd_text: string) =>
     postJson<InterviewPrepResult>("/coach/interview-prep", { jd_text }),
+  profileMatch: (jd_text: string) =>
+    postJson<ProfileMatchResult>("/coach/profile-match", { jd_text }),
 };

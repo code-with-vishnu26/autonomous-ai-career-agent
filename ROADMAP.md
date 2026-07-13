@@ -2183,6 +2183,41 @@ profile.
   isolation), 3 new frontend tests. The CLI's `career-agent export`
   output is unchanged.
 
+- ✅ **Profile-Backed ATS / Keyword Scoring -- ADR-0084 (Phase 66).** The
+  "check the ATS score, keywords" step. The audit found this scoring
+  **already exists** in the web dashboard -- the Career Coach's Job Match
+  Score, Skill Gap, and Resume Analysis pages (Phase 57, ADR-0075) all
+  compute a *deterministic* keyword-coverage score (no LLM, no cost, no
+  fabrication risk). The real gap was the input: those pages make the user
+  **paste** their résumé every time, even after onboarding a Master
+  Profile (Phase 64) that already holds everything the scorer needs.
+
+  `domain/profile_text.py::master_profile_to_resume_text` (new, pure,
+  imports only `domain/models`) flattens the profile
+  (summary/work/projects/skills/education) into the plain text the
+  coverage scorer tokenizes -- lossy by design (it preserves the *words*,
+  not layout) and explicitly *not* a résumé generator (tailoring stays the
+  real artifact pipeline). `POST /coach/profile-match` takes only
+  `{ jd_text }`, loads the caller's stored profile, and returns the
+  job-match score **and** skill-gap ranking together, reusing
+  `job_match_score`/`skill_gap_report` unchanged. It returns **404** (not
+  a misleading 0%) when the caller hasn't onboarded, so the UI routes them
+  to onboarding; deterministic, so it needs no provider configuration
+  (unlike the LLM-backed coach endpoints). Frontend:
+  `coachApi.profileMatch`/`useProfileMatch` + a new "Match My Profile"
+  Career Coach page -- paste a JD, get the score, missing keywords, and
+  prioritized skill gaps, with no résumé paste. 8 new backend tests (3
+  pure profile-text + 5 API, including 404-when-unonboarded and cross-user
+  isolation), 2 new frontend tests. The existing paste-based Job Match /
+  Skill Gap / Resume Analysis pages are unchanged -- this is additive.
+
+  Also fixed an unrelated flaky CI failure surfaced while shipping this:
+  `tests/deployment/test_docker_compose.py`'s first `docker compose
+  config` invocation timing out at 30s on a *cold* Windows runner (the two
+  overlay-config tests after it passed warm) -- bumped to a named 120s
+  ceiling that still catches a genuine hang, the same real-runner
+  accommodation as ADR-0056's Windows CI notes.
+
 ---
 
 ## Deferred work (named, not forgotten)

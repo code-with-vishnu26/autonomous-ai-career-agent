@@ -471,6 +471,13 @@ Preferences and Notification Settings pages rather than duplicating
 them. CV upload (`import-cv`/`promote-cv`) remains CLI-only for now — it
 needs new multipart-upload infrastructure this phase didn't build.
 
+Once you've onboarded, the Career Coach's **Match My Profile** page
+(Phase 66, [ADR-0084](docs/adr/0084-profile-backed-ats-scoring.md)) scores
+that stored profile against any job description — a deterministic ATS
+keyword-coverage score and prioritized missing skills, no résumé paste and
+no LLM cost. It reuses the exact same scorers the paste-based Job Match /
+Skill Gap pages use.
+
 **Excel download is web-native (Phase 65,
 [ADR-0083](docs/adr/0083-web-excel-export.md)).** The formatted,
 filterable application-tracker workbook the CLI has produced since Phase
