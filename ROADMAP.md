@@ -2264,6 +2264,36 @@ profile.
   work, not done here -- but a session prepared from the DB profile
   already carries the tailored résumé variant submit needs.
 
+- ✅ **Assisted Apply for Pasted Jobs (LinkedIn/Indeed/Naukri) -- ADR-0086
+  (Phase 68).** The owner asked to help apply on LinkedIn, Indeed, and
+  Naukri. This project's standing invariant 7 (ADR-0036) forbids ever
+  scraping or auto-applying on those platforms -- their ToS prohibit it,
+  they ban accounts that do -- and that rule is **not reopened**. But a
+  user who finds a job there still deserves the agent's real value: a
+  tailored résumé + cover letter for that posting. The audit found Phase
+  67's `prepare_application_for_review` already tailors for any
+  `Opportunity` regardless of how it was found, and that a
+  LinkedIn/Indeed/Naukri URL resolves to no known ATS
+  (`resolve_ats_kind` returns `None`), so the submission engine *already*
+  refuses to auto-submit it (`UNSUPPORTED_PROVIDER`, ADR-0071) -- the
+  "never auto-apply there" guarantee is enforced by existing code, no new
+  safeguard needed.
+
+  `POST /prepare/pasted` (added to the Phase 67 `prepare_actions` router)
+  takes `{ title, company, description, url? }`, builds an ad-hoc
+  `Opportunity` (`source="job_board"`, `provenance.method="text_extraction"`,
+  `extraction_confidence=1.0` -- a human curated it, not a heuristic
+  scrape), persists it to the opportunity repository, then delegates to
+  the *exact same* `_run_prepare` the discovered-job path uses -- one
+  tailoring path, two constructors. No auto-submit by construction. The
+  frontend adds a `PasteJobCard` to the Search Jobs page (title / company /
+  description / optional URL -> tailor -> Review Queue). The user applies
+  on the platform's own site with the tailored materials; the pasted
+  opportunity is real data that flows into Review, the Excel export, and
+  analytics like any other -- LinkedIn applications tracked alongside the
+  auto-discovered ones. 3 new backend tests + 1 new frontend test.
+  Standing invariant 7 upheld, not reopened.
+
 ---
 
 ## Deferred work (named, not forgotten)

@@ -197,3 +197,65 @@ async def test_prepare_token_never_leaks_across_users(client: TestClient) -> Non
         f"/prepare/{prep_token}", headers={"Authorization": f"Bearer {other_token}"}
     )
     assert leaked.status_code == 404
+
+
+def test_pasted_requires_authentication(client: TestClient) -> None:
+    response = client.post(
+        "/prepare/pasted",
+        json={"title": "Backend Engineer", "company": "Acme", "description": "Python"},
+    )
+    assert response.status_code == 401
+
+
+def test_pasted_validates_required_fields(client: TestClient) -> None:
+    token = _register(client)
+    response = client.post(
+        "/prepare/pasted",
+        json={"title": "", "company": "Acme", "description": "Python"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 422  # empty title rejected by the model
+
+
+async def test_pasted_tailors_and_persists_an_ad_hoc_opportunity(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _fake_prepare(**_kwargs: object) -> ApplicationSession:
+        return _fake_session()
+
+    async def _no_notify(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "career_agent.api.routers.prepare_actions.prepare_application_for_review",
+        _fake_prepare,
+    )
+    monkeypatch.setattr(
+        "career_agent.api.routers.prepare_actions._notify", _no_notify
+    )
+
+    token = _register(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    user_id = _me_id(client, token)
+    _seed_profile(user_id)
+
+    response = client.post(
+        "/prepare/pasted",
+        json={
+            "title": "Backend Engineer",
+            "company": "Acme Corp",
+            "description": "Python and FastAPI backend role from LinkedIn.",
+            "url": "https://www.linkedin.com/jobs/view/123",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 202
+    prep_token = response.json()["token"]
+
+    final = client.get(f"/prepare/{prep_token}", headers=headers).json()
+    assert final["status"] == "DONE"
+    assert final["application_session_id"] == "prepared-1"
+
+    # The ad-hoc opportunity was persisted (so review/submit can reference it).
+    recent = await SqliteOpportunityRepository(_db_path()).list_recent(limit=10)
+    assert any(o.canonical_company == "Acme Corp" for o in recent)

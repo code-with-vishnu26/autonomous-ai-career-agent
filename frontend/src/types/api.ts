@@ -439,6 +439,14 @@ export interface PendingPreparationStatus {
   application_session_id: string | null;
 }
 
+/** Phase 68 (ADR-0086): a job pasted from a site we don't auto-search. */
+export interface PastedJobRequest {
+  title: string;
+  company: string;
+  description: string;
+  url?: string;
+}
+
 /**
  * Phase 64, ADR-0082: `/user/master-profile`. Mirrors
  * `domain/models.py`'s `MasterProfile` and its nested sections

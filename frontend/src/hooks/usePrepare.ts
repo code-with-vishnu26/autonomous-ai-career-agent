@@ -7,7 +7,7 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { prepareApi } from "@/services/prepareApi";
-import type { PendingPreparationStatus } from "@/types/api";
+import type { PastedJobRequest, PendingPreparationStatus } from "@/types/api";
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -18,6 +18,12 @@ function isInFlight(status: PendingPreparationStatus | undefined): boolean {
 export function useStartPreparation() {
   return useMutation({
     mutationFn: (opportunityId: string) => prepareApi.start(opportunityId),
+  });
+}
+
+export function useStartPastedPreparation() {
+  return useMutation({
+    mutationFn: (job: PastedJobRequest) => prepareApi.startPasted(job),
   });
 }
 
