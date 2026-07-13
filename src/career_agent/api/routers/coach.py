@@ -49,9 +49,10 @@ from career_agent.agents.coach.resume_suggestions import (
     generate_resume_suggestions,
 )
 from career_agent.agents.coach.skill_gap import SkillGapReport, skill_gap_report
-from career_agent.api.dependencies import get_settings
+from career_agent.api.dependencies import get_master_profile_store, get_settings
 from career_agent.api.security import get_current_user
 from career_agent.core.config import Settings
+from career_agent.domain.profile_text import master_profile_to_resume_text
 from career_agent.domain.user import User
 from career_agent.llm.promptfoo_gate import (
     PromptfooNotValidatedError,
@@ -87,6 +88,21 @@ class JdRequest(BaseModel):
     """Body for endpoints that only need a job description."""
 
     jd_text: str
+
+
+class ProfileMatchResult(BaseModel):
+    """Deterministic match of the caller's stored Master Profile to a JD.
+
+    Combines the job-match score and the skill-gap ranking (both
+    keyword-based, both naturally read together as "how well do I match,
+    and what am I missing") computed from the onboarded profile rather
+    than pasted résumé text -- the connective tissue between Phase 64's
+    Master Profile and the existing ADR-0075 scorers.
+    """
+
+    profile_version: str
+    match: JobMatchResult
+    skill_gap: SkillGapReport
 
 
 class CoverLetterTransformRequest(BaseModel):
@@ -142,6 +158,36 @@ def skill_gap(
 ) -> SkillGapReport:
     """Deterministic skill gap ranking -- no LLM call, no fabrication risk."""
     return skill_gap_report(body.resume_text, body.jd_text)
+
+
+@router.post("/profile-match", response_model=ProfileMatchResult)
+def profile_match(
+    body: JdRequest,
+    current_user: User = Depends(get_current_user),
+    master_profile_store=Depends(get_master_profile_store),
+) -> ProfileMatchResult:
+    """Score the caller's stored Master Profile against a job description.
+
+    Deterministic -- no LLM call, no fabrication risk. Renders the
+    onboarded profile (Phase 64) to résumé text and reuses the same
+    ADR-0075 keyword scorers the paste-based Coach pages use, so a user
+    who onboarded never has to re-type their résumé to see their ATS
+    coverage and missing keywords. 404 (not an empty score) when the
+    caller has no profile yet, so the UI can send them to onboarding
+    rather than showing a misleading 0%.
+    """
+    profile = master_profile_store.get(current_user.id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No Master Profile yet -- complete onboarding first.",
+        )
+    resume_text = master_profile_to_resume_text(profile)
+    return ProfileMatchResult(
+        profile_version=profile.version,
+        match=job_match_score(resume_text, body.jd_text),
+        skill_gap=skill_gap_report(resume_text, body.jd_text),
+    )
 
 
 @router.post("/resume-suggestions", response_model=list[ResumeSuggestion])

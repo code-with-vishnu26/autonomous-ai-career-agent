@@ -387,6 +387,7 @@ def test_auth_and_user_are_the_only_write_capable_routers() -> None:
                 or path.startswith("/discover")
                 or path.startswith("/reviews")
                 or path.startswith("/submissions")
+                or path.startswith("/prepare")
             )
             assert allowed, f"{path} allows {mutating} outside the write boundary"
 

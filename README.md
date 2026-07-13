@@ -453,9 +453,46 @@ its status, and only proceeds after an explicit `POST
 `SubmissionEngine`/`domain/execution.py` gate ADR-0071 built, with the
 same never-auto-confirm-on-silence discipline, just reached over HTTP
 instead of a terminal countdown. **Preparing** a résumé/cover letter for
-a result (`career-agent prepare`) still renders as a disabled button
-naming the exact CLI command — it has its own real headed-browser
-complexity not yet migrated.
+a result is now web-native too (Phase 67,
+[ADR-0085](docs/adr/0085-web-triggered-prepare.md)): each Search Jobs
+result has a **Prepare application** button that tailors a résumé + cover
+letter from your onboarded Master Profile (`POST /prepare`, polled), runs
+the same truthfulness + ATS gates the CLI does, and routes you to the
+Review Queue — completing the fully web-driven loop **search → prepare →
+review → submit**. Tailoring is browserless (so it runs anywhere); the
+live form is filled and the résumé uploaded at submit, behind the
+human-confirmation gate. `career-agent prepare` (with its headed-browser
+form pre-fill) remains available for CLI operators.
+
+**Master Profile onboarding is a real web wizard (Phase 64,
+[ADR-0082](docs/adr/0082-per-user-master-profile-onboarding.md)).** A
+dashboard account no longer needs `profile.json` or a terminal to tell
+the system who they are: `/onboarding` is an 8-step wizard (Welcome →
+Personal → Work → Education → Skills → Projects → Legal → Review) backed
+by `GET`/`PUT /user/master-profile` and a new `SqliteMasterProfileStore`
+(mirrors `SqliteUserPreferencesStore`), independent of the CLI's
+`profile.json` by design — the two are never synchronized. The wizard
+pre-fills from any existing stored profile, so it's safe to revisit, not
+a one-time-only flow, and its final step links to the existing Job
+Preferences and Notification Settings pages rather than duplicating
+them. CV upload (`import-cv`/`promote-cv`) remains CLI-only for now — it
+needs new multipart-upload infrastructure this phase didn't build.
+
+Once you've onboarded, the Career Coach's **Match My Profile** page
+(Phase 66, [ADR-0084](docs/adr/0084-profile-backed-ats-scoring.md)) scores
+that stored profile against any job description — a deterministic ATS
+keyword-coverage score and prioritized missing skills, no résumé paste and
+no LLM cost. It reuses the exact same scorers the paste-based Job Match /
+Skill Gap pages use.
+
+**Excel download is web-native (Phase 65,
+[ADR-0083](docs/adr/0083-web-excel-export.md)).** The formatted,
+filterable application-tracker workbook the CLI has produced since Phase
+13 is now a one-click download in the browser: the Applications page
+exports your prepared applications and the History page exports your
+submissions, each scoped to your own rows (`GET /export/applications.xlsx`
+/ `GET /export/submissions.xlsx`, read-only). `career-agent export` still
+works identically for CLI users.
 
 Build for production with `npm run build` (output in `frontend/dist/`);
 test with `npm test` (Vitest + React Testing Library); type-check with

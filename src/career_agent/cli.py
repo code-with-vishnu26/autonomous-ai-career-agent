@@ -662,6 +662,115 @@ async def run_prepare_command(
     return 0
 
 
+class TruthfulnessRejectedError(Exception):
+    """The truthfulness gate rejected a tailored resume (Phase 67, ADR-0085).
+
+    Carries the human-readable rejection reasons so a web caller can show
+    exactly why a draft was refused, mirroring what ``run_prepare_command``
+    prints to a CLI operator.
+    """
+
+
+async def prepare_application_for_review(
+    *,
+    opportunity: Opportunity,
+    profile: MasterProfile,
+    settings: Settings,
+    user_id: str,
+) -> ApplicationSession:
+    """Tailor a resume + cover letter for review, without touching a browser.
+
+    The web analogue of ``run_prepare_command`` (Phase 51/ADR-0069),
+    extracted for the dashboard (Phase 67/ADR-0085). Runs the *exact same*
+    ``ResumeVariantEngine.build_materials`` -- the truthfulness gate, ATS
+    threshold, and cover-letter assembly are all unchanged -- then builds a
+    ``READY_FOR_REVIEW`` :class:`ApplicationSession` directly from the
+    tailored materials.
+
+    Deliberately does **not** open a browser to pre-fill the live form the
+    way the CLI's ``ApplicationPreparationEngine.build_session`` does: that
+    pre-fill is only a preview, and the real, authoritative form fill (and
+    the résumé upload) happens at submit time
+    (``submit_prepared_application``, ADR-0071/0081) behind the
+    human-confirmation gate. Skipping it here keeps web preparation
+    deterministic and runnable in any environment -- including a headless
+    server with no display -- while the browser still does the actual apply
+    at submit, exactly as the owner asked (AI fills the form, then the human
+    reviews and confirms before anything is sent).
+
+    Raises the same errors the CLI path surfaces
+    (``NoLLMProviderConfiguredError``, ``PromptfooNotValidatedError``,
+    ``MissingSummaryError``, ``AtsScoreBelowThresholdError``) plus
+    :class:`TruthfulnessRejectedError` when the gate refuses the draft --
+    never a silently degraded result.
+    """
+    claim_verifier = select_claim_verifier(settings)
+    verify_promptfoo_results(
+        claim_verifier.prompt_version,
+        Path(settings.promptfoo_results_dir),
+        provider_id=claim_verifier.provider_id,
+    )
+    content_drafter = select_content_drafter(settings)
+
+    pipeline = ResumeTailoringPipeline(
+        LLMResumeGenerator(content_drafter),
+        LLMTruthfulnessGate(claim_verifier),
+        EventBus(),
+        artifacts_dir=Path(settings.artifacts_dir),
+        ats_threshold=settings.ats_threshold,
+        semantic_matcher=select_semantic_matcher(settings),
+    )
+    variant_store = SqliteResumeVariantStore(Path(settings.database_path))
+    variant_engine = ResumeVariantEngine(pipeline)
+
+    materials = await variant_engine.build_materials(
+        opportunity,
+        profile,
+        category=opportunity.title,
+        prior_variants=variant_store.by_category(opportunity.title),
+    )
+
+    if materials.tailoring.submittable is None:
+        reasons = [
+            f"[{rejection.category}] {rejection.detail}"
+            for rejection in (
+                materials.tailoring.application.resume.truthfulness.rejections
+            )
+        ]
+        raise TruthfulnessRejectedError(
+            "The truthfulness gate rejected this draft: " + "; ".join(reasons)
+        )
+
+    if materials.new_variant is not None:
+        variant_store.save(materials.new_variant, user_id=user_id)
+
+    return ApplicationSession(
+        id=str(uuid.uuid4()),
+        provider=resolve_ats_kind(opportunity.source_url) or "unknown",
+        company=opportunity.canonical_company,
+        job_title=opportunity.title,
+        url=opportunity.source_url,
+        opportunity_id=opportunity.id,
+        status="READY_FOR_REVIEW",
+        resume_variant_id=(
+            materials.new_variant.id if materials.new_variant else None
+        ),
+        cover_letter_body=(
+            materials.cover_letter.body if materials.cover_letter else None
+        ),
+        filled_fields=[],
+        detected_fields=[],
+        missing_fields=[],
+        uploaded_files=[],
+        warnings=[
+            "Prepared for review without a browser pre-fill -- the live "
+            "form is filled and the résumé uploaded at submit time, behind "
+            "the human-confirmation gate."
+        ],
+        created_at=datetime.now(UTC),
+    )
+
+
 def _write_application_session_handoff(
     session: ApplicationSession, artifacts_dir: Path
 ) -> Path:

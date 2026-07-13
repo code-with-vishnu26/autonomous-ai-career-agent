@@ -21,6 +21,15 @@ import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
+#: `docker compose config` validates a tiny file in well under a second
+#: once warm -- but the *first* invocation on a cold CI runner (loading the
+#: Docker CLI + compose plugin) has been observed to exceed 30s on the
+#: Windows runner specifically, failing only the first of these three tests
+#: while the two that run after it pass warm. A generous ceiling still
+#: catches a genuine hang while tolerating that one-time cold start, the
+#: same real-runner-accommodation spirit as ADR-0056's Windows CI notes.
+_COMPOSE_CONFIG_TIMEOUT_SECONDS = 120
+
 
 def _load(filename: str) -> dict:
     return yaml.safe_load((_REPO_ROOT / filename).read_text(encoding="utf-8"))
@@ -90,7 +99,7 @@ class TestRealDockerComposeConfig:
             cwd=_REPO_ROOT,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=_COMPOSE_CONFIG_TIMEOUT_SECONDS,
         )
         assert result.returncode == 0, result.stderr
 
@@ -104,7 +113,7 @@ class TestRealDockerComposeConfig:
             cwd=_REPO_ROOT,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=_COMPOSE_CONFIG_TIMEOUT_SECONDS,
         )
         assert result.returncode == 0, result.stderr
 
@@ -119,6 +128,6 @@ class TestRealDockerComposeConfig:
             cwd=_REPO_ROOT,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=_COMPOSE_CONFIG_TIMEOUT_SECONDS,
         )
         assert result.returncode == 0, result.stderr

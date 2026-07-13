@@ -2083,6 +2083,187 @@ profile.
   (items 4-7, 9-10 of the originating request) are tracked separately,
   named below, not folded into this already-large phase.
 
+- ✅ **Per-User Master Profile + Web Onboarding Wizard -- ADR-0082
+  (Phase 64).** The start of the v2.0 program: "a normal user should
+  never need to open a terminal." Three ADRs (0017, 0078, 0081)
+  independently named this exact moment as the correct time to give
+  `MasterProfile` a real per-user store, mirroring
+  `SqliteUserPreferencesStore` -- this phase executes that named trigger
+  rather than reopening it. The audit found `storage/profile.py`'s pure
+  functions (`_validate_ids`, the `_map_*` mappers, `_content_hash`) were
+  already separated from file I/O, so a second, DB-backed source could
+  reuse them directly once made independently callable --
+  `_content_hash` renamed to public `compute_profile_version`, plus a
+  new `validate_master_profile_ids(profile)` wrapper reusing
+  `_validate_ids` against `profile.model_dump(mode="json")` (the raw
+  JSON Resume shape and the Pydantic dump share the same `"id"` key, so
+  one loop validates both). ADR-0017 suggested a `Protocol` as the
+  eventual resolution; deliberately not built here -- the CLI always
+  uses the file loader, the API always uses the DB store, and no call
+  site needs to be implementation-agnostic, so a `Protocol` would be
+  pure indirection with no beneficiary.
+
+  **Built:** `SqliteMasterProfileStore` (`user_id`/`payload`/
+  `updated_at`, upsert via `INSERT ... ON CONFLICT DO UPDATE`, mirrors
+  `SqliteUserPreferencesStore` field-for-field) plus a new
+  `api/routers/master_profile.py` (`GET`/`PUT /user/master-profile`)
+  deliberately kept separate from `user.py`'s existing
+  `PUT /user/profile` -- that endpoint's own docstring already warns
+  against conflating "account profile" (display name) with
+  `MasterProfile` (candidate data). The `PUT` request body omits
+  `version` entirely so a client-submitted value can never masquerade as
+  real; the server always recomputes it via `compute_profile_version`.
+
+  Frontend: `useMasterProfile`/`useUpdateMasterProfile` (TanStack Query)
+  and a new 8-step `OnboardingWizardPage` (Welcome / Personal / Work /
+  Education / Skills / Projects / Legal / Review) built on
+  `react-hook-form` + `useFieldArray` for the repeatable work/education/
+  skills/projects sections, pre-filling from any existing stored profile
+  (idempotent re-entry, not a one-time-only flow). The Review step links
+  out to the existing Job Preferences (Search Jobs page) and Notification
+  Settings pages rather than duplicating either -- those already have
+  working, separate flows from Phase 46/56 and Phase 58. Routed at
+  `/onboarding`, added to the account nav as "Master Profile".
+
+  CV upload and the `import-cv`/`promote-cv` migration -- which needs
+  genuinely new multipart-upload infrastructure (none exists anywhere in
+  `api/` today) and a `domain/ingestion.py`-backed `FactProposal` review
+  UI -- is explicitly deferred to a dedicated future phase, not silently
+  dropped, matching the "Prepare via CLI" honest-narrowing precedent from
+  Phase 63.
+
+  13 new backend tests, 3 new frontend tests. The CLI's `profile.json`/
+  `setup`/`import-cv`/`promote-cv` workflow and every `--profile` flag
+  are completely unchanged -- the two profile sources (CLI file, web DB
+  store) are independent by design, never synchronized or merged.
+
+- ✅ **Excel Export over the Web -- ADR-0083 (Phase 65).** The "store the
+  details in an Excel sheet" step of the end-to-end apply flow, moved
+  into the browser so a dashboard user never needs a terminal for it. The
+  audit found the rich, formatted, filterable workbook (company, title/
+  role, source/provider, ATS score, truthfulness, status, dates, files,
+  latest outcome) has existed since Phase 13 (`storage/excel.py`,
+  `openpyxl` already a dependency) -- but CLI-only, writing to a `Path` --
+  and that the dashboard's own "applications" surface is
+  `ApplicationSession` (the `prepare` pipeline's record, a genuinely
+  different type from the old `apply` pipeline's `Application`, never
+  unified -- ADR-0069/0070/0071 each note this), which had no export at
+  all.
+
+  `storage/excel.py` gains a shared `_build_workbook` extracted from the
+  two existing exports (their on-disk output stays byte-for-byte
+  identical -- proven by the pre-existing `test_sqlite_store.py`/
+  `test_submission_result_store.py` assertions, which still pass
+  untouched), a `_workbook_bytes` serializer (openpyxl's `save` accepts a
+  file-like object, so the same bytes stream from memory without a temp
+  file), a third sibling `export_application_sessions`/
+  `application_sessions_xlsx_bytes` for the dashboard's
+  `ApplicationSession` rows (list-valued fields like filled/missing
+  fields rendered as counts or joined text -- a spreadsheet cell can't
+  hold a Python list), and `applications_xlsx_bytes`/
+  `submissions_xlsx_bytes` for symmetry.
+
+  A new GET-only `api/routers/export.py` -- `GET /export/applications.xlsx`
+  and `GET /export/submissions.xlsx` -- reads the caller's own rows
+  (`by_user(current_user.id)`), builds the workbook in memory, and returns
+  it as an `.xlsx` attachment. Read-only: it triggers no discovery/
+  preparation/submission and writes to no store, so no safety gate this
+  project relies on is involved. It lives under `/export` (a binary
+  attachment) rather than `/api` (JSON), joining `_READ_ONLY_ROUTERS`
+  since it has no mutating method -- the `/api/*` GET-only structural
+  proof is untouched.
+
+  Frontend: `services/exportApi.ts` (reuses the existing `apiFetch`, so
+  the access-token + refresh-on-401 logic is identical -- only the
+  response is a blob, click-downloaded rather than parsed), a reusable
+  `DownloadExcelButton` with local pending/error state, wired into the
+  Applications page (applications export) and the History page
+  (submissions export). 5 new backend tests (each loads the returned
+  bytes with openpyxl and asserts on the actual sheet plus cross-user
+  isolation), 3 new frontend tests. The CLI's `career-agent export`
+  output is unchanged.
+
+- ✅ **Profile-Backed ATS / Keyword Scoring -- ADR-0084 (Phase 66).** The
+  "check the ATS score, keywords" step. The audit found this scoring
+  **already exists** in the web dashboard -- the Career Coach's Job Match
+  Score, Skill Gap, and Resume Analysis pages (Phase 57, ADR-0075) all
+  compute a *deterministic* keyword-coverage score (no LLM, no cost, no
+  fabrication risk). The real gap was the input: those pages make the user
+  **paste** their résumé every time, even after onboarding a Master
+  Profile (Phase 64) that already holds everything the scorer needs.
+
+  `domain/profile_text.py::master_profile_to_resume_text` (new, pure,
+  imports only `domain/models`) flattens the profile
+  (summary/work/projects/skills/education) into the plain text the
+  coverage scorer tokenizes -- lossy by design (it preserves the *words*,
+  not layout) and explicitly *not* a résumé generator (tailoring stays the
+  real artifact pipeline). `POST /coach/profile-match` takes only
+  `{ jd_text }`, loads the caller's stored profile, and returns the
+  job-match score **and** skill-gap ranking together, reusing
+  `job_match_score`/`skill_gap_report` unchanged. It returns **404** (not
+  a misleading 0%) when the caller hasn't onboarded, so the UI routes them
+  to onboarding; deterministic, so it needs no provider configuration
+  (unlike the LLM-backed coach endpoints). Frontend:
+  `coachApi.profileMatch`/`useProfileMatch` + a new "Match My Profile"
+  Career Coach page -- paste a JD, get the score, missing keywords, and
+  prioritized skill gaps, with no résumé paste. 8 new backend tests (3
+  pure profile-text + 5 API, including 404-when-unonboarded and cross-user
+  isolation), 2 new frontend tests. The existing paste-based Job Match /
+  Skill Gap / Resume Analysis pages are unchanged -- this is additive.
+
+  Also fixed an unrelated flaky CI failure surfaced while shipping this:
+  `tests/deployment/test_docker_compose.py`'s first `docker compose
+  config` invocation timing out at 30s on a *cold* Windows runner (the two
+  overlay-config tests after it passed warm) -- bumped to a named 120s
+  ceiling that still catches a genuine hang, the same real-runner
+  accommodation as ADR-0056's Windows CI notes.
+
+- ✅ **Web-Triggered Prepare / Guided Apply Flow -- ADR-0085 (Phase 67).**
+  The missing middle of the fully web-driven loop (search -> **prepare**
+  -> review -> submit), on the owner's explicit direction that the whole
+  journey run from the website: "first the AI asks the details, searches
+  jobs, creates a CV/résumé/cover letter using the job description, fills
+  the form, and at last asks the user to review." The audit found
+  `run_prepare_command` has two halves -- tailoring
+  (`ResumeVariantEngine.build_materials`: the truthfulness gate, ATS
+  threshold, and cover-letter assembly, **no browser**) and a browser
+  `build_session` that only *pre-fills* the live form for preview (the
+  authoritative fill and résumé upload happen at submit, which re-tailors
+  fresh and drives the browser itself). It also found the web Submit flow
+  still loads `profile.json`, not the onboarded DB Master Profile (Phase
+  64) -- so the stored profile wasn't actually driving tailoring.
+
+  `cli.py::prepare_application_for_review` (new) is the web analogue of
+  `run_prepare_command`, taking loaded objects (`Opportunity`,
+  `MasterProfile`, `Settings`): it runs the *exact same* `build_materials`
+  then constructs a `READY_FOR_REVIEW` `ApplicationSession` directly from
+  the tailored materials -- deliberately **browserless**, keeping web
+  preparation deterministic and runnable on a headless server; a new
+  `TruthfulnessRejectedError` carries the gate's rejection reasons.
+  `api/routers/prepare_actions.py` (new) mirrors `submission_actions`'
+  background-task + poll shape: `POST /prepare` returns a token,
+  `GET /prepare/{token}` polls. The background task loads the caller's
+  **stored Master Profile** -- the bridge that makes "the AI builds your
+  résumé from the details you entered" real -- failing with a clear
+  onboarding prompt if none exists, then saves the `ApplicationSession`
+  under the caller's `user_id`. Fire-and-poll with no confirm of its own:
+  tailoring sends nothing outward, so the only human gate that matters
+  (submit, ADR-0071) is unchanged and un-bypassable.
+
+  Frontend: `prepareApi`/`usePrepare` (2s poll while `PREPARING`, the same
+  shape as discovery-run polling) and a `PrepareButton` on each Search
+  Jobs result -- click tailors, then routes to the Review Queue; the old
+  "Prepare via CLI" `CliOnlyAction` placeholder is removed and the Search
+  Jobs help text now describes the real web flow. 8 new backend tests (6
+  router: auth, unknown-token 404, no-profile, opportunity-not-found,
+  happy-path-saves-a-reviewable-session, cross-user isolation; 2 unit on
+  the browserless session build and the truthfulness-rejection path), 2
+  new frontend tests. The CLI's browser-based prepare and the
+  `/api/*`-GET-only structural proof are untouched. Bridging web *submit*
+  to the DB profile too (it still reads `profile.json`) is named follow-up
+  work, not done here -- but a session prepared from the DB profile
+  already carries the tailored résumé variant submit needs.
+
 ---
 
 ## Deferred work (named, not forgotten)

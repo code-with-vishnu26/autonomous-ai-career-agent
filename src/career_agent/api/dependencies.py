@@ -20,6 +20,7 @@ from career_agent.storage.sqlite import (
     SqliteApplicationSessionStore,
     SqliteDeliveryAttemptStore,
     SqliteDiscoveryRunStore,
+    SqliteMasterProfileStore,
     SqliteNotificationPreferencesStore,
     SqliteNotificationStore,
     SqliteOpportunityRepository,
@@ -91,6 +92,11 @@ def get_password_reset_token_store() -> SqlitePasswordResetTokenStore:
 def get_user_preferences_store() -> SqliteUserPreferencesStore:
     """Per-user Job Search Preferences store (Phase 56, ADR-0074)."""
     return SqliteUserPreferencesStore(_database_path())
+
+
+def get_master_profile_store() -> SqliteMasterProfileStore:
+    """Per-user Master Profile store (Phase 64, ADR-0082)."""
+    return SqliteMasterProfileStore(_database_path())
 
 
 def get_notification_store() -> SqliteNotificationStore:

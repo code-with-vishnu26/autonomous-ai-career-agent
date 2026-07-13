@@ -21,6 +21,7 @@ import {
   CalendarClock,
   Map,
   Bell,
+  IdCard,
 } from "lucide-react";
 
 export interface NavItem {
@@ -42,14 +43,17 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 /**
- * Phase 57 (ADR-0075). Six of these (Resume Analysis, Job Match, Resume
- * Suggestions, Cover Letter, Interview Prep, Skill Gap) are real, wired to
- * `/coach/*`. Four (Company Research, Salary Insights, Weekly Report,
- * Career Roadmap) have no real data source in this codebase and route to
- * a page that honestly says so -- see `DeferredCoachFeature.tsx`.
+ * Phase 57 (ADR-0075). Seven of these (Match My Profile, Resume Analysis,
+ * Job Match, Resume Suggestions, Cover Letter, Interview Prep, Skill Gap)
+ * are real, wired to `/coach/*` -- Match My Profile (Phase 66, ADR-0084)
+ * scores the onboarded Master Profile with no paste. Four (Company
+ * Research, Salary Insights, Weekly Report, Career Roadmap) have no real
+ * data source in this codebase and route to a page that honestly says
+ * so -- see `DeferredCoachFeature.tsx`.
  */
 export const COACH_NAV_ITEMS: NavItem[] = [
   { to: "/coach", label: "Career Coach", icon: Sparkles },
+  { to: "/coach/profile-match", label: "Match My Profile", icon: IdCard },
   { to: "/coach/resume-analysis", label: "Resume Analysis", icon: FileText },
   { to: "/coach/job-match", label: "Job Match Score", icon: Target },
   { to: "/coach/resume-suggestions", label: "Resume Suggestions", icon: Wand2 },
@@ -71,6 +75,7 @@ export const ORGANIZATION_NAV_ITEMS: NavItem[] = [
 ];
 
 export const ACCOUNT_NAV_ITEMS: NavItem[] = [
+  { to: "/onboarding", label: "Master Profile", icon: IdCard },
   { to: "/profile", label: "Profile", icon: UserCircle },
   { to: "/account", label: "Account", icon: ShieldCheck },
   { to: "/notification-settings", label: "Notification Settings", icon: Bell },

@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Callout } from "@/components/ui/callout";
-import { CliOnlyAction } from "@/components/CliOnlyAction";
+import { PrepareButton } from "@/components/PrepareButton";
 import { QueryState } from "@/components/QueryState";
 import { useJobPreferences, useUpdateJobPreferences } from "@/hooks/useJobPreferences";
 import {
@@ -113,8 +113,10 @@ export function SearchJobsPage() {
         Search runs the exact same discovery pipeline <code>career-agent discover</code>{" "}
         uses (ADR-0081) -- your filters save to Job Search Preferences first
         (<code>PUT /user/preferences</code>), then a background run polls every
-        configured source. Preparing a résumé or cover letter for a result stays a
-        CLI action for now (its own real headed-browser complexity).
+        configured source. <strong>Prepare application</strong> then tailors a
+        résumé + cover letter for a result from your onboarded Master Profile
+        (ADR-0085) and sends it to the Review Queue -- the live form is filled
+        and the résumé uploaded later, at submit, behind the confirmation gate.
       </Callout>
 
       <Card>
@@ -250,12 +252,7 @@ export function SearchJobsPage() {
                       <ExternalLink className="h-3.5 w-3.5" />
                       View
                     </a>
-                    <CliOnlyAction
-                      command={`career-agent prepare --opportunity-file <path>/${opportunity.id}.json --profile profile.json`}
-                      size="sm"
-                    >
-                      Prepare via CLI
-                    </CliOnlyAction>
+                    <PrepareButton opportunityId={opportunity.id} />
                   </div>
                 </div>
               ))}

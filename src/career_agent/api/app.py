@@ -28,10 +28,13 @@ from career_agent.api.routers import (
     billing,
     coach,
     discover,
+    export,
     health,
+    master_profile,
     notification_settings,
     notifications,
     organizations,
+    prepare_actions,
     resume_variants,
     reviews,
     roles,
@@ -80,6 +83,15 @@ _DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 #: ``submit_prepared_application``/``SubmissionEngine``), so no safety gate
 #: this project already relies on (human review, human confirmation,
 #: fail-closed execution boundary) is bypassed -- only the interface moved.
+#: Phase 64 (ADR-0082) adds ``master_profile`` -- a real per-user Master
+#: Profile store (``SqliteMasterProfileStore``), mirroring
+#: ``SqliteUserPreferencesStore``'s exact shape. The CLI's file-based
+#: loader is untouched; this is the dashboard's own analogue.
+#: Phase 65 (ADR-0083) adds ``export`` -- GET-only ``.xlsx`` downloads of
+#: the caller's own applications/submissions. It lives under ``/export``
+#: (a binary attachment, not JSON) rather than ``/api``, so it is
+#: read-only but outside the ``/api/*`` GET-only JSON proof; it joins this
+#: group because it has no mutating method.
 _READ_ONLY_ROUTERS = (
     health,
     applications,
@@ -90,6 +102,7 @@ _READ_ONLY_ROUTERS = (
     roles,
     admin,
     audit_log,
+    export,
 )
 _WRITE_CAPABLE_ROUTERS = (
     auth,
@@ -101,6 +114,8 @@ _WRITE_CAPABLE_ROUTERS = (
     team,
     billing,
     discover,
+    master_profile,
+    prepare_actions,
     reviews,
     submission_actions,
 )

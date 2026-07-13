@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { QueryState } from "@/components/QueryState";
+import { DownloadExcelButton } from "@/components/DownloadExcelButton";
+import { exportApi } from "@/services/exportApi";
 import { useApplications } from "@/hooks/useApi";
 
 const PAGE_SIZE = 10;
@@ -29,7 +31,10 @@ export function ApplicationsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Applications</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Applications</h1>
+        <DownloadExcelButton onDownload={exportApi.applications} />
+      </div>
 
       <Input
         placeholder="Search by company or role..."
