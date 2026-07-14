@@ -8,6 +8,7 @@ never sees another's rows.
 
 from __future__ import annotations
 
+import shutil
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -16,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
+from career_agent.agents.resume.file_renderer import PdfConversionUnavailableError
 from career_agent.api.app import create_app
 from career_agent.api.rate_limit import auth_rate_limiter
 from career_agent.core.security import (
@@ -297,6 +299,10 @@ def test_applications_export_leaves_resume_column_blank_without_a_variant(
     assert sheet.cell(row=2, column=resume_col).value in (None, "")
 
 
+@pytest.mark.skipif(
+    shutil.which("soffice") is None,
+    reason="LibreOffice (soffice) not available in this environment",
+)
 def test_resume_pdf_download_returns_a_real_pdf(client: TestClient) -> None:
     _create_user(_OWNER_ID, "owner@example.com")
     SqliteMasterProfileStore(_db_path()).save(_OWNER_ID, _master_profile())
@@ -314,6 +320,36 @@ def test_resume_pdf_download_returns_a_real_pdf(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF")
+
+
+def test_resume_pdf_download_returns_503_when_conversion_is_unavailable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deterministic regardless of whether this environment has LibreOffice --
+    forces the same `PdfConversionUnavailableError` path the real "no soffice
+    on PATH" case takes (ADR-0080's "the capability may not exist here"
+    precedent), proving the endpoint degrades to a real 503, never a bare 500.
+    """
+    _create_user(_OWNER_ID, "owner@example.com")
+    SqliteMasterProfileStore(_db_path()).save(_OWNER_ID, _master_profile())
+    SqliteResumeVariantStore(_db_path()).save(
+        _resume_variant(), user_id=_OWNER_ID
+    )
+    token = create_resume_download_token(
+        user_id=_OWNER_ID,
+        resume_variant_id="variant-1",
+        secret_key=_JWT_SECRET,
+        expires_in_days=90,
+    )
+
+    def _unavailable(*args: object, **kwargs: object) -> None:
+        raise PdfConversionUnavailableError("stub: soffice not on PATH")
+
+    monkeypatch.setattr(
+        "career_agent.api.routers.export.convert_to_pdf", _unavailable
+    )
+    response = client.get(f"/export/resume/variant-1.pdf?token={token}")
+    assert response.status_code == 503
 
 
 def test_resume_pdf_download_rejects_a_garbage_token(client: TestClient) -> None:
