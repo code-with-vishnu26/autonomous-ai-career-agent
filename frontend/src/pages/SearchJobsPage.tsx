@@ -17,7 +17,7 @@ import {
   useDiscoveryRun,
   useTriggerDiscovery,
 } from "@/hooks/useDiscover";
-import type { JobPreferences } from "@/types/api";
+import type { ClassifiedOpportunity, JobPreferences, Opportunity } from "@/types/api";
 
 interface SearchFormValues {
   role: string;
@@ -41,6 +41,37 @@ function toFormValues(preferences: JobPreferences | undefined): SearchFormValues
     employmentType: preferences?.employment_types[0] ?? "any",
     provider: preferences?.preferred_ats_providers[0] ?? "any",
   };
+}
+
+function OpportunityRow({ opportunity }: { opportunity: Opportunity }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-sm font-medium">
+          {opportunity.title} @ {opportunity.canonical_company}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {opportunity.location ?? "Location unspecified"}
+          {opportunity.remote ? " · Remote" : ""}
+        </p>
+        <div className="mt-1 flex flex-wrap gap-1">
+          <Badge variant="muted">{opportunity.source}</Badge>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <a
+          href={opportunity.source_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          View
+        </a>
+        <PrepareButton opportunityId={opportunity.id} />
+      </div>
+    </div>
+  );
 }
 
 function splitList(value: string): string[] {
@@ -225,39 +256,40 @@ export function SearchJobsPage() {
             isEmpty={(opportunities.data ?? []).length === 0}
             emptyMessage="No opportunities discovered yet -- run a search above."
           >
-            <div className="space-y-3">
-              {(opportunities.data ?? []).map((opportunity) => (
-                <div
-                  key={opportunity.id}
-                  className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="text-sm font-medium">
-                      {opportunity.title} @ {opportunity.canonical_company}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {opportunity.location ?? "Location unspecified"}
-                      {opportunity.remote ? " · Remote" : ""}
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      <Badge variant="muted">{opportunity.source}</Badge>
+            {(() => {
+              const results: ClassifiedOpportunity[] = opportunities.data ?? [];
+              const exact = results.filter((r) => r.relevance_tier === "exact");
+              const related = results.filter((r) => r.relevance_tier === "related");
+              return (
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    {exact.map((r) => (
+                      <OpportunityRow
+                        key={r.opportunity.id}
+                        opportunity={r.opportunity}
+                      />
+                    ))}
+                  </div>
+                  {related.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="border-t border-border pt-4">
+                        <p className="text-sm font-medium">Related roles</p>
+                        <p className="text-xs text-muted-foreground">
+                          Adjacent sub-roles for your search (e.g. backend,
+                          cloud, DevOps) you might also want to see.
+                        </p>
+                      </div>
+                      {related.map((r) => (
+                        <OpportunityRow
+                          key={r.opportunity.id}
+                          opportunity={r.opportunity}
+                        />
+                      ))}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={opportunity.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      View
-                    </a>
-                    <PrepareButton opportunityId={opportunity.id} />
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </QueryState>
         </CardContent>
       </Card>

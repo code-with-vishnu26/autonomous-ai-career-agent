@@ -19,13 +19,28 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class BasicsSection(BaseModel):
-    """The JSON Resume "basics" section: identity and contact facts."""
+    """The JSON Resume "basics" section: identity and contact facts.
+
+    ``linkedin_url``/``github_url``/``website_url``/``other_links`` (Phase
+    72, ADR-0090) are the applicant's *own* public profile links -- never
+    scraped or inferred, always exactly what the user themselves entered
+    during onboarding or résumé import. All optional and additive: an
+    existing stored profile with none of them set loads and renders
+    exactly as before. Rendered on the résumé under the applicant's own
+    name (``agents/resume/file_renderer.py``), never under any other
+    identity -- see ADR-0090 for why this project does not, and will not,
+    source resume content from anyone else's LinkedIn profile.
+    """
 
     name: str
     email: str
     phone: str | None = None
     summary: str | None = None
     location: str | None = None
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    website_url: str | None = None
+    other_links: list[str] = Field(default_factory=list)
 
 
 class SkillEntry(BaseModel):
@@ -70,6 +85,11 @@ class ProjectEntry(BaseModel):
     id: str
     name: str
     description: str | None = None
+    #: The project's own public link (GitHub repo, live demo, etc.) --
+    #: Phase 72/ADR-0090, optional and additive. Rendered next to the
+    #: project name; never fabricated or looked up, only what the user
+    #: entered themselves.
+    url: str | None = None
     highlights: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
 

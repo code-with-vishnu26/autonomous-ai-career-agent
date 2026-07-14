@@ -42,7 +42,17 @@ function newId(prefix: string): string {
 }
 
 const EMPTY_VALUES: MasterProfileUpdate = {
-  basics: { name: "", email: "", phone: null, summary: null, location: null },
+  basics: {
+    name: "",
+    email: "",
+    phone: null,
+    summary: null,
+    location: null,
+    linkedin_url: null,
+    github_url: null,
+    website_url: null,
+    other_links: [],
+  },
   work: [],
   education: [],
   skills: [],
@@ -161,6 +171,42 @@ export function OnboardingWizardPage() {
                     {...register("basics.summary")}
                   />
                 </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-muted-foreground">LinkedIn</span>
+                  <Input
+                    placeholder="https://linkedin.com/in/you"
+                    {...register("basics.linkedin_url")}
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-muted-foreground">GitHub</span>
+                  <Input
+                    placeholder="https://github.com/you"
+                    {...register("basics.github_url")}
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-muted-foreground">Portfolio / website</span>
+                  <Input
+                    placeholder="https://you.dev"
+                    {...register("basics.website_url")}
+                  />
+                </label>
+                <Controller
+                  control={control}
+                  name="basics.other_links"
+                  render={({ field: linksField }) => (
+                    <label className="space-y-1 text-sm sm:col-span-2">
+                      <span className="text-muted-foreground">
+                        Other links (one per line)
+                      </span>
+                      <Textarea
+                        defaultValue={(linksField.value ?? []).join("\n")}
+                        onChange={(e) => linksField.onChange(linesToList(e.target.value))}
+                      />
+                    </label>
+                  )}
+                />
               </CardContent>
             </Card>
           )}
@@ -392,6 +438,7 @@ export function OnboardingWizardPage() {
                       id: newId("project"),
                       name: "",
                       description: null,
+                      url: null,
                       highlights: [],
                       keywords: [],
                     })
@@ -414,6 +461,15 @@ export function OnboardingWizardPage() {
                     <label className="space-y-1 text-sm">
                       <span className="text-muted-foreground">Description</span>
                       <Textarea {...register(`projects.${index}.description`)} />
+                    </label>
+                    <label className="space-y-1 text-sm">
+                      <span className="text-muted-foreground">
+                        Link (GitHub repo, live demo, ...)
+                      </span>
+                      <Input
+                        placeholder="https://github.com/you/project"
+                        {...register(`projects.${index}.url`)}
+                      />
                     </label>
                     <Controller
                       control={control}

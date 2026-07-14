@@ -397,6 +397,25 @@ class SemanticKeywordMatcher(Protocol):
 
 
 @runtime_checkable
+class RoleExpander(Protocol):
+    """Optional LLM fallback for role search expansion (Phase 72, ADR-0090).
+
+    :func:`~career_agent.domain.role_taxonomy.expand_role`'s curated
+    taxonomy is the primary, deterministic mechanism; this port is only
+    ever consulted (:mod:`career_agent.domain.role_expansion`) when the
+    taxonomy has *no* entry at all for a caller's role query. Same
+    "advisory only" contract as :class:`SemanticKeywordMatcher`: its
+    output can only ever *add* candidate related-role search terms to the
+    ``related`` tier, never gate, filter, or promote anything to an exact
+    match, and never replaces the taxonomy for a role it already knows.
+    """
+
+    async def suggest_related_roles(self, role_query: str) -> list[str]:
+        """Free-text related job-role titles for ``role_query``. May return []."""
+        ...
+
+
+@runtime_checkable
 class TruthfulnessGate(Protocol):
     """Verifies a draft against the master profile and renders a verdict (ADR-0003).
 

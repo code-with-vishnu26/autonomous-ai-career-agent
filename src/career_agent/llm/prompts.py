@@ -179,3 +179,24 @@ MISSING KEYWORDS:
 RESUME TEXT:
 {resume_text}
 """
+
+#: Tracks the optional RoleExpander LLM port's contract (Phase 72, ADR-0090)
+#: -- same "tracks the port, not one audited record" scoping as
+#: ``COACH_ADVISOR_PROMPT_VERSION`` above (ADR-0022): this port's output is
+#: advisory-only search-term suggestions, never an authoritative record a
+#: version needs to be carried on.
+ROLE_EXPANDER_PROMPT_VERSION = "role-expander-v1"
+
+# Advisory only (ADR-0090): the response is never trusted as an exact match
+# or used to filter/exclude anything -- domain.role_expansion only ever
+# folds it into a search's "related roles" bucket, alongside whatever the
+# curated taxonomy already found (or nothing, if this call fails).
+ROLE_EXPANDER_PROMPT = """\
+A job seeker is searching for roles titled "{role_query}". List 3 to 6 \
+OTHER, closely related job titles a candidate for this role would also \
+plausibly want to see -- adjacent specializations or sub-roles in the same \
+field, not synonyms of the same title and not unrelated fields.
+
+Respond with ONLY a JSON array of plain job-title strings, no other text:
+["<related title>", "<related title>", ...]
+"""

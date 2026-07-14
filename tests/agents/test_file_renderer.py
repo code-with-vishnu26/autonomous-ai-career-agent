@@ -128,6 +128,61 @@ def test_contact_info_is_in_the_body_not_a_header(tmp_path: Path) -> None:
     assert "ada@example.com" in body
 
 
+def test_no_links_configured_renders_no_extra_line(tmp_path: Path) -> None:
+    """Phase 72/ADR-0090: an existing profile with none of the new link
+    fields set renders identically to before this phase -- no blank line,
+    no empty second contact line."""
+    profile = _profile_with_education(_EDUCATION)
+    artifact = render_resume_docx("r-1", _content(), profile, tmp_path)
+    paragraphs = [p.text for p in Document(artifact.path).paragraphs]
+    contact_index = paragraphs.index("ada@example.com")
+    assert paragraphs[contact_index + 1] == "Summary"
+
+
+def test_profile_links_render_on_a_second_contact_line(tmp_path: Path) -> None:
+    profile = _profile_with_education(_EDUCATION)
+    profile = profile.model_copy(
+        update={
+            "basics": profile.basics.model_copy(
+                update={
+                    "linkedin_url": "https://linkedin.com/in/ada",
+                    "github_url": "https://github.com/ada",
+                    "website_url": "https://ada.dev",
+                    "other_links": ["https://ada.dev/talks"],
+                }
+            )
+        }
+    )
+    artifact = render_resume_docx("r-1", _content(), profile, tmp_path)
+    body = _all_text(artifact.path)
+    assert "https://linkedin.com/in/ada" in body
+    assert "https://github.com/ada" in body
+    assert "https://ada.dev" in body
+    assert "https://ada.dev/talks" in body
+
+
+def test_project_url_renders_next_to_the_project_name(tmp_path: Path) -> None:
+    profile = _profile_with_education(_EDUCATION)
+    profile = profile.model_copy(
+        update={
+            "projects": [
+                project.model_copy(update={"url": "https://github.com/ada/tool"})
+                for project in profile.projects
+            ]
+        }
+    )
+    artifact = render_resume_docx("r-1", _content(), profile, tmp_path)
+    body = _all_text(artifact.path)
+    assert "https://github.com/ada/tool" in body
+
+
+def test_project_without_a_url_renders_no_parenthetical(tmp_path: Path) -> None:
+    profile = _profile_with_education(_EDUCATION)
+    artifact = render_resume_docx("r-1", _content(), profile, tmp_path)
+    body = _all_text(artifact.path)
+    assert "()" not in body
+
+
 def test_base_font_is_calibri_11(tmp_path: Path) -> None:
     profile = _profile_with_education(_EDUCATION)
     artifact = render_resume_docx("r-1", _content(), profile, tmp_path)

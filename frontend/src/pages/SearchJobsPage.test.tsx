@@ -96,6 +96,48 @@ describe("SearchJobsPage", () => {
     });
   });
 
+  it("shows exact matches and a separate related-roles section", async () => {
+    const opp = (id: string, title: string) => ({
+      id,
+      company_id: "acme",
+      canonical_company: "Acme Corp",
+      title,
+      source: "job_board",
+      source_url: `https://example.invalid/${id}`,
+      ats_ref: null,
+      posted_at: null,
+      location: "Remote",
+      remote: true,
+      description_raw: "",
+      discovered_at: "2026-01-01T00:00:00Z",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/user/preferences")) return jsonResponse(PREFERENCES);
+        if (url.includes("/discover/opportunities")) {
+          return jsonResponse([
+            {
+              opportunity: opp("opp-exact", "Software Developer"),
+              relevance_tier: "exact",
+            },
+            {
+              opportunity: opp("opp-related", "Backend Developer"),
+              relevance_tier: "related",
+            },
+          ]);
+        }
+        return jsonResponse([]);
+      }),
+    );
+    renderWithProviders(<SearchJobsPage />);
+
+    expect(await screen.findByText(/Software Developer @ Acme Corp/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Backend Developer @ Acme Corp/i)).toBeInTheDocument();
+    expect(screen.getByText(/related roles/i)).toBeInTheDocument();
+  });
+
   it("shows an empty state when no opportunities have been discovered yet", async () => {
     vi.stubGlobal(
       "fetch",

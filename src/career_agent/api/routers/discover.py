@@ -19,20 +19,27 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from career_agent.agents.research.role_expansion import (
+    suggest_related_terms_for_unknown_role,
+)
 from career_agent.api.dependencies import (
     get_discovery_run_store,
     get_opportunity_repository,
+    get_role_expander,
     get_settings,
     get_user_preferences_store,
 )
 from career_agent.api.security import get_current_user
 from career_agent.cli import build_discovery_sources, run_discover_command
 from career_agent.domain.discovery_run import DiscoveryRun
+from career_agent.domain.job_preferences import JobPreferences
 from career_agent.domain.job_relevance import matches_search
+from career_agent.domain.job_relevance import relevance_tier as classify_relevance_tier
 from career_agent.domain.models import Opportunity
 from career_agent.domain.user import User
 
@@ -154,14 +161,74 @@ def list_runs(
     return discovery_run_store.by_user(current_user.id)
 
 
-@router.get("/opportunities", response_model=list[Opportunity])
+class ClassifiedOpportunity(BaseModel):
+    """One opportunity plus how it matches the caller's own role search.
+
+    (Phase 72, ADR-0090) The classification is per-caller (it depends on
+    *their* ``JobPreferences``), even though the underlying opportunity
+    catalog is shared/deduplicated across every user.
+    """
+
+    opportunity: Opportunity
+    relevance_tier: Literal["exact", "related", "none"]
+
+
+async def _extra_related_terms_for(
+    preferences: JobPreferences | None, role_expander
+) -> frozenset[str]:
+    """Aggregate LLM-suggested related terms across every unknown title.
+
+    (Phase 72, ADR-0090) One call per title the curated taxonomy has no
+    entry for, computed once for the whole request -- not
+    per opportunity -- so this never turns an ``N``-opportunity listing
+    into ``N`` LLM calls. Skips entirely (no calls at all) when no titles
+    are configured, since that already means "matches everything."
+    """
+    if preferences is None:
+        return frozenset()
+    terms: set[str] = set()
+    for title in (*preferences.preferred_titles, *preferences.alternative_titles):
+        terms |= await suggest_related_terms_for_unknown_role(title, role_expander)
+    return frozenset(terms)
+
+
+@router.get("/opportunities", response_model=list[ClassifiedOpportunity])
 async def list_opportunities(
     limit: int = 50,
     current_user: User = Depends(get_current_user),
     opportunity_repository=Depends(get_opportunity_repository),
-) -> list[Opportunity]:
-    """The most recently discovered opportunities (shared, deduplicated catalog)."""
-    return await opportunity_repository.list_recent(limit)
+    user_preferences_store=Depends(get_user_preferences_store),
+    role_expander=Depends(get_role_expander),
+) -> list[ClassifiedOpportunity]:
+    """Recently discovered opportunities, classified per the caller's search.
+
+    A shared, deduplicated catalog; ``"related"`` (Phase 72) surfaces
+    adjacent sub-roles the curated
+    taxonomy names (e.g. "Backend Developer"/"Cloud Engineer" for a
+    "Software Developer" search) as a distinct tier -- callers that only
+    want the historical exact-match behavior can filter to
+    ``relevance_tier == "exact"``. No preferences configured classifies
+    everything ``"exact"`` (Phase 70's original "matches everything"). When
+    a configured title matches nothing in the curated taxonomy and a Groq
+    key is configured, an optional LLM fallback (ADR-0090) may add further
+    ``"related"`` suggestions -- it can never affect the ``"exact"`` tier.
+    """
+    opportunities = await opportunity_repository.list_recent(limit)
+    preferences = user_preferences_store.get(current_user.id)
+    extra_related_terms = await _extra_related_terms_for(preferences, role_expander)
+    return [
+        ClassifiedOpportunity(
+            opportunity=opp,
+            relevance_tier=(
+                classify_relevance_tier(
+                    opp, preferences, extra_related_terms=extra_related_terms
+                )
+                if preferences is not None
+                else "exact"
+            ),
+        )
+        for opp in opportunities
+    ]
 
 
 @router.get("/{run_id}", response_model=DiscoveryRun)

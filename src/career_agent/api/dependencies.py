@@ -182,3 +182,16 @@ def get_search_provider():
 def get_opportunity_repository() -> SqliteOpportunityRepository:
     """The same deduplicating opportunity catalog ``career-agent discover`` uses."""
     return SqliteOpportunityRepository(_database_path())
+
+
+def get_role_expander():
+    """Optional LLM fallback for search-role expansion (Phase 72, ADR-0090).
+
+    ``None`` when no Groq key is configured -- the caller (``domain.
+    role_expansion.suggest_related_terms_for_unknown_role``) already
+    degrades gracefully to "no extra related terms" in that case, the same
+    "None is a legitimate answer" contract ``get_search_provider`` follows.
+    """
+    from career_agent.llm.providers import select_role_expander
+
+    return select_role_expander(Settings())
