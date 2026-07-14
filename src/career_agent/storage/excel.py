@@ -311,13 +311,21 @@ _ENRICHED_APPLICATION_COLUMNS: list[tuple[str, str]] = [
     ("status", "Status"),
     ("job_url", "Job URL"),
     ("careers_url", "Careers Page"),
+    ("linkedin_url", "Company LinkedIn"),
     ("company_research", "Company Research"),
     ("research_sources", "Research Sources"),
+    ("resume_pdf_url", "Résumé (PDF)"),
     ("cover_letter", "Cover Letter"),
 ]
 
-#: Columns whose values are single public URLs -> clickable hyperlinks.
-_ENRICHED_LINK_KEYS = frozenset({"job_url", "careers_url"})
+#: Columns whose values are single URLs -> clickable hyperlinks. The last
+#: three are public; ``resume_pdf_url`` (Phase 71, ADR-0089) is instead a
+#: signed, capability-bearing link scoped to exactly the caller's own
+#: tailored résumé -- still a single URL, so it renders as a hyperlink the
+#: same way.
+_ENRICHED_LINK_KEYS = frozenset(
+    {"job_url", "careers_url", "linkedin_url", "resume_pdf_url"}
+)
 
 
 def enriched_applications_xlsx_bytes(rows: list[dict[str, object]]) -> bytes:

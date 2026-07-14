@@ -34,6 +34,11 @@ class CompanyResearch(BaseModel):
     available: bool
     summary: str = ""
     careers_url: str | None = None
+    #: The company's own public LinkedIn page, if found among the search
+    #: results (Phase 71, ADR-0089) -- the company's page, never a named
+    #: employee's profile; the same "public company channel, not a person"
+    #: line ``careers_url`` already draws.
+    linkedin_url: str | None = None
     sources: list[ResearchSource] = Field(default_factory=list)
 
     @classmethod

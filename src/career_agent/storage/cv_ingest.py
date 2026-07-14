@@ -1,18 +1,23 @@
-"""CV document parsing and deterministic fact extraction (Phase 26, ADR-0052).
+"""CV document parsing and deterministic fact extraction.
 
-The I/O boundary for CV ingestion: reads a real document off disk, produces
-a deterministic normalized text + document identity, and extracts only
+Phase 26, ADR-0052; web upload + PDF, Phase 71, ADR-0089.
+
+The I/O boundary for CV ingestion: reads a real document (from disk or, for
+the web upload path, from already-read bytes), produces a deterministic
+normalized text + document identity, and extracts only
 structurally-unambiguous facts (email, phone, profile URLs, a name
 heuristic, an explicit "Skills:" line) as :class:`~career_agent.domain.
 ingestion.FactProposal`s. Everything it produces is ``UNVERIFIED`` and
 source-bound; nothing here writes a profile or trusts a fact.
 
 Formats: DOCX (via the already-declared ``python-docx`` runtime dependency,
-ADR-0033) and plain text (``.txt``/``.md``, stdlib). **No PDF** (no PDF
-reader is a declared dependency -- ``pypdf`` is only incidentally present
-in some environments, and relying on an undeclared transitive would break
-for real installs), **no OCR**, **no LLM**. These are named, deferred
-limitations, not oversights.
+ADR-0033), PDF (via the now-declared ``pypdf`` dependency, ADR-0089 --
+previously named as a deferred gap because ``pypdf`` was only an
+undeclared transitive of ``browser-use``; declaring it directly at the
+same version already resolved makes PDF -- the format most résumés are
+actually in -- a real, tested capability), and plain text (``.txt``/
+``.md``, stdlib). **No OCR** (a scanned/image-only PDF yields no text),
+**no LLM**. These are named, deferred limitations, not oversights.
 
 Untrusted-input discipline: CV text is treated as data only. It is never
 interpreted as an instruction, never used to build an LLM prompt here (this
@@ -28,6 +33,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
 
 from career_agent.domain.ingestion import (
@@ -77,47 +83,88 @@ def _normalize(raw_text: str) -> str:
 
 
 def read_document(path: Path) -> tuple[bytes, str, str]:
-    """Return ``(raw_bytes, normalized_text, source_type)`` for a CV file.
+    """Return ``(raw_bytes, normalized_text, source_type)`` for a CV file on disk.
+
+    Thin wrapper over :func:`read_document_bytes` -- reads the file, then
+    dispatches on its name exactly as the bytes-based version does, so a
+    disk-based (CLI) and an upload-based (web) caller share one parser.
+    """
+    return read_document_bytes(path.name, path.read_bytes())
+
+
+def read_document_bytes(filename: str, raw_bytes: bytes) -> tuple[bytes, str, str]:
+    """Return ``(raw_bytes, normalized_text, source_type)`` for CV bytes.
+
+    ``filename`` is used only for its extension (to pick a parser) and in
+    error messages -- never opened, never trusted as a path. This is the
+    entry point for a web upload (``UploadFile.filename`` + already-read
+    bytes); :func:`read_document` is the disk-based (CLI) convenience
+    wrapper over it.
 
     Raises :class:`UnsupportedDocumentError` for an unknown extension and
     :class:`DocumentParseError` for a malformed/oversized document -- never
     a bare parser exception, and never any profile mutation.
     """
-    raw_bytes = path.read_bytes()
     if len(raw_bytes) > _MAX_BYTES:
         raise DocumentParseError(
-            f"{path} is {len(raw_bytes)} bytes, over the {_MAX_BYTES}-byte "
+            f"{filename} is {len(raw_bytes)} bytes, over the {_MAX_BYTES}-byte "
             f"limit -- refusing to parse (a resume is never this large)"
         )
-    suffix = path.suffix.lower()
+    suffix = Path(filename).suffix.lower()
     if suffix in {".txt", ".md"}:
         try:
             text = raw_bytes.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise DocumentParseError(f"{path} is not valid UTF-8 text: {exc}") from exc
+            raise DocumentParseError(
+                f"{filename} is not valid UTF-8 text: {exc}"
+            ) from exc
         return raw_bytes, _normalize(text), "text"
     if suffix == ".docx":
-        text = _extract_docx_text(path)
+        text = _extract_docx_text(filename, raw_bytes)
         return raw_bytes, _normalize(text), "docx"
+    if suffix == ".pdf":
+        text = _extract_pdf_text(filename, raw_bytes)
+        return raw_bytes, _normalize(text), "pdf"
     raise UnsupportedDocumentError(
-        f"{path.suffix!r} is not a supported CV format. Supported: .docx, "
-        f".txt, .md (PDF and image/OCR resumes are a named, deferred gap -- "
-        f"export your CV to .docx or paste it as .txt for now)."
+        f"{suffix!r} is not a supported CV format. Supported: .pdf, .docx, "
+        f".txt, .md (a scanned/image-only PDF with no embedded text -- OCR "
+        f"-- is a named, deferred gap)."
     )
 
 
-def _extract_docx_text(path: Path) -> str:
+def _extract_docx_text(filename: str, raw_bytes: bytes) -> str:
     """Extract paragraph text from a DOCX via python-docx (declared dep)."""
     try:
         import docx  # python-docx, a declared runtime dependency (ADR-0033)
 
-        document = docx.Document(str(path))
+        document = docx.Document(BytesIO(raw_bytes))
     except Exception as exc:  # noqa: BLE001 -- any parse failure is one typed error
         raise DocumentParseError(
-            f"{path} could not be read as a .docx document: "
+            f"{filename} could not be read as a .docx document: "
             f"{type(exc).__name__}: {exc}"
         ) from exc
     return "\n".join(paragraph.text for paragraph in document.paragraphs)
+
+
+def _extract_pdf_text(filename: str, raw_bytes: bytes) -> str:
+    """Extract page text from a PDF via pypdf (declared dep, ADR-0089).
+
+    Text-layer extraction only -- a scanned/image PDF with no embedded text
+    layer yields an empty (or near-empty) string, which downstream simply
+    proposes no facts from (never an error: a résumé with no extractable
+    facts is not a malformed document).
+    """
+    try:
+        from pypdf import PdfReader  # declared runtime dependency (ADR-0089)
+
+        reader = PdfReader(BytesIO(raw_bytes))
+        pages = [page.extract_text() or "" for page in reader.pages]
+    except Exception as exc:  # noqa: BLE001 -- any parse failure is one typed error
+        raise DocumentParseError(
+            f"{filename} could not be read as a .pdf document: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+    return "\n".join(pages)
 
 
 # Deterministic, conservative patterns. Only structurally-unambiguous facts
@@ -263,12 +310,30 @@ def _propose_skills(
 
 
 def ingest_document(path: Path) -> IngestionDraft:
-    """Parse a CV into an :class:`IngestionDraft` with conflicts annotated.
+    """Parse a CV file on disk into an :class:`IngestionDraft`.
 
-    Pure of profile state -- it reads only the document. The returned draft
-    is entirely ``UNVERIFIED``.
+    Thin wrapper over :func:`ingest_document_bytes` -- the disk-based (CLI)
+    convenience path; ``source_path`` records the real path for the CLI's
+    later source-drift re-check.
     """
-    raw_bytes, normalized_text, source_type = read_document(path)
+    return ingest_document_bytes(
+        path.name, path.read_bytes(), source_path=str(path)
+    )
+
+
+def ingest_document_bytes(
+    filename: str, raw_bytes: bytes, *, source_path: str | None = None
+) -> IngestionDraft:
+    """Parse CV bytes into an :class:`IngestionDraft` with conflicts annotated.
+
+    The entry point for a web upload: ``filename``/``raw_bytes`` come
+    straight from an ``UploadFile``, with no path ever touched.
+    ``source_path`` is a human-readable label only (there is no real path
+    for an in-memory upload); it defaults to ``filename``. Pure of profile
+    state -- it reads only the document. The returned draft is entirely
+    ``UNVERIFIED``.
+    """
+    raw_bytes, normalized_text, source_type = read_document_bytes(filename, raw_bytes)
     document_sha = document_digest(raw_bytes)
     proposals = propose_facts(normalized_text, document_sha, source_type)
     conflicts = detect_conflicts(proposals)
@@ -279,7 +344,7 @@ def ingest_document(path: Path) -> IngestionDraft:
     return IngestionDraft(
         document_digest=document_sha,
         source_type=source_type,
-        source_path=str(path),
+        source_path=source_path or filename,
         proposals=proposals,
     )
 

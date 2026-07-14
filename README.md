@@ -72,7 +72,8 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design and
 | Area | v1.0 status |
 |------|-------------|
 | Discover, rank, ingest, confirm, promote, tailor, gate, ATS, render, journal, report, export | **SUPPORTED** |
-| PDF CV import / OCR | **NOT_SUPPORTED** (`.docx` / `.txt` / `.md` only) |
+| PDF CV import | **SUPPORTED** (Phase 71, text-layer extraction; `.pdf` / `.docx` / `.txt` / `.md`) |
+| OCR (scanned/image-only résumés) | **NOT_SUPPORTED** — proposes zero facts, never an error |
 | Browser submission / email-to-apply / autonomous external submission | **NOT_SUPPORTED** — code exists but is **unwired and unreachable** from the CLI |
 | Live LLM output *quality* | Validated by a real controlled live-Groq smoke run (Phase 36) — CI itself never has an API key, so it can make **no** real LLM call |
 | CI | Runs on every push/PR to `main`: lint, architecture contracts, full test suite, packaging, clean-install, and an offline CLI smoke — on **Linux and Windows** |
@@ -485,8 +486,18 @@ by `GET`/`PUT /user/master-profile` and a new `SqliteMasterProfileStore`
 pre-fills from any existing stored profile, so it's safe to revisit, not
 a one-time-only flow, and its final step links to the existing Job
 Preferences and Notification Settings pages rather than duplicating
-them. CV upload (`import-cv`/`promote-cv`) remains CLI-only for now — it
-needs new multipart-upload infrastructure this phase didn't build.
+them. **CV upload now also works over the web, right on the Welcome step**
+(Phase 71, [ADR-0089](docs/adr/0089-web-resume-upload-and-signed-resume-links.md)):
+upload a `.pdf`/`.docx`/`.txt`/`.md` résumé (`POST
+/user/master-profile/import`) and the wizard shows exactly what it found —
+name, email, phone, location, skills — each with the text it was found in,
+for you to confirm, reject, or leave skipped one at a time (`POST
+/user/master-profile/import/{token}/confirm`). Nothing is written to your
+profile until you confirm it, reusing the exact same fail-closed
+CV-ingestion boundary the CLI's `import-cv`/`promote-cv` has used since
+Phase 26 (ADR-0052); confirmed facts immediately pre-fill the rest of the
+wizard's steps. `career-agent import-cv`/`promote-cv` remain available and
+unchanged for CLI users.
 
 Once you've onboarded, the Career Coach's **Match My Profile** page
 (Phase 66, [ADR-0084](docs/adr/0084-profile-backed-ats-scoring.md)) scores
@@ -505,15 +516,21 @@ submissions, each scoped to your own rows (`GET /export/applications.xlsx`
 works identically for CLI users.
 
 The applications workbook is **enriched** (Phase 69,
-[ADR-0087](docs/adr/0087-enriched-excel-company-research.md)): each row
-joins the posting's accurate details (location, remote, source, posted
-date) with clickable public links (the **job posting** and the company's
-**careers page**), a source-backed **company-research** summary, and the
-tailored **cover letter** inline. Company research uses real web search —
-add an **Exa** or **Google Custom Search** API key in Settings to enable
-it; with no key it honestly says so rather than inventing anything. No
-personal data about individuals is ever collected — public company
-channels only (their ToS forbid scraping people, and so do we).
+[ADR-0087](docs/adr/0087-enriched-excel-company-research.md); extended
+Phase 71, [ADR-0089](docs/adr/0089-web-resume-upload-and-signed-resume-links.md)):
+each row joins the posting's accurate details (location, remote, source,
+posted date) with clickable public links (the **job posting**, the
+company's **careers page**, and its **LinkedIn page**), a source-backed
+**company-research** summary, the tailored **cover letter** inline, and a
+signed **Résumé (PDF)** link to the exact tailored résumé that was
+prepared for that application — click it anytime, from anywhere, no
+sign-in required (it's a scoped, expiring capability link, not a public
+URL), and it always renders the current content fresh rather than a
+stale cached copy. Company research uses real web search — add an **Exa**
+or **Google Custom Search** API key in Settings to enable it; with no key
+it honestly says so rather than inventing anything. No personal data
+about individuals is ever collected — public company channels only, never
+named employees (their ToS forbid scraping people, and so do we).
 
 Build for production with `npm run build` (output in `frontend/dist/`);
 test with `npm test` (Vitest + React Testing Library); type-check with

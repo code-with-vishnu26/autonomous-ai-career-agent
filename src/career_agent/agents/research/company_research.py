@@ -24,6 +24,11 @@ def _looks_like_careers(url: str) -> bool:
     return any(token in lowered for token in ("career", "job", "/join", "hiring"))
 
 
+def _looks_like_company_linkedin(url: str) -> bool:
+    """A LinkedIn *company* page -- ``/company/``, never ``/in/`` (a person)."""
+    return "linkedin.com/company/" in url.lower()
+
+
 async def research_company(
     company: str,
     provider: SearchProvider | None,
@@ -54,10 +59,15 @@ async def research_company(
     careers_url = next(
         (result.url for result in kept if _looks_like_careers(result.url)), None
     )
+    linkedin_url = next(
+        (result.url for result in kept if _looks_like_company_linkedin(result.url)),
+        None,
+    )
     summary = kept[0].snippet.strip() if kept else ""
     return CompanyResearch(
         available=True,
         summary=summary,
         careers_url=careers_url,
+        linkedin_url=linkedin_url,
         sources=[ResearchSource(title=r.title or r.url, url=r.url) for r in kept],
     )

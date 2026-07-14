@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Callout } from "@/components/ui/callout";
 import { Badge } from "@/components/ui/badge";
 import { QueryState } from "@/components/QueryState";
+import { ResumeImportPanel } from "@/components/ResumeImportPanel";
 import { useMasterProfile, useUpdateMasterProfile } from "@/hooks/useMasterProfile";
 import type { MasterProfileUpdate } from "@/types/api";
 
@@ -101,31 +102,34 @@ export function OnboardingWizardPage() {
         This wizard writes directly to your Master Profile (
         <code>PUT /user/master-profile</code>) -- the same JSON-Resume-shaped
         source of truth <code>career-agent prepare</code>/<code>submit</code>{" "}
-        already build résumés against. Importing an existing résumé (CV
-        upload) is a separate, upcoming step -- for now, fill this in
-        directly.
+        already build résumés against. Upload an existing résumé on the
+        Welcome step below to pre-fill this automatically, or fill it in by
+        hand.
       </Callout>
 
       <QueryState isLoading={profile.isLoading} isError={profile.isError}>
         <form onSubmit={onSubmit} className="space-y-6">
           {step === "welcome" && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Welcome</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <p>
-                  This short wizard captures what a tailored résumé is built
-                  from: your basics, work history, education, skills, and
-                  projects.
-                </p>
-                <p>
-                  Job Search Preferences (what you're looking for) and
-                  Notification Settings are configured separately -- links
-                  are on the final step.
-                </p>
-              </CardContent>
-            </Card>
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Welcome</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                  <p>
+                    This short wizard captures what a tailored résumé is built
+                    from: your basics, work history, education, skills, and
+                    projects.
+                  </p>
+                  <p>
+                    Job Search Preferences (what you're looking for) and
+                    Notification Settings are configured separately -- links
+                    are on the final step.
+                  </p>
+                </CardContent>
+              </Card>
+              <ResumeImportPanel />
+            </div>
           )}
 
           {step === "personal" && (

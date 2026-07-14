@@ -2344,6 +2344,111 @@ profile.
   viewable in the Review Queue); the submissions export is unchanged this
   phase.
 
+- ✅ **Search Relevance Filter + Paste-a-Job Fix -- ADR-0088 (Phase 70).**
+  Two real bugs surfaced by the owner running the dashboard end to end.
+  (1) A "software engineer" search in India returned baristas, nannies,
+  and data-entry roles from all over the world. Root cause: the free
+  firehose sources (RemoteOK/Remotive/Arbeitnow/TheMuse) return *every*
+  recent posting regardless of the search query -- only the keyed sources
+  (Adzuna/Reed/USAJobs/Jooble) filter server-side, and none were
+  configured for this user -- so discovery stored everything the firehose
+  sources returned with no client-side relevance gate. Fixed with a new
+  pure `domain/job_relevance.py`: a deterministic keyword matcher over the
+  user's configured `preferred_titles`/`alternative_titles` (stopwords and
+  sub-3-char tokens dropped, blacklisted companies excluded), threaded
+  through `run_discover_command` as an optional `relevance_filter`
+  predicate (default `None`, so the CLI and every existing test are
+  unchanged) and built from the caller's `JobPreferences` in the web
+  discover router. An empty role config matches everything, so a user who
+  never set a role sees prior behavior unchanged. (2) Clicking "Prepare
+  application" on a pasted job could fail with "Opportunity ... not
+  found": `POST /prepare/pasted` built an ad-hoc `Opportunity`, added it to
+  the repository, then re-fetched it by id in a background task -- but the
+  repository's dedup-by-fingerprint declines to insert (and thus never
+  becomes fetchable by id) on a fingerprint collision. Fixed by handing
+  the `Opportunity` object through to `_run_prepare` directly in memory
+  instead of round-tripping by id; `PasteJobCard` also stops clearing the
+  form on submit, so a failed attempt can be retried without retyping. 8
+  new backend tests. The relevance filter is opt-in per call; the dedup
+  and truthfulness gates are untouched.
+
+- ✅ **Web Résumé Upload + AI Analysis + Signed Résumé-PDF Excel Links --
+  ADR-0089 (Phase 71).** The owner asked that onboarding also accept a
+  résumé upload the AI analyzes and uses for downstream features, and that
+  the applications Excel carry the company webpage link, "working
+  employee details," LinkedIn, and a clickable PDF of whichever résumé was
+  actually submitted. "Working employee details" is honored per the
+  owner's own earlier decision (ADR-0087): public company channels only,
+  never named individuals -- **not reopened**, not silently reinterpreted.
+
+  `storage/cv_ingest.py` gained bytes-based entry points
+  (`read_document_bytes`/`ingest_document_bytes`) so a web upload
+  (`UploadFile`) and the CLI (`Path`) share one parser feeding ADR-0052's
+  fail-closed `domain/ingestion.py` promotion boundary completely
+  unmodified. PDF support (`pypdf`, previously only an *undeclared
+  transitive* of `browser-use` -- unsafe to rely on, per ADR-0052's own
+  reasoning -- now a properly declared dependency) resolves ADR-0052's
+  named "no PDF" limitation, since PDF is the dominant résumé format for a
+  web audience. `api/routers/cv_import.py` (`POST
+  /user/master-profile/import` + `/{token}/confirm`) is the two-step HTTP
+  analogue of `import-cv`/`promote-cv`: upload parses and returns
+  `UNVERIFIED` proposals with evidence snippets, touching nothing;
+  confirm calls the *exact* `apply_confirmed_promotions` function against
+  the caller's stored profile, saving only once required basics (name,
+  email) are present, and never promoting a fact the caller didn't
+  explicitly decide on or that conflicts with a different existing
+  trusted value (`REQUIRES_RESOLUTION`, not a silent overwrite) -- both
+  re-verified by new tests against the HTTP boundary specifically.
+
+  A third JWT kind (`create_resume_download_token`/
+  `decode_resume_download_token`, shaped without a `role` claim so it and
+  an access token mutually reject each other) backs a new, deliberately
+  session-*less* `GET /export/resume/{variant_id}.pdf?token=...` --  the
+  token in the URL is the authorization (the same presigned-URL model any
+  object-storage download link uses), since this link is opened later
+  from inside Excel with no browser session available. It renders fresh
+  on every request from the stored `ResumeVariant` content + the owner's
+  `MasterProfile`, using the *same* renderer `prepare`/`submit` already
+  call -- no artifact path is ever persisted, so the link can never point
+  at a stale or since-deleted file. The Excel gains a `Company LinkedIn`
+  column (a new `linkedin_url` on `CompanyResearch`, detected via a
+  literal `linkedin.com/company/` check -- never a person's `/in/` page)
+  and a `Résumé (PDF)` column (the signed link, built as an *absolute* URL
+  via a new `api_base_url` setting mirroring the existing
+  `frontend_base_url`, since a relative path has no browser origin to
+  resolve against once opened from Excel).
+
+  Also fixed, found while wiring the résumé link end to end in a
+  production-shaped deployment: `deploy/nginx/edge.conf`'s route regex
+  claimed to mirror `vite.config.ts`'s dev-proxy prefix list but had
+  drifted -- `/export`, `/discover`, `/prepare`, `/reviews`,
+  `/submissions`, `/team`, `/billing`, and `/notifications` were all
+  missing, silently blocking those routes in a real production deployment
+  behind the edge proxy. Brought back in sync with `vite.config.ts`'s
+  `API_PREFIXES`; a separate, pre-existing gap (four of those prefixes are
+  *also* client-side routes, so a production refresh on those specific
+  pages still hits raw backend JSON) is named but explicitly not fixed
+  here, since a correct fix needs an nginx `resolver` + variable
+  `proxy_pass` not currently wired. 24 new backend tests. The CLI's
+  `import-cv`/`promote-cv`/`profile.json` workflow is completely
+  unchanged -- both entry points now share one parser, but each keeps its
+  own store, its own trigger, and its own test suite.
+
+  The frontend lives right on the onboarding wizard's Welcome step: a new
+  `ResumeImportPanel` (`services/cvImportApi.ts` + `hooks/useCvImport.ts`)
+  uploads the file, lists each proposed fact with the evidence text it was
+  found in, and gives it a per-fact Skip/Confirm/Reject choice -- Skip is
+  the default, matching the backend's own "an un-decided proposal is never
+  promoted" rule exactly, so nothing is saved by accident. Saving writes
+  the confirmed profile straight into the `["master-profile"]` query
+  cache the rest of the wizard already reads from, so a freshly confirmed
+  name/email/skills shows up pre-filled the moment the user clicks Next --
+  verified with a real headless-Chromium run (register → upload a résumé →
+  confirm two proposals → land on Personal Details already showing the
+  confirmed name and email), not just component tests. 7 new frontend
+  tests (`ResumeImportPanel.test.tsx`), all pre-existing
+  `OnboardingWizardPage` tests unchanged.
+
 ---
 
 ## Deferred work (named, not forgotten)

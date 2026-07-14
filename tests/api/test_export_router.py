@@ -18,14 +18,27 @@ from openpyxl import load_workbook
 
 from career_agent.api.app import create_app
 from career_agent.api.rate_limit import auth_rate_limiter
-from career_agent.core.security import create_access_token, hash_password
+from career_agent.core.security import (
+    create_access_token,
+    create_resume_download_token,
+    hash_password,
+)
 from career_agent.domain.application_session import ApplicationSession
-from career_agent.domain.models import Opportunity, Provenance
+from career_agent.domain.models import (
+    BasicsSection,
+    MasterProfile,
+    Opportunity,
+    Provenance,
+    TailoredContent,
+)
+from career_agent.domain.resume_variants import ResumeVariant
 from career_agent.domain.submission import SubmissionResult
 from career_agent.domain.user import User
 from career_agent.storage.sqlite import (
     SqliteApplicationSessionStore,
+    SqliteMasterProfileStore,
     SqliteOpportunityRepository,
+    SqliteResumeVariantStore,
     SqliteSubmissionResultStore,
     SqliteUserStore,
 )
@@ -219,6 +232,142 @@ def test_empty_export_is_a_valid_header_only_workbook(client: TestClient) -> Non
     sheet = load_workbook(BytesIO(response.content)).active
     assert sheet.max_row == 1  # header only, no data rows
     assert [cell.value for cell in sheet[1]][0] == "Prepared"
+
+
+def _master_profile(**overrides: object) -> MasterProfile:
+    fields: dict[str, object] = {
+        "version": "pending",
+        "basics": BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+    }
+    fields.update(overrides)
+    return MasterProfile(**fields)
+
+
+def _resume_variant(**overrides: object) -> ResumeVariant:
+    fields: dict[str, object] = {
+        "id": "variant-1",
+        "category": "backend",
+        "profile_version": "v1",
+        "content": TailoredContent(summary="Backend engineer, 5 years Python."),
+        "created_at": "2026-01-01T00:00:00+00:00",
+    }
+    fields.update(overrides)
+    return ResumeVariant(**fields)
+
+
+def test_applications_export_includes_linkedin_and_resume_pdf_columns(
+    client: TestClient,
+) -> None:
+    token = _create_user(_OWNER_ID, "owner@example.com")
+    SqliteMasterProfileStore(_db_path()).save(_OWNER_ID, _master_profile())
+    SqliteResumeVariantStore(_db_path()).save(
+        _resume_variant(), user_id=_OWNER_ID
+    )
+    SqliteApplicationSessionStore(_db_path()).save(
+        _application_session(resume_variant_id="variant-1"), user_id=_OWNER_ID
+    )
+    response = client.get(
+        "/export/applications.xlsx", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    sheet = load_workbook(BytesIO(response.content)).active
+    header = [cell.value for cell in sheet[1]]
+    assert "Company LinkedIn" in header
+    assert "Résumé (PDF)" in header
+
+    resume_col = header.index("Résumé (PDF)") + 1
+    cell = sheet.cell(row=2, column=resume_col)
+    assert cell.hyperlink is not None
+    assert "/export/resume/variant-1.pdf?token=" in cell.hyperlink.target
+
+
+def test_applications_export_leaves_resume_column_blank_without_a_variant(
+    client: TestClient,
+) -> None:
+    token = _create_user(_OWNER_ID, "owner@example.com")
+    SqliteApplicationSessionStore(_db_path()).save(
+        _application_session(), user_id=_OWNER_ID
+    )
+    response = client.get(
+        "/export/applications.xlsx", headers={"Authorization": f"Bearer {token}"}
+    )
+    sheet = load_workbook(BytesIO(response.content)).active
+    header = [cell.value for cell in sheet[1]]
+    resume_col = header.index("Résumé (PDF)") + 1
+    assert sheet.cell(row=2, column=resume_col).value in (None, "")
+
+
+def test_resume_pdf_download_returns_a_real_pdf(client: TestClient) -> None:
+    _create_user(_OWNER_ID, "owner@example.com")
+    SqliteMasterProfileStore(_db_path()).save(_OWNER_ID, _master_profile())
+    SqliteResumeVariantStore(_db_path()).save(
+        _resume_variant(), user_id=_OWNER_ID
+    )
+    token = create_resume_download_token(
+        user_id=_OWNER_ID,
+        resume_variant_id="variant-1",
+        secret_key=_JWT_SECRET,
+        expires_in_days=90,
+    )
+    # No Authorization header at all -- the link token is the only auth.
+    response = client.get(f"/export/resume/variant-1.pdf?token={token}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF")
+
+
+def test_resume_pdf_download_rejects_a_garbage_token(client: TestClient) -> None:
+    _create_user(_OWNER_ID, "owner@example.com")
+    response = client.get("/export/resume/variant-1.pdf?token=not-a-real-jwt")
+    assert response.status_code == 401
+
+
+def test_resume_pdf_download_rejects_a_token_for_a_different_variant(
+    client: TestClient,
+) -> None:
+    _create_user(_OWNER_ID, "owner@example.com")
+    SqliteMasterProfileStore(_db_path()).save(_OWNER_ID, _master_profile())
+    SqliteResumeVariantStore(_db_path()).save(
+        _resume_variant(id="variant-1"), user_id=_OWNER_ID
+    )
+    token = create_resume_download_token(
+        user_id=_OWNER_ID,
+        resume_variant_id="variant-2",  # different from the URL below
+        secret_key=_JWT_SECRET,
+        expires_in_days=90,
+    )
+    response = client.get(f"/export/resume/variant-1.pdf?token={token}")
+    assert response.status_code == 401
+
+
+def test_resume_pdf_download_rejects_another_users_token(client: TestClient) -> None:
+    _create_user(_OWNER_ID, "owner@example.com")
+    _create_user(_OTHER_ID, "other@example.com")
+    SqliteMasterProfileStore(_db_path()).save(_OWNER_ID, _master_profile())
+    SqliteResumeVariantStore(_db_path()).save(
+        _resume_variant(), user_id=_OWNER_ID
+    )
+    # A token minted for the wrong (non-owning) user must not unlock it.
+    token = create_resume_download_token(
+        user_id=_OTHER_ID,
+        resume_variant_id="variant-1",
+        secret_key=_JWT_SECRET,
+        expires_in_days=90,
+    )
+    response = client.get(f"/export/resume/variant-1.pdf?token={token}")
+    assert response.status_code == 404
+
+
+def test_resume_pdf_download_rejects_an_unknown_variant(client: TestClient) -> None:
+    _create_user(_OWNER_ID, "owner@example.com")
+    token = create_resume_download_token(
+        user_id=_OWNER_ID,
+        resume_variant_id="no-such-variant",
+        secret_key=_JWT_SECRET,
+        expires_in_days=90,
+    )
+    response = client.get(f"/export/resume/no-such-variant.pdf?token={token}")
+    assert response.status_code == 404
 
 
 def test_export_never_leaks_another_users_rows(client: TestClient) -> None:

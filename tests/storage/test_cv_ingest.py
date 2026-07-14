@@ -13,8 +13,10 @@ from career_agent.storage.cv_ingest import (
     apply_confirmed_promotions,
     document_digest,
     ingest_document,
+    ingest_document_bytes,
     propose_facts,
     read_document,
+    read_document_bytes,
 )
 
 
@@ -64,8 +66,8 @@ def test_crlf_and_lf_normalize_to_the_same_text_digest(tmp_path: Path) -> None:
 
 
 def test_unsupported_extension_raises_typed_error(tmp_path: Path) -> None:
-    path = tmp_path / "resume.pdf"
-    path.write_bytes(b"%PDF-1.4 fake")
+    path = tmp_path / "resume.rtf"
+    path.write_bytes(b"{\\rtf1 fake}")
     with pytest.raises(UnsupportedDocumentError):
         read_document(path)
 
@@ -78,6 +80,77 @@ def test_malformed_docx_raises_typed_error_not_a_bare_exception(
     path.write_bytes(b"this is not a real docx zip")
     with pytest.raises(DocumentParseError):
         read_document(path)
+
+
+def test_malformed_pdf_raises_typed_error_not_a_bare_exception(
+    tmp_path: Path,
+) -> None:
+    """Phase 71 (ADR-0089): malformed PDF fails safely, same as DOCX."""
+    path = tmp_path / "broken.pdf"
+    path.write_bytes(b"%PDF-1.4 not a real pdf stream")
+    with pytest.raises(DocumentParseError):
+        read_document(path)
+
+
+def test_real_pdf_extracts_the_same_facts_as_the_docx_it_was_rendered_from(
+    tmp_path: Path,
+) -> None:
+    """Phase 71 (ADR-0089): PDF ingestion works against a real PDF file.
+
+    Renders a real DOCX via this project's own resume renderer, converts it
+    to a real PDF via the same LibreOffice path ``prepare``/``submit`` use,
+    then proves ``read_document`` extracts the same résumé text (soffice's
+    text-based PDF output preserves the words, if not the exact line
+    breaks) -- not a synthetic/fake PDF byte string.
+    """
+    pytest.importorskip("docx")
+    import shutil
+
+    if shutil.which("soffice") is None:
+        pytest.skip("soffice not installed in this environment")
+
+    from career_agent.agents.resume.file_renderer import (
+        convert_to_pdf,
+        render_resume_docx,
+    )
+    from career_agent.domain.models import BasicsSection, MasterProfile, TailoredContent
+
+    profile = MasterProfile(
+        version="sha256:test",
+        basics=BasicsSection(name="Ada Lovelace", email="ada@example.com"),
+    )
+    content = TailoredContent(
+        summary="Engineer with a focus on backend systems.",
+        skills=["Python", "SQL"],
+        work=[],
+        projects=[],
+    )
+    docx_artifact = render_resume_docx(
+        "resume-1", content, profile, artifacts_dir=tmp_path
+    )
+    pdf_artifact = convert_to_pdf(docx_artifact, artifacts_dir=tmp_path)
+
+    _raw_bytes, normalized_text, source_type = read_document(Path(pdf_artifact.path))
+    assert source_type == "pdf"
+    assert "Ada Lovelace" in normalized_text
+    assert "ada@example.com" in normalized_text
+
+
+def test_ingest_document_bytes_matches_ingest_document(tmp_path: Path) -> None:
+    """The bytes-based (web upload) and path-based (CLI) entry points agree."""
+    path = _write_txt(tmp_path, "Ada Lovelace\nada@x.com\nSkills: Python, SQL\n")
+    from_path = ingest_document(path)
+    from_bytes = ingest_document_bytes(path.name, path.read_bytes())
+    assert from_path.document_digest == from_bytes.document_digest
+    assert [p.proposed_value for p in from_path.proposals] == [
+        p.proposed_value for p in from_bytes.proposals
+    ]
+
+
+def test_read_document_bytes_rejects_an_oversized_document() -> None:
+    oversized = b"x" * (10 * 1024 * 1024 + 1)
+    with pytest.raises(DocumentParseError):
+        read_document_bytes("resume.txt", oversized)
 
 
 def test_oversized_document_is_refused(tmp_path: Path) -> None:
