@@ -158,3 +158,14 @@ class Settings(BaseSettings):
     #: needs to know this; every other link it builds is a relative API
     #: path, per ``frontend/src/services/http.ts``'s own reasoning).
     frontend_base_url: str = "http://localhost:5173"
+
+    # -- Phase 71 (ADR-0089): résumé upload + signed résumé-PDF links ------
+    #: Where this API is actually reachable from outside the app -- needed
+    #: to build an *absolute* résumé-download link for the exported Excel
+    #: workbook. Every other link this backend builds is a relative path a
+    #: same-origin browser fetch resolves on its own
+    #: (``frontend/src/services/http.ts``); this one is different because
+    #: it is opened later, from inside Excel, with no browser origin to
+    #: resolve a relative path against -- the same reason
+    #: ``frontend_base_url`` above exists for invitation emails.
+    api_base_url: str = "http://localhost:8000"

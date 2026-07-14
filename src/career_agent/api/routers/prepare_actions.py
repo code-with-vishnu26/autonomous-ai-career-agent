@@ -166,7 +166,21 @@ def _status_response(
     )
 
 
-async def _run_prepare(token: str, user_id: str, opportunity_id: str) -> None:
+async def _run_prepare(
+    token: str,
+    user_id: str,
+    opportunity_id: str | None = None,
+    opportunity: Opportunity | None = None,
+) -> None:
+    """Tailor for one opportunity, given either its id or the object itself.
+
+    The discovered-job path passes ``opportunity_id`` (the opportunity is
+    already in the shared catalog). The pasted-job path passes the
+    ``opportunity`` object directly -- an ad-hoc posting can collide with
+    the repository's dedup-by-fingerprint and never be re-fetchable by id,
+    so it is handed through in memory rather than round-tripped (Phase 70
+    fix for a "Opportunity not found" failure on paste).
+    """
     entry = _pending[token]
     try:
         settings = get_settings()
@@ -178,7 +192,8 @@ async def _run_prepare(token: str, user_id: str, opportunity_id: str) -> None:
             )
             return
 
-        opportunity = await get_opportunity_repository().get(opportunity_id)
+        if opportunity is None:
+            opportunity = await get_opportunity_repository().get(opportunity_id)
         if opportunity is None:
             entry.status = "FAILED"
             entry.error = f"Opportunity {opportunity_id!r} not found."
@@ -257,10 +272,12 @@ async def start_pasted_preparation(
 ) -> PendingPreparationStatus:
     """Tailor for a job the user pasted from a site we don't auto-search.
 
-    Builds an ad-hoc Opportunity from the pasted fields, persists it (so
-    the résumé variant and Review Queue can reference it like any other),
-    then delegates to the *same* ``_run_prepare`` the discovered-job path
-    uses -- one tailoring path, two ways in.
+    Builds an ad-hoc Opportunity from the pasted fields, persists it
+    best-effort (so the Review Queue/Excel can reference it), then hands the
+    object itself to ``_run_prepare`` -- not just its id. A pasted posting
+    can collide with the repository's dedup-by-fingerprint and never be
+    re-fetchable by id, which previously surfaced as "Opportunity not
+    found"; passing the object through fixes that regardless of dedup.
     """
     opportunity = _opportunity_from_paste(body)
     await opportunity_repository.add(opportunity)
@@ -268,7 +285,11 @@ async def start_pasted_preparation(
     token = str(uuid.uuid4())
     _pending[token] = _PendingPreparation(current_user.id)
     background_tasks.add_task(
-        _run_prepare, token, current_user.id, opportunity.id
+        _run_prepare,
+        token,
+        current_user.id,
+        opportunity_id=opportunity.id,
+        opportunity=opportunity,
     )
     return _status_response(token, _pending[token])
 

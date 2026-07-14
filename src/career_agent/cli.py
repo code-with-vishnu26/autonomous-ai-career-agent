@@ -1268,6 +1268,7 @@ async def run_discover_command(
     scorer: object | None = None,
     on_new_opportunity: Callable[[Opportunity], None] | None = None,
     on_source_error: Callable[[str, Exception], None] | None = None,
+    relevance_filter: Callable[[Opportunity], bool] | None = None,
 ) -> int:
     """Run every configured source, dedup via ``repo``, write handoff files.
 
@@ -1300,6 +1301,12 @@ async def run_discover_command(
             continue
         fresh = 0
         for opportunity in found:
+            if relevance_filter is not None and not relevance_filter(opportunity):
+                # A source that ignores the search query (the free firehose
+                # sources) still returns off-role postings; drop them before
+                # they reach storage so a "software engineer" search never
+                # surfaces a barista (Phase 70).
+                continue
             if await repo.add(opportunity):  # type: ignore[attr-defined]
                 fresh += 1
                 new_count += 1

@@ -154,6 +154,31 @@ def get_discovery_run_store() -> SqliteDiscoveryRunStore:
     return SqliteDiscoveryRunStore(_database_path())
 
 
+def get_search_provider():
+    """Build a web-search provider from configured keys, or ``None`` (Phase 69).
+
+    Exa is preferred when present, else Google CSE; ``None`` when neither is
+    configured -- company research then honestly reports "no key" rather
+    than fabricating anything. Constructed fresh per call (no caching),
+    like every other dependency here, so a key added to the environment
+    takes effect without a restart.
+    """
+    from career_agent.integrations.http import HttpxClient
+    from career_agent.plugins.search.exa import ExaSearchProvider
+    from career_agent.plugins.search.google_cse import GoogleCSESearchProvider
+
+    settings = Settings()
+    if settings.exa_api_key:
+        return ExaSearchProvider(api_key=settings.exa_api_key, client=HttpxClient())
+    if settings.google_cse_api_key and settings.google_cse_id:
+        return GoogleCSESearchProvider(
+            api_key=settings.google_cse_api_key,
+            cse_id=settings.google_cse_id,
+            client=HttpxClient(),
+        )
+    return None
+
+
 def get_opportunity_repository() -> SqliteOpportunityRepository:
     """The same deduplicating opportunity catalog ``career-agent discover`` uses."""
     return SqliteOpportunityRepository(_database_path())

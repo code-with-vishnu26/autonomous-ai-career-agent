@@ -28,6 +28,16 @@ Two token kinds, deliberately not interchangeable:
   (:class:`~career_agent.storage.sqlite.SqliteRefreshTokenStore`) so it
   *can* be revoked (logout, rotation-on-use, or an admin action). Never
   sent as a header; delivered only via an httpOnly cookie (ADR-0074).
+
+A third kind (Phase 71, ADR-0089), **resume download token**: a signed JWT
+scoped to exactly one résumé variant, with its own ``purpose`` claim so it
+can never be mistaken for -- or accepted as -- a session access token (the
+same token-confusion discipline as ``domain/ingestion.py``'s
+``confirmation_digest``, applied to JWTs instead of content digests). It
+exists because an Excel hyperlink is opened later, outside the browser
+session that downloaded the file, with no ``Authorization`` header
+available -- so the capability to fetch that one file has to live in the
+URL itself.
 """
 
 from __future__ import annotations
@@ -127,6 +137,71 @@ def decode_access_token(token: str, *, secret_key: str) -> AccessTokenClaims:
         )
     except (KeyError, TypeError) as exc:
         raise InvalidTokenError("access token missing required claims") from exc
+
+
+_RESUME_DOWNLOAD_PURPOSE = "resume_download"
+
+
+@dataclass(frozen=True)
+class ResumeDownloadClaims:
+    """What a decoded, verified resume-download token actually asserts."""
+
+    user_id: str
+    resume_variant_id: str
+
+
+def create_resume_download_token(
+    *,
+    user_id: str,
+    resume_variant_id: str,
+    secret_key: str,
+    expires_in_days: int,
+    now: datetime | None = None,
+) -> str:
+    """A signed JWT scoped to exactly one user's one résumé variant.
+
+    Carries a ``purpose`` claim distinct from an access token's shape (no
+    ``role``), so :func:`decode_access_token` and
+    :func:`decode_resume_download_token` can never accept each other's
+    tokens even though both are HS256 JWTs signed with the same secret.
+    """
+    issued_at = now or datetime.now(UTC)
+    expires_at = issued_at + timedelta(days=expires_in_days)
+    payload = {
+        "sub": user_id,
+        "purpose": _RESUME_DOWNLOAD_PURPOSE,
+        "variant_id": resume_variant_id,
+        "iat": int(issued_at.timestamp()),
+        "exp": int(expires_at.timestamp()),
+    }
+    return jwt.encode(payload, secret_key, algorithm=_JWT_ALGORITHM)
+
+
+def decode_resume_download_token(
+    token: str, *, secret_key: str
+) -> ResumeDownloadClaims:
+    """Verify signature + expiry + purpose and return the claims.
+
+    Raises :class:`InvalidTokenError` for a bad signature, an expired
+    token, a token missing required claims, **or** a well-formed access
+    token presented here instead (its ``purpose`` claim is absent, so it
+    is rejected exactly like any other malformed token -- no special
+    "wrong kind of token" branch an attacker could probe).
+    """
+    try:
+        payload = jwt.decode(token, secret_key, algorithms=[_JWT_ALGORITHM])
+    except jwt.PyJWTError as exc:
+        raise InvalidTokenError(str(exc)) from exc
+    try:
+        if payload["purpose"] != _RESUME_DOWNLOAD_PURPOSE:
+            raise InvalidTokenError("not a resume-download token")
+        return ResumeDownloadClaims(
+            user_id=payload["sub"], resume_variant_id=payload["variant_id"]
+        )
+    except (KeyError, TypeError) as exc:
+        raise InvalidTokenError(
+            "resume-download token missing required claims"
+        ) from exc
 
 
 def generate_refresh_token_value() -> str:

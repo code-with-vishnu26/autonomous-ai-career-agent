@@ -38,6 +38,12 @@ dependencies = [
     "python-docx>=1.1",
     "bcrypt>=4.1",
     "pyjwt>=2.8",
+    # PDF résumé parsing (Phase 71, ADR-0089). Previously an undeclared
+    # transitive of browser-use -- declared directly at the version already
+    # resolved in this environment so PDF ingestion is a real, tested
+    # capability rather than an accident of what else happened to be
+    # installed.
+    "pypdf>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -55,6 +61,11 @@ web = [
     # AsyncIOScheduler. No prior scheduler existed in this codebase; the
     # brief's own "prefer APScheduler" instruction is followed as-is.
     "apscheduler>=3.10",
+    # Multipart/form-data parsing (Phase 71, ADR-0089) -- FastAPI's own
+    # documented requirement for any ``UploadFile``/``File(...)`` parameter;
+    # the résumé-upload endpoint is the first file upload this API has ever
+    # accepted.
+    "python-multipart>=0.0.9",
 ]
 security = [
     # Dependency vulnerability scanning + secret-scanning baseline check

@@ -42,7 +42,11 @@ if TYPE_CHECKING:
 
 
 def _build_workbook(
-    title: str, columns: list[tuple[str, str]], rows: list[dict[str, object]]
+    title: str,
+    columns: list[tuple[str, str]],
+    rows: list[dict[str, object]],
+    *,
+    link_keys: frozenset[str] = frozenset(),
 ) -> Workbook:
     """Build a formatted, filterable single-sheet workbook.
 
@@ -52,6 +56,12 @@ def _build_workbook(
     formatting (bold frozen header, auto-filter, uniform width) lives in
     exactly one place. Extracted in Phase 65 (ADR-0083); the two original
     exports' output is unchanged.
+
+    ``link_keys`` (Phase 69, ADR-0087) names columns whose non-empty string
+    value is a public URL -- those cells become real clickable hyperlinks.
+    A cell's value must be a plain ``http(s)`` URL for the link to attach;
+    anything else is written as ordinary text, so a missing URL is just a
+    blank, never a broken link.
     """
     workbook = Workbook()
     sheet = workbook.active
@@ -63,7 +73,15 @@ def _build_workbook(
 
     for row_index, row in enumerate(rows, start=2):
         for column_index, (key, _label) in enumerate(columns, start=1):
-            sheet.cell(row=row_index, column=column_index, value=row.get(key))
+            value = row.get(key)
+            cell = sheet.cell(row=row_index, column=column_index, value=value)
+            if (
+                key in link_keys
+                and isinstance(value, str)
+                and value.startswith(("http://", "https://"))
+            ):
+                cell.hyperlink = value
+                cell.style = "Hyperlink"
 
     last_column = get_column_letter(len(columns))
     sheet.auto_filter.ref = f"A1:{last_column}{max(len(rows) + 1, 1)}"
@@ -273,5 +291,56 @@ def application_sessions_xlsx_bytes(sessions: list[ApplicationSession]) -> bytes
             "Applications",
             _APPLICATION_SESSION_COLUMNS,
             _application_sessions_rows(sessions),
+        )
+    )
+
+
+#: Enriched application export (Phase 69, ADR-0087). The router assembles a
+#: dict per application joining the ApplicationSession with its Opportunity
+#: (accurate posting details + public company links) and optional
+#: web-search company research; every value here is already a finished
+#: cell (string/number), so this module needs no domain imports for it.
+_ENRICHED_APPLICATION_COLUMNS: list[tuple[str, str]] = [
+    ("prepared", "Prepared"),
+    ("company", "Company"),
+    ("role", "Role"),
+    ("location", "Location"),
+    ("remote", "Remote"),
+    ("source", "Source"),
+    ("posted", "Posted"),
+    ("status", "Status"),
+    ("job_url", "Job URL"),
+    ("careers_url", "Careers Page"),
+    ("linkedin_url", "Company LinkedIn"),
+    ("company_research", "Company Research"),
+    ("research_sources", "Research Sources"),
+    ("resume_pdf_url", "Résumé (PDF)"),
+    ("cover_letter", "Cover Letter"),
+]
+
+#: Columns whose values are single URLs -> clickable hyperlinks. The last
+#: three are public; ``resume_pdf_url`` (Phase 71, ADR-0089) is instead a
+#: signed, capability-bearing link scoped to exactly the caller's own
+#: tailored résumé -- still a single URL, so it renders as a hyperlink the
+#: same way.
+_ENRICHED_LINK_KEYS = frozenset(
+    {"job_url", "careers_url", "linkedin_url", "resume_pdf_url"}
+)
+
+
+def enriched_applications_xlsx_bytes(rows: list[dict[str, object]]) -> bytes:
+    """An enriched applications workbook (Phase 69, ADR-0087).
+
+    ``rows`` are pre-assembled by the export router (session + opportunity +
+    optional research), so this stays a thin formatting call -- the same
+    ``_build_workbook`` as every other export, with the URL columns turned
+    into real hyperlinks.
+    """
+    return _workbook_bytes(
+        _build_workbook(
+            "Applications",
+            _ENRICHED_APPLICATION_COLUMNS,
+            rows,
+            link_keys=_ENRICHED_LINK_KEYS,
         )
     )

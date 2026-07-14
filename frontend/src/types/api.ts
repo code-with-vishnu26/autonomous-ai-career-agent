@@ -512,3 +512,43 @@ export interface MasterProfile {
 
 /** Body for `PUT /user/master-profile` -- no `version`, always server-computed. */
 export type MasterProfileUpdate = Omit<MasterProfile, "version">;
+
+/**
+ * Phase 71, ADR-0089: `/user/master-profile/import` -- résumé upload and
+ * review. Mirrors `api/routers/cv_import.py`'s Pydantic response models
+ * field-for-field. A proposal is `UNVERIFIED` until explicitly confirmed
+ * or rejected; one never mentioned in a confirm request stays that way.
+ */
+export interface CvImportProposal {
+  proposal_id: string;
+  field_path: string;
+  proposed_value: string;
+  evidence_text: string;
+  conflict_ids: string[];
+}
+
+export interface CvImportUploadResponse {
+  token: string;
+  source_type: string;
+  proposals: CvImportProposal[];
+}
+
+export interface CvImportProposalDecision {
+  proposal_id: string;
+  confirmed: boolean;
+}
+
+export interface CvImportProposalOutcome {
+  proposal_id: string;
+  field_path: string;
+  proposed_value: string;
+  outcome: string;
+  reason: string;
+}
+
+export interface CvImportConfirmResponse {
+  results: CvImportProposalOutcome[];
+  profile_saved: boolean;
+  missing_required_fields: string[];
+  profile: MasterProfile | null;
+}

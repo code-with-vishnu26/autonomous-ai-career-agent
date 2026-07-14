@@ -32,6 +32,7 @@ from career_agent.api.dependencies import (
 from career_agent.api.security import get_current_user
 from career_agent.cli import build_discovery_sources, run_discover_command
 from career_agent.domain.discovery_run import DiscoveryRun
+from career_agent.domain.job_relevance import matches_search
 from career_agent.domain.models import Opportunity
 from career_agent.domain.user import User
 
@@ -68,6 +69,15 @@ async def _execute_discovery_run(run_id: str, user_id: str, since_days: int) -> 
     try:
         preferences = get_user_preferences_store().get(user_id)
         sources = build_discovery_sources(settings, preferences)
+        # Only keep postings whose title matches the caller's configured
+        # role (Phase 70) -- the free firehose sources return every remote
+        # job regardless of the search, so without this a "software
+        # engineer" search surfaces unrelated roles.
+        relevance_filter = (
+            (lambda opp: matches_search(opp, preferences))
+            if preferences is not None
+            else None
+        )
         run_store.save(
             run.model_copy(
                 update={
@@ -85,6 +95,7 @@ async def _execute_discovery_run(run_id: str, user_id: str, since_days: int) -> 
             out_dir=_DEFAULT_OUT_DIR,
             on_new_opportunity=lambda opp: new_ids.append(opp.id),
             on_source_error=lambda name, exc: errors.append(f"{name}: {exc}"),
+            relevance_filter=relevance_filter,
         )
         run_store.save(
             run.model_copy(

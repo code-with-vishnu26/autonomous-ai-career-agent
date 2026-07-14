@@ -9,7 +9,9 @@ import pytest
 from career_agent.core.security import (
     InvalidTokenError,
     create_access_token,
+    create_resume_download_token,
     decode_access_token,
+    decode_resume_download_token,
     generate_password_reset_token_value,
     generate_refresh_token_value,
     hash_opaque_token,
@@ -78,6 +80,60 @@ def test_decode_access_token_rejects_an_expired_token() -> None:
 def test_decode_access_token_rejects_garbage() -> None:
     with pytest.raises(InvalidTokenError):
         decode_access_token("not-a-jwt-at-all", secret_key="s3cret")
+
+
+def test_resume_download_token_round_trips() -> None:
+    """Phase 71 (ADR-0089): a resume-download token asserts user + variant."""
+    token = create_resume_download_token(
+        user_id="user-1",
+        resume_variant_id="variant-9",
+        secret_key="s3cret",
+        expires_in_days=90,
+    )
+    claims = decode_resume_download_token(token, secret_key="s3cret")
+    assert claims.user_id == "user-1"
+    assert claims.resume_variant_id == "variant-9"
+
+
+def test_resume_download_token_rejects_the_wrong_secret() -> None:
+    token = create_resume_download_token(
+        user_id="user-1",
+        resume_variant_id="variant-9",
+        secret_key="s3cret",
+        expires_in_days=90,
+    )
+    with pytest.raises(InvalidTokenError):
+        decode_resume_download_token(token, secret_key="wrong-secret")
+
+
+def test_resume_download_token_rejects_expiry() -> None:
+    issued_at = datetime.now(UTC) - timedelta(days=100)
+    token = create_resume_download_token(
+        user_id="user-1",
+        resume_variant_id="variant-9",
+        secret_key="s3cret",
+        expires_in_days=90,
+        now=issued_at,
+    )
+    with pytest.raises(InvalidTokenError):
+        decode_resume_download_token(token, secret_key="s3cret")
+
+
+def test_access_token_and_resume_download_token_are_never_interchangeable() -> None:
+    """Token-confusion is refused both directions -- distinct ``purpose``/shape."""
+    access = create_access_token(
+        user_id="user-1", role="user", secret_key="s3cret", expires_in_minutes=15
+    )
+    download = create_resume_download_token(
+        user_id="user-1",
+        resume_variant_id="variant-9",
+        secret_key="s3cret",
+        expires_in_days=90,
+    )
+    with pytest.raises(InvalidTokenError):
+        decode_resume_download_token(access, secret_key="s3cret")
+    with pytest.raises(InvalidTokenError):
+        decode_access_token(download, secret_key="s3cret")
 
 
 def test_refresh_token_values_are_unique_and_never_a_jwt() -> None:

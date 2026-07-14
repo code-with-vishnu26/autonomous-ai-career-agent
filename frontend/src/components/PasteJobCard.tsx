@@ -21,7 +21,7 @@ import { useStartPastedPreparation, usePreparationStatus } from "@/hooks/usePrep
 import type { PastedJobRequest } from "@/types/api";
 
 export function PasteJobCard() {
-  const { register, handleSubmit, reset } = useForm<PastedJobRequest>();
+  const { register, handleSubmit } = useForm<PastedJobRequest>();
   const [token, setToken] = useState<string | undefined>(undefined);
   const start = useStartPastedPreparation();
   const status = usePreparationStatus(token);
@@ -30,12 +30,9 @@ export function PasteJobCard() {
   const isBusy = start.isPending || state === "PREPARING";
 
   const onSubmit = (values: PastedJobRequest) => {
-    start.mutate(values, {
-      onSuccess: (started) => {
-        setToken(started.token);
-        reset();
-      },
-    });
+    // Keep the form populated (no reset) so the user still sees what they
+    // submitted while it tailors -- and can re-run if it fails.
+    start.mutate(values, { onSuccess: (started) => setToken(started.token) });
   };
 
   return (
