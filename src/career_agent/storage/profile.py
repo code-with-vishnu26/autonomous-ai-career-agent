@@ -220,8 +220,29 @@ def _validate_ids(raw: dict[str, Any]) -> None:
             seen[entry_id] = (section, index)
 
 
+#: JSON Resume's ``basics.profiles[].network`` values this project
+#: recognizes as a first-class link field (Phase 72/ADR-0090) -- anything
+#: else in ``profiles`` lands in ``other_links`` rather than being dropped.
+_KNOWN_PROFILE_NETWORKS = {
+    "linkedin": "linkedin_url",
+    "github": "github_url",
+}
+
+
 def _map_basics(raw: dict[str, Any]) -> dict[str, Any]:
     location = raw.get("location")
+    links: dict[str, Any] = {}
+    other_links: list[str] = []
+    for profile_entry in raw.get("profiles", []):
+        url = profile_entry.get("url")
+        if not url:
+            continue
+        network = str(profile_entry.get("network", "")).strip().lower()
+        field = _KNOWN_PROFILE_NETWORKS.get(network)
+        if field and field not in links:
+            links[field] = url
+        else:
+            other_links.append(url)
     return {
         "name": raw.get("name"),
         "email": raw.get("email"),
@@ -231,6 +252,12 @@ def _map_basics(raw: dict[str, Any]) -> dict[str, Any]:
         # object) is a named, tracked out-of-scope gap (ADR-0017) -- only a
         # plain string location is imported.
         "location": location if isinstance(location, str) else None,
+        # Phase 72/ADR-0090: basics.url is the applicant's personal
+        # website/portfolio in JSON Resume's own schema; basics.profiles
+        # (network + url pairs) supplies LinkedIn/GitHub/anything else.
+        "website_url": raw.get("url"),
+        "other_links": other_links,
+        **links,
     }
 
 
@@ -270,6 +297,7 @@ def _map_project(entry: dict[str, Any]) -> dict[str, Any]:
         "id": str(entry["id"]),
         "name": entry.get("name"),
         "description": entry.get("description"),
+        "url": entry.get("url"),
         "highlights": entry.get("highlights", []),
         "keywords": entry.get("keywords", []),
     }

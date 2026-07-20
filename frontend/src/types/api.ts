@@ -411,6 +411,18 @@ export interface Opportunity {
   discovered_at: string;
 }
 
+/**
+ * Phase 72, ADR-0090: `GET /discover/opportunities` classifies each
+ * opportunity against the caller's own configured role search --
+ * `"exact"` matches the searched role (incl. taxonomy synonyms/seniority
+ * variants), `"related"` is an adjacent sub-role (e.g. "Backend Developer"
+ * for a "Software Developer" search), `"none"` matches neither.
+ */
+export interface ClassifiedOpportunity {
+  opportunity: Opportunity;
+  relevance_tier: "exact" | "related" | "none";
+}
+
 export type PendingSubmissionState =
   | "PREPARING"
   | "AWAITING_CONFIRMATION"
@@ -460,6 +472,12 @@ export interface BasicsSection {
   phone: string | null;
   summary: string | null;
   location: string | null;
+  /** Phase 72, ADR-0090: public profile links -- always exactly what the
+   * user entered, never scraped or inferred. */
+  linkedin_url: string | null;
+  github_url: string | null;
+  website_url: string | null;
+  other_links: string[];
 }
 
 export interface WorkEntry {
@@ -491,6 +509,8 @@ export interface ProjectEntry {
   id: string;
   name: string;
   description: string | null;
+  /** Phase 72, ADR-0090: the project's own public link (GitHub repo, demo, etc). */
+  url: string | null;
   highlights: string[];
   keywords: string[];
 }

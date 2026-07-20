@@ -30,6 +30,7 @@ from career_agent.llm.groq_client import (
     groq_chat_completion,
 )
 from career_agent.llm.groq_content_drafter import GroqContentDrafter
+from career_agent.llm.groq_role_expander import GroqRoleExpander
 from career_agent.llm.groq_semantic_matcher import GroqSemanticKeywordMatcher
 from career_agent.llm.providers import (
     NoLLMProviderConfiguredError,
@@ -258,6 +259,66 @@ async def test_groq_content_drafter_raises_on_network_failure_no_fallback(
     drafter = GroqContentDrafter(api_key="k")
     with pytest.raises(GroqCallError):
         await drafter.draft(_opportunity(), _profile())
+
+
+# --- GroqRoleExpander: advisory-only, fails to [] rather than raising -----
+
+
+async def test_groq_role_expander_parses_a_successful_suggestion_list(
+    monkeypatch,
+):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _groq_response(
+            json.dumps(["Backend Developer", "Cloud Engineer"])
+        )
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    expander = GroqRoleExpander(api_key="k")
+    result = await expander.suggest_related_roles("Software Developer")
+    assert result == ["Backend Developer", "Cloud Engineer"]
+
+
+async def test_groq_role_expander_returns_empty_on_malformed_json(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _groq_response("not json")
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    expander = GroqRoleExpander(api_key="k")
+    assert await expander.suggest_related_roles("Something Obscure") == []
+
+
+async def test_groq_role_expander_returns_empty_on_non_list_json(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _groq_response(json.dumps({"not": "a list"}))
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    expander = GroqRoleExpander(api_key="k")
+    assert await expander.suggest_related_roles("Something Obscure") == []
+
+
+async def test_groq_role_expander_drops_non_string_list_items(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _groq_response(json.dumps(["Valid Title", 123, None]))
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    expander = GroqRoleExpander(api_key="k")
+    assert await expander.suggest_related_roles("Something Obscure") == [
+        "Valid Title"
+    ]
+
+
+async def test_groq_role_expander_raises_on_network_failure(monkeypatch):
+    """Unlike the domain-level orchestration wrapper (which swallows this),
+    the port itself surfaces a real network failure -- the caller decides
+    how to degrade, matching GroqContentDrafter's own contract."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    monkeypatch.setattr(groq_client.httpx, "AsyncClient", _mock_client(handler))
+    expander = GroqRoleExpander(api_key="k")
+    with pytest.raises(GroqCallError):
+        await expander.suggest_related_roles("Something Obscure")
 
 
 # --- GroqSemanticKeywordMatcher: fails to [], same contract as Anthropic's -

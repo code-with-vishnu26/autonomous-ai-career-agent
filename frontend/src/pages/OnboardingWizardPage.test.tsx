@@ -54,6 +54,8 @@ describe("OnboardingWizardPage", () => {
 
     await user.type(screen.getByLabelText(/full name/i), "Ada Lovelace");
     await user.type(screen.getByLabelText(/^email/i), "ada@example.com");
+    await user.type(screen.getByLabelText(/linkedin/i), "https://linkedin.com/in/ada");
+    await user.type(screen.getByLabelText(/github/i), "https://github.com/ada");
 
     await goToStep(user, 1); // -> work
     expect(screen.getByText("Work Experience")).toBeInTheDocument();
@@ -68,9 +70,13 @@ describe("OnboardingWizardPage", () => {
     await user.click(screen.getByRole("button", { name: /save profile/i }));
 
     await waitFor(() => expect(onPut).toHaveBeenCalled());
-    const body = onPut.mock.calls[0][0] as { basics: { name: string; email: string } };
+    const body = onPut.mock.calls[0][0] as {
+      basics: { name: string; email: string; linkedin_url: string; github_url: string };
+    };
     expect(body.basics.name).toBe("Ada Lovelace");
     expect(body.basics.email).toBe("ada@example.com");
+    expect(body.basics.linkedin_url).toBe("https://linkedin.com/in/ada");
+    expect(body.basics.github_url).toBe("https://github.com/ada");
     expect(body).not.toHaveProperty("version");
 
     expect(await screen.findByText(/profile saved/i)).toBeInTheDocument();
@@ -79,7 +85,17 @@ describe("OnboardingWizardPage", () => {
   it("pre-fills the form from an existing stored profile", async () => {
     stubFetch(vi.fn(), {
       version: "sha256:existing",
-      basics: { name: "Grace Hopper", email: "grace@example.com", phone: null, summary: null, location: null },
+      basics: {
+        name: "Grace Hopper",
+        email: "grace@example.com",
+        phone: null,
+        summary: null,
+        location: null,
+        linkedin_url: null,
+        github_url: null,
+        website_url: null,
+        other_links: [],
+      },
       work: [],
       education: [],
       skills: [],

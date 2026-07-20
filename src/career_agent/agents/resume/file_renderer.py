@@ -211,6 +211,23 @@ def _build_document(content: TailoredContent, profile: MasterProfile) -> Documen
         contact_bits.append(profile.basics.location)
     document.add_paragraph(" | ".join(contact_bits))
 
+    # A second contact line for public profile links (Phase 72, ADR-0090)
+    # -- always exactly what the user entered themselves, never inferred
+    # or looked up. Omitted entirely when none are set, so an existing
+    # profile with no links renders identically to before this phase.
+    link_bits = [
+        url
+        for url in (
+            profile.basics.linkedin_url,
+            profile.basics.github_url,
+            profile.basics.website_url,
+            *profile.basics.other_links,
+        )
+        if url
+    ]
+    if link_bits:
+        document.add_paragraph(" | ".join(link_bits))
+
     document.add_heading("Summary", level=1)
     document.add_paragraph(content.summary)
 
@@ -247,15 +264,21 @@ def _build_document(content: TailoredContent, profile: MasterProfile) -> Documen
 
     if content.projects:
         document.add_heading("Projects", level=1)
-        project_ids = {project.id for project in profile.projects}
+        projects_by_id = {project.id: project for project in profile.projects}
         for project in content.projects:
-            if project.source_entry_id not in project_ids:
+            source = projects_by_id.get(project.source_entry_id)
+            if source is None:
                 raise KeyError(
                     f"no ProjectEntry with id={project.source_entry_id!r} in "
                     f"profile version={profile.version!r}"
                 )
             line = document.add_paragraph()
             line.add_run(project.name).bold = True
+            # The project's own public link (GitHub repo, live demo, ...),
+            # Phase 72/ADR-0090 -- a MasterProfile fact, so it renders
+            # verbatim regardless of what the tailoring pass drafted.
+            if source.url:
+                line.add_run(f"  ({source.url})")
             for highlight in project.highlights:
                 document.add_paragraph(highlight, style="List Bullet")
 

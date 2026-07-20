@@ -6,7 +6,7 @@
  */
 
 import { apiFetchJson } from "./http";
-import type { DiscoveryRun, Opportunity } from "@/types/api";
+import type { ClassifiedOpportunity, DiscoveryRun } from "@/types/api";
 
 export const discoverApi = {
   trigger: (sinceDays = 7) =>
@@ -17,6 +17,9 @@ export const discoverApi = {
     }),
   run: (runId: string) => apiFetchJson<DiscoveryRun>(`/discover/${runId}`),
   runs: () => apiFetchJson<DiscoveryRun[]>("/discover/runs"),
+  /** Phase 72: each result carries its own `relevance_tier` (exact/related/none). */
   opportunities: (limit = 50) =>
-    apiFetchJson<Opportunity[]>(`/discover/opportunities?limit=${limit}`),
+    apiFetchJson<ClassifiedOpportunity[]>(
+      `/discover/opportunities?limit=${limit}`
+    ),
 };

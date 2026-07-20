@@ -73,6 +73,8 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design and
 |------|-------------|
 | Discover, rank, ingest, confirm, promote, tailor, gate, ATS, render, journal, report, export | **SUPPORTED** |
 | PDF CV import | **SUPPORTED** (Phase 71, text-layer extraction; `.pdf` / `.docx` / `.txt` / `.md`) |
+| Role-aware search (synonyms, seniority, related sub-roles) | **SUPPORTED** (Phase 72, curated taxonomy; optional LLM fallback for roles outside it) |
+| Résumé public links (LinkedIn/GitHub/portfolio/project links) | **SUPPORTED** (Phase 72) |
 | OCR (scanned/image-only résumés) | **NOT_SUPPORTED** — proposes zero facts, never an error |
 | Browser submission / email-to-apply / autonomous external submission | **NOT_SUPPORTED** — code exists but is **unwired and unreachable** from the CLI |
 | Live LLM output *quality* | Validated by a real controlled live-Groq smoke run (Phase 36) — CI itself never has an API key, so it can make **no** real LLM call |
@@ -531,6 +533,26 @@ or **Google Custom Search** API key in Settings to enable it; with no key
 it honestly says so rather than inventing anything. No personal data
 about individuals is ever collected — public company channels only, never
 named employees (their ToS forbid scraping people, and so do we).
+
+**Search understands roles, not just words (Phase 72,
+[ADR-0090](docs/adr/0090-role-taxonomy-search-expansion-and-resume-links.md)).**
+Searching "Junior Software Developer" also matches postings titled
+"SWE"/"SDE"/"Entry Level Software Engineer" without you spelling out every
+variant, via a curated taxonomy of ~15 common tech-role families
+(`domain/role_taxonomy.py`) — free, deterministic, no LLM call. The
+Search Jobs page also shows a separate **Related roles** section for
+adjacent sub-roles the taxonomy names (e.g. Backend Developer, Cloud
+Engineer, DevOps Engineer for a "Software Developer" search) — never
+mixed into your exact matches. For a role the taxonomy doesn't recognize,
+an optional Groq-backed fallback tries once, best-effort, if a key is
+configured; either way, this can only ever *add* related-role suggestions,
+never affect which results count as an exact match.
+
+**Résumés can now carry your public links (Phase 72, ADR-0090).** The
+onboarding wizard's Personal Details step has fields for LinkedIn, GitHub,
+portfolio/website, and other links, plus a link field per project — all
+optional, always exactly what you entered. A generated résumé renders them
+on a line under your name, and a project's link next to its name.
 
 Build for production with `npm run build` (output in `frontend/dist/`);
 test with `npm test` (Vitest + React Testing Library); type-check with

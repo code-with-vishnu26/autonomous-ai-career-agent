@@ -2449,6 +2449,62 @@ profile.
   tests (`ResumeImportPanel.test.tsx`), all pre-existing
   `OnboardingWizardPage` tests unchanged.
 
+- ✅ **Role Taxonomy Search Expansion + Résumé Public Links -- ADR-0090
+  (Phase 72).** The owner asked that a search for "junior software
+  developer" be understood as a role (matching "SWE"/"SDE"/"entry level"
+  postings too) and also surface *related* sub-roles (backend, cloud,
+  DevOps, ...) as a distinct section, and that a generated résumé carry a
+  proper links section (LinkedIn, GitHub, portfolio, project links). One
+  part of the request -- "analyze company employees' LinkedIn resumes" --
+  was declined and flagged rather than silently done or dropped: scraping
+  named individuals' LinkedIn profiles violates their ToS and this
+  project's own standing no-scraping-of-people rule (ADR-0087's Context);
+  the résumé-quality goal was met instead from public, well-established
+  resume conventions.
+
+  New `domain/role_taxonomy.py`: a curated, hand-reviewed taxonomy of ~15
+  common tech-role families (software/backend/frontend/full-stack/mobile
+  developer, cloud/DevOps/SRE engineer, data engineer/scientist, ML
+  engineer, QA/security/database engineer, UX), each with interchangeable
+  `synonyms` and adjacent `related` family names, plus purely-additive
+  seniority synonyms (junior/mid/senior) -- pure, deterministic,
+  zero-cost, same "curated over model-derived" reasoning
+  `skills_taxonomy.py` already established for the ATS gate.
+  `domain/job_relevance.py`'s new `relevance_tier()` classifies each
+  opportunity `"exact"`/`"related"`/`"none"` against the caller's
+  configured role. The first implementation merged taxonomy synonyms into
+  the existing flat token-bag matcher and immediately produced two real
+  false positives caught by this phase's own tests before shipping --
+  "Data Entry Typist" false-matching as related to "Software Developer"
+  via the bare shared token "data," and "Backend Developer" false-matching
+  as *exact* (not related) via the bare shared word "developer." Fixed by
+  phrase-matching (word-boundary, not token-bag) taxonomy synonyms against
+  the opportunity title, checking the more specific `related` families
+  before the caller's own broader `exact` family. `role_terms()` itself
+  (Phase 70's literal bag-of-words) is completely unchanged.
+  `GET /discover/opportunities` now returns `ClassifiedOpportunity`
+  (`{opportunity, relevance_tier}`, computed per-caller against a shared
+  catalog); the Search Jobs page renders exact matches, then a separately
+  labeled "Related roles" section, never merged in.
+
+  A new optional `RoleExpander` LLM port (Groq-only, advisory-only, same
+  contract as `SemanticKeywordMatcher`) is consulted only when a
+  configured role matches *nothing* in the curated taxonomy -- its
+  suggestions can only widen the `"related"` tier, never gate, filter, or
+  reach an `"exact"` match; a taxonomy hit never calls it at all.
+
+  `MasterProfile.basics` gains `linkedin_url`/`github_url`/`website_url`/
+  `other_links` (all optional/additive -- a confirmed, real gap: the
+  résumé renderer's contact line was previously just
+  `email | phone | location`, nothing else); `ProjectEntry` gains `url`.
+  Always exactly what the user entered -- onboarding wizard, or JSON
+  Resume's own `basics.url`/`basics.profiles[]`/`projects[].url` via the
+  CLI loader -- never scraped or inferred. `file_renderer.py` adds a
+  second contact line for any non-empty links and a project's link next
+  to its name. No DB migration needed (`MasterProfile` is a single JSON
+  payload column). Onboarding wizard's Personal Details step and each
+  project entry gained the corresponding form fields.
+
 ---
 
 ## Deferred work (named, not forgotten)

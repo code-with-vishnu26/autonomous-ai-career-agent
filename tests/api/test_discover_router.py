@@ -10,6 +10,7 @@ own ``_FakeSource``) so no real network call ever happens.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from career_agent.api.app import create_app
+from career_agent.api.dependencies import get_opportunity_repository
 from career_agent.api.rate_limit import auth_rate_limiter
 from career_agent.domain.models import Opportunity, Provenance
 
@@ -130,7 +132,43 @@ def test_trigger_discovery_persists_new_opportunities_and_reports_count(
     assert final["errors"] == []
 
     opportunities = client.get("/discover/opportunities", headers=headers).json()
-    assert {o["id"] for o in opportunities} == {"a", "b"}
+    assert {o["opportunity"]["id"] for o in opportunities} == {"a", "b"}
+    # No preferences configured yet -- Phase 70's "matches everything"
+    # default classifies everything as an exact match (Phase 72).
+    assert {o["relevance_tier"] for o in opportunities} == {"exact"}
+
+
+def test_opportunities_are_classified_exact_vs_related_per_caller_preferences(
+    client: TestClient,
+) -> None:
+    """Phase 72 (ADR-0090): the shared opportunity catalog is classified
+    per-caller against their own configured role, not a static property of
+    the opportunity itself."""
+    token = _register(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    client.put(
+        "/user/preferences",
+        json={"preferred_titles": ["Software Developer"]},
+        headers=headers,
+    )
+
+    async def _seed(repo) -> None:
+        await repo.add(
+            _opp("a").model_copy(update={"title": "Software Developer"})
+        )
+        await repo.add(
+            _opp("b").model_copy(update={"title": "Backend Developer"})
+        )
+        await repo.add(_opp("c").model_copy(update={"title": "Barista"}))
+
+    asyncio.run(_seed(get_opportunity_repository()))
+
+    response = client.get("/discover/opportunities", headers=headers)
+    assert response.status_code == 200
+    by_id = {o["opportunity"]["id"]: o["relevance_tier"] for o in response.json()}
+    assert by_id["a"] == "exact"
+    assert by_id["b"] == "related"
+    assert by_id["c"] == "none"
 
 
 def test_get_run_status_reflects_the_completed_run(

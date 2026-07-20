@@ -81,6 +81,34 @@ def test_loads_a_valid_profile(tmp_path: Path) -> None:
     assert profile.projects[0].name == "Internal Tool"
 
 
+def test_loads_links_from_json_resume_profiles_and_url_fields(tmp_path: Path) -> None:
+    """Phase 72/ADR-0090: basics.url -> website_url, basics.profiles[] ->
+    linkedin_url/github_url by network, anything else into other_links."""
+    data = _valid_profile()
+    data["basics"]["url"] = "https://ada.dev"
+    data["basics"]["profiles"] = [
+        {"network": "LinkedIn", "username": "ada", "url": "https://linkedin.com/in/ada"},
+        {"network": "GitHub", "username": "ada", "url": "https://github.com/ada"},
+        {"network": "Twitter", "username": "ada", "url": "https://twitter.com/ada"},
+    ]
+    data["projects"][0]["url"] = "https://github.com/ada/tool"
+    profile = load_master_profile(_write(tmp_path, data))
+    assert profile.basics.website_url == "https://ada.dev"
+    assert profile.basics.linkedin_url == "https://linkedin.com/in/ada"
+    assert profile.basics.github_url == "https://github.com/ada"
+    assert profile.basics.other_links == ["https://twitter.com/ada"]
+    assert profile.projects[0].url == "https://github.com/ada/tool"
+
+
+def test_missing_links_load_as_none_and_empty_list(tmp_path: Path) -> None:
+    profile = load_master_profile(_write(tmp_path, _valid_profile()))
+    assert profile.basics.website_url is None
+    assert profile.basics.linkedin_url is None
+    assert profile.basics.github_url is None
+    assert profile.basics.other_links == []
+    assert profile.projects[0].url is None
+
+
 # ---------------------------------------------------------------------------
 # Version: deterministic content hash, scoped to grounding fields only
 # ---------------------------------------------------------------------------

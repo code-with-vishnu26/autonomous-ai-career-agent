@@ -24,6 +24,7 @@ from career_agent.core.interfaces import (
     CareerCoachAdvisor,
     ClaimVerifier,
     ContentDrafter,
+    RoleExpander,
     SemanticKeywordMatcher,
 )
 from career_agent.llm.claim_verifier import AnthropicClaimVerifier
@@ -32,6 +33,7 @@ from career_agent.llm.content_drafter import AnthropicContentDrafter
 from career_agent.llm.groq_claim_verifier import GroqClaimVerifier
 from career_agent.llm.groq_coach_advisor import GroqCareerCoachAdvisor
 from career_agent.llm.groq_content_drafter import GroqContentDrafter
+from career_agent.llm.groq_role_expander import GroqRoleExpander
 from career_agent.llm.groq_semantic_matcher import GroqSemanticKeywordMatcher
 from career_agent.llm.semantic_matcher import AnthropicSemanticKeywordMatcher
 
@@ -69,6 +71,25 @@ def select_semantic_matcher(settings: Settings) -> SemanticKeywordMatcher | None
         return GroqSemanticKeywordMatcher(api_key=settings.groq_api_key)
     if settings.anthropic_api_key:
         return AnthropicSemanticKeywordMatcher(api_key=settings.anthropic_api_key)
+    return None
+
+
+def select_role_expander(settings: Settings) -> RoleExpander | None:
+    """Groq only, ``None`` if unset -- the search-role-expansion fallback.
+
+    Purely advisory (Phase 72, ADR-0090): the curated taxonomy
+    (:mod:`career_agent.domain.role_taxonomy`) already covers this
+    project's own domain deterministically and for free; this port is
+    only ever consulted for a role query the taxonomy has no entry for at
+    all, and its output can only widen a search's "related" bucket, never
+    gate or filter anything. No Anthropic branch (unlike the other three
+    ports above) -- the value of a paid fallback for an optional,
+    already-degrades-gracefully-to-nothing feature does not clear this
+    project's own free-tier-first bar the way a resume-tailoring or
+    truthfulness-verification port's does.
+    """
+    if settings.groq_api_key:
+        return GroqRoleExpander(api_key=settings.groq_api_key)
     return None
 
 
