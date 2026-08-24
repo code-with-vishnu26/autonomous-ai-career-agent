@@ -24,9 +24,9 @@ class BasicsSection(BaseModel):
     ``linkedin_url``/``github_url``/``website_url``/``other_links`` (Phase
     72, ADR-0090) are the applicant's *own* public profile links -- never
     scraped or inferred, always exactly what the user themselves entered
-    during onboarding or résumé import. All optional and additive: an
+    during onboarding or resume import. All optional and additive: an
     existing stored profile with none of them set loads and renders
-    exactly as before. Rendered on the résumé under the applicant's own
+    exactly as before. Rendered on the resume under the applicant's own
     name (``agents/resume/file_renderer.py``), never under any other
     identity -- see ADR-0090 for why this project does not, and will not,
     source resume content from anyone else's LinkedIn profile.

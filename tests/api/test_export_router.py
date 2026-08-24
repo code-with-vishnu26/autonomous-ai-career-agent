@@ -275,9 +275,9 @@ def test_applications_export_includes_linkedin_and_resume_pdf_columns(
     sheet = load_workbook(BytesIO(response.content)).active
     header = [cell.value for cell in sheet[1]]
     assert "Company LinkedIn" in header
-    assert "Résumé (PDF)" in header
+    assert "Resume (PDF)" in header
 
-    resume_col = header.index("Résumé (PDF)") + 1
+    resume_col = header.index("Resume (PDF)") + 1
     cell = sheet.cell(row=2, column=resume_col)
     assert cell.hyperlink is not None
     assert "/export/resume/variant-1.pdf?token=" in cell.hyperlink.target
@@ -295,7 +295,7 @@ def test_applications_export_leaves_resume_column_blank_without_a_variant(
     )
     sheet = load_workbook(BytesIO(response.content)).active
     header = [cell.value for cell in sheet[1]]
-    resume_col = header.index("Résumé (PDF)") + 1
+    resume_col = header.index("Resume (PDF)") + 1
     assert sheet.cell(row=2, column=resume_col).value in (None, "")
 
 

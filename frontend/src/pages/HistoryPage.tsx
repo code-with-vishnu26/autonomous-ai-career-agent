@@ -101,7 +101,7 @@ export function HistoryPage() {
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {entry.kind === "review" ? "Review" : "Submission"}
-                      {entry.at ? ` — ${new Date(entry.at).toLocaleString()}` : ""}
+                      {entry.at ? ` - ${new Date(entry.at).toLocaleString()}` : ""}
                     </p>
                   </div>
                   <StatusBadge status={entry.status} />

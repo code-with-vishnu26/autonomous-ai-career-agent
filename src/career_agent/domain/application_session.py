@@ -3,7 +3,7 @@
 Phase 51's own goal states it exactly: prepare an application inside a
 browser, then **stop before Submit**. This model is what "stop" produces --
 the artifact handed to Phase 52's Human Review Center, mirroring how
-``TailoredResume``/``Application`` (ADR-0011/ADR-0023) are what résumé
+``TailoredResume``/``Application`` (ADR-0011/ADR-0023) are what resume
 tailoring produces for a human to review before anything downstream acts on
 it. Pure data, no I/O, no ``Page``/browser object anywhere on it -- fully
 serializable, so it can be persisted (``storage/sqlite.py``) and later
@@ -62,7 +62,7 @@ class ApplicationSession(BaseModel):
     #: reason about at all (``filled_fields`` + ``missing_fields``).
     detected_fields: list[str] = Field(default_factory=list)
     #: Real files actually attached via Playwright ``set_input_files``
-    #: (e.g. Lever's DOCX résumé upload) -- never a guessed/blind upload.
+    #: (e.g. Lever's DOCX resume upload) -- never a guessed/blind upload.
     uploaded_files: list[str] = Field(default_factory=list)
     #: Required fields this run could not safely answer -- a human must
     #: fill these directly, the same "never guess" discipline

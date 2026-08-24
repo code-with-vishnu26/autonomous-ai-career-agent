@@ -1,5 +1,5 @@
 /**
- * Web-triggered Prepare (Phase 67, ADR-0085). Tailors a résumé + cover
+ * Web-triggered Prepare (Phase 67, ADR-0085). Tailors a resume + cover
  * letter for one opportunity from the caller's stored Master Profile, then
  * hands the result to the Review Queue. `start` triggers; `status` polls.
  */

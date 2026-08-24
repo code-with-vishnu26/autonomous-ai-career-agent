@@ -515,7 +515,7 @@ async def run_prepare_command(
 ) -> int:
     """The real ``career-agent prepare`` entry point (Phase 51, ADR-0069).
 
-    Tailors and gates a résumé and assembles a cover letter (Phase 50's
+    Tailors and gates a resume and assembles a cover letter (Phase 50's
     ``ResumeVariantEngine``, reused unmodified), then opens a real browser
     and fills as much of the live application form as it safely can --
     stopping before any Submit click. Never constructs an ``Applicator``
@@ -690,7 +690,7 @@ async def prepare_application_for_review(
     Deliberately does **not** open a browser to pre-fill the live form the
     way the CLI's ``ApplicationPreparationEngine.build_session`` does: that
     pre-fill is only a preview, and the real, authoritative form fill (and
-    the résumé upload) happens at submit time
+    the resume upload) happens at submit time
     (``submit_prepared_application``, ADR-0071/0081) behind the
     human-confirmation gate. Skipping it here keeps web preparation
     deterministic and runnable in any environment -- including a headless
@@ -764,7 +764,7 @@ async def prepare_application_for_review(
         uploaded_files=[],
         warnings=[
             "Prepared for review without a browser pre-fill -- the live "
-            "form is filled and the résumé uploaded at submit time, behind "
+            "form is filled and the resume uploaded at submit time, behind "
             "the human-confirmation gate."
         ],
         created_at=datetime.now(UTC),
@@ -1048,7 +1048,7 @@ async def run_submit_command(
     -- and only after every precondition in ``domain/execution.py``'s
     fail-closed boundary holds, plus one final, explicit, un-bypassable
     human confirmation (:func:`_countdown_and_confirm`). Re-tailors fresh
-    (the same way ``prepare`` originally did) so the résumé actually
+    (the same way ``prepare`` originally did) so the resume actually
     submitted is verified byte-for-byte against what was stored at
     prepare-time -- a profile edit between ``prepare`` and ``submit``
     fails the artifact-integrity check rather than silently submitting
@@ -1839,7 +1839,7 @@ def run_diagnose_promptfoo_drift_command(
 ) -> int:
     """Report why the prompt-content drift check would accept or reject an artifact.
 
-    Never exposes résumé/claim content or secrets. Reuses the exact same
+    Never exposes resume/claim content or secrets. Reuses the exact same
     parsing (``_recorded_prompt_raw``) and
     normalization (``_canonicalize_prompt_text``) the real
     ``verify_promptfoo_results`` check uses -- this can never disagree
@@ -2646,7 +2646,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Print exactly why the prompt-content drift check in "
         "verify-promptfoo would accept or reject a real local results "
         "artifact -- lengths, hashes, first differing character. No "
-        "résumé/claim content or secrets printed.",
+        "resume/claim content or secrets printed.",
     )
     diagnose_promptfoo_parser.add_argument(
         "--provider", required=True, choices=("anthropic", "groq")
@@ -2793,7 +2793,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "serve":
         raise SystemExit(run_serve_command(host=args.host, port=args.port))
 
-    print(f"AI Career Agent v{__version__} — scaffolding (Phase 1).")
+    print(f"AI Career Agent v{__version__} - scaffolding (Phase 1).")
     print("Not yet runnable; see ROADMAP.md for the build plan.")
 
 

@@ -5,7 +5,7 @@ A common interface (:mod:`base`) over per-platform adapters
 deterministic URL-based lookup (:mod:`registry`), and browser hooks that
 reuse Phase 47's ``BrowserManager``/``SessionManager``/``TabManager``.
 
-No adapter knows what a résumé, an application, or the truthfulness gate
+No adapter knows what a resume, an application, or the truthfulness gate
 is -- discovery (``search()``) delegates to this project's existing,
 real, tested :class:`~career_agent.core.interfaces.OpportunitySource`
 implementations where one exists; only the browser-facing half

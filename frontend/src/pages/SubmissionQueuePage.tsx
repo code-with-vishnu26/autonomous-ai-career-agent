@@ -58,7 +58,7 @@ function SubmissionCard({ review }: { review: ReviewSession }) {
       {token && entry && (
         <div className="rounded-md bg-muted/50 p-2 text-sm">
           {entry.status === "PREPARING" && (
-            <p>Preparing — re-tailoring the résumé and running the promptfoo gate…</p>
+            <p>Preparing - re-tailoring the resume and running the promptfoo gate...</p>
           )}
           {entry.status === "AWAITING_CONFIRMATION" && (
             <div className="flex flex-wrap items-center gap-2">
@@ -81,7 +81,7 @@ function SubmissionCard({ review }: { review: ReviewSession }) {
             </div>
           )}
           {entry.status === "SUBMITTING" && <p>Submitting…</p>}
-          {entry.status === "DONE" && <p>Done — see Recorded attempts below.</p>}
+          {entry.status === "DONE" && <p>Done - see Recorded attempts below.</p>}
           {entry.status === "FAILED" && (
             <p className="text-destructive">Failed: {entry.error}</p>
           )}
@@ -159,7 +159,7 @@ export function SubmissionQueuePage() {
                           <StatusBadge status={result.status} />
                         </TD>
                         <TD className="text-xs text-muted-foreground">
-                          {result.warnings.length > 0 ? result.warnings.join("; ") : "—"}
+                          {result.warnings.length > 0 ? result.warnings.join("; ") : "-"}
                         </TD>
                       </TR>
                     ))}

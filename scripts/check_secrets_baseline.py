@@ -125,7 +125,7 @@ def main() -> int:
     # fix for the real Windows CI failure found here (that was `results`'
     # backslash-vs-forward-slash path keys, handled in `_normalized`
     # below). Kept anyway: Windows' non-UTF-8 default locale reading
-    # non-ASCII fixture content (e.g. "résumé") differently than Linux is
+    # non-ASCII fixture content (e.g. "resume") differently than Linux is
     # a real, separate risk this project has hit before (ADR-0056).
     subprocess.run(
         args, cwd=_REPO_ROOT, check=True, env={**os.environ, "PYTHONUTF8": "1"}

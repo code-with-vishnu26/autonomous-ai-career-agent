@@ -7,7 +7,7 @@ module adds nothing to *that* data -- it adds the **decision** layered on
 top of it.
 
 ``ReviewSession`` deliberately does **not** duplicate `ApplicationSession`'s
-content (résumé variant, cover letter body, filled/missing fields,
+content (resume variant, cover letter body, filled/missing fields,
 warnings, uploaded files). It stores a link (`application_session_id`) plus
 a few cheap, denormalized display fields -- the same "denormalize identity/
 display fields, not full content" precedent

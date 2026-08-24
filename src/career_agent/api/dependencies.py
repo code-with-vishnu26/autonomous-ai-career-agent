@@ -70,7 +70,7 @@ def get_submission_result_store() -> SqliteSubmissionResultStore:
 
 
 def get_resume_variant_store() -> SqliteResumeVariantStore:
-    """Store backing the résumé variants ``career-agent prepare`` builds."""
+    """Store backing the resume variants ``career-agent prepare`` builds."""
     return SqliteResumeVariantStore(_database_path())
 
 

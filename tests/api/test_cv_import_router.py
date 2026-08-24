@@ -1,6 +1,6 @@
 """Phase 71 (ADR-0089): POST /user/master-profile/import (+ /confirm).
 
-Web résumé upload -> review -> promote into the caller's Master Profile.
+Web resume upload -> review -> promote into the caller's Master Profile.
 Exercises the real ``storage/cv_ingest.py`` fail-closed boundary end to
 end via HTTP, not mocks.
 """

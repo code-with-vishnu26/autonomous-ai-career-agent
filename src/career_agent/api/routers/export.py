@@ -66,7 +66,7 @@ def _xlsx_response(data: bytes, filename: str) -> Response:
     )
 
 
-#: How long a résumé-download link embedded in an exported workbook stays
+#: How long a resume-download link embedded in an exported workbook stays
 #: valid -- long enough that a spreadsheet someone keeps for a job search
 #: (weeks to a few months) still works, short enough that a leaked/shared
 #: file doesn't grant access forever.
@@ -83,7 +83,7 @@ async def _enriched_application_rows(
     when no search key is configured (``research_company`` short-circuits).
     Every URL here is public (the job posting, the company's careers page,
     the research sources) or a signed capability link scoped to exactly one
-    résumé the caller owns; the cover letter is the caller's own, inlined.
+    resume the caller owns; the cover letter is the caller's own, inlined.
     """
     research_cache: dict[str, CompanyResearch] = {}
     rows: list[dict[str, object]] = []
@@ -152,9 +152,9 @@ async def export_applications_xlsx(
     accurate details (location, remote, source, posted date, the job URL),
     public web-search company research (a source-backed summary, the
     careers page, the company's LinkedIn page, source links), a signed
-    link to the exact tailored résumé PDF that was submitted, and the
+    link to the exact tailored resume PDF that was submitted, and the
     tailored cover letter inline -- the "accurate details, company links,
-    which résumé was submitted, and company research in one sheet" the
+    which resume was submitted, and company research in one sheet" the
     owner asked for. Company research is empty-but-honest when no Exa/
     Google CSE key is configured; it never fabricates.
     """
@@ -190,10 +190,10 @@ async def export_resume_pdf(
     master_profile_store=Depends(get_master_profile_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    """The tailored résumé PDF for one résumé variant -- token-authenticated.
+    """The tailored resume PDF for one resume variant -- token-authenticated.
 
     Deliberately **not** session-authenticated (no ``get_current_user``
-    dependency): this is the link an Excel row's "Résumé (PDF)" hyperlink
+    dependency): this is the link an Excel row's "Resume (PDF)" hyperlink
     points at, opened later from Excel itself with no
     ``Authorization`` header available. ``token`` (Phase 71, ADR-0089) is
     the capability -- a signed JWT scoped to exactly this ``variant_id``
@@ -203,7 +203,7 @@ async def export_resume_pdf(
     Renders on demand from the stored ``ResumeVariant`` content + the
     owner's ``MasterProfile`` -- the exact same renderer
     ``prepare``/``submit`` use, so what downloads is the real tailored
-    résumé, not a stale cached copy. Returns 503 (not a 500) when this
+    resume, not a stale cached copy. Returns 503 (not a 500) when this
     server has no PDF converter installed -- a real, named environment
     constraint (ADR-0080's precedent for "the capability may not exist
     here"), not a bug.
@@ -220,12 +220,12 @@ async def export_resume_pdf(
     except InvalidTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="This résumé link is invalid or has expired.",
+            detail="This resume link is invalid or has expired.",
         ) from exc
     if claims.resume_variant_id != variant_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="This résumé link is invalid or has expired.",
+            detail="This resume link is invalid or has expired.",
         )
 
     owned = any(
@@ -235,7 +235,7 @@ async def export_resume_pdf(
     profile = master_profile_store.get(claims.user_id) if owned else None
     if variant is None or profile is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Résumé not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found."
         )
 
     artifacts_dir = Path(settings.artifacts_dir) / "web_downloads"

@@ -30,7 +30,7 @@ Two token kinds, deliberately not interchangeable:
   sent as a header; delivered only via an httpOnly cookie (ADR-0074).
 
 A third kind (Phase 71, ADR-0089), **resume download token**: a signed JWT
-scoped to exactly one résumé variant, with its own ``purpose`` claim so it
+scoped to exactly one resume variant, with its own ``purpose`` claim so it
 can never be mistaken for -- or accepted as -- a session access token (the
 same token-confusion discipline as ``domain/ingestion.py``'s
 ``confirmation_digest``, applied to JWTs instead of content digests). It
@@ -158,7 +158,7 @@ def create_resume_download_token(
     expires_in_days: int,
     now: datetime | None = None,
 ) -> str:
-    """A signed JWT scoped to exactly one user's one résumé variant.
+    """A signed JWT scoped to exactly one user's one resume variant.
 
     Carries a ``purpose`` claim distinct from an access token's shape (no
     ``role``), so :func:`decode_access_token` and

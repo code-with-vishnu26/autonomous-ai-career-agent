@@ -10,7 +10,7 @@ outside ``/api/*`` in Phase 56, now a third named exception
 (``test_auth_and_user_are_the_only_write_capable_routers``).
 
 Every request here is self-contained (resume text + job description text
-in the body): there is no server-side stored profile or résumé this API
+in the body): there is no server-side stored profile or resume this API
 can read on a multi-user deployment, the same reasoning
 ``domain/coach_analysis.py`` documents for why it is a distinct, simpler
 pipeline from the tailoring engine's own ``score_resume``.
@@ -96,7 +96,7 @@ class ProfileMatchResult(BaseModel):
     Combines the job-match score and the skill-gap ranking (both
     keyword-based, both naturally read together as "how well do I match,
     and what am I missing") computed from the onboarded profile rather
-    than pasted résumé text -- the connective tissue between Phase 64's
+    than pasted resume text -- the connective tissue between Phase 64's
     Master Profile and the existing ADR-0075 scorers.
     """
 
@@ -169,9 +169,9 @@ def profile_match(
     """Score the caller's stored Master Profile against a job description.
 
     Deterministic -- no LLM call, no fabrication risk. Renders the
-    onboarded profile (Phase 64) to résumé text and reuses the same
+    onboarded profile (Phase 64) to resume text and reuses the same
     ADR-0075 keyword scorers the paste-based Coach pages use, so a user
-    who onboarded never has to re-type their résumé to see their ATS
+    who onboarded never has to re-type their resume to see their ATS
     coverage and missing keywords. 404 (not an empty score) when the
     caller has no profile yet, so the UI can send them to onboarding
     rather than showing a misleading 0%.

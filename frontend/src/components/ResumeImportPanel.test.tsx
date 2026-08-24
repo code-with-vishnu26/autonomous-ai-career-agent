@@ -15,7 +15,7 @@ function resumeFile(): File {
 }
 
 describe("ResumeImportPanel", () => {
-  it("uploads a résumé, confirms/rejects proposals, and shows the outcome", async () => {
+  it("uploads a resume, confirms/rejects proposals, and shows the outcome", async () => {
     const confirmed: unknown[] = [];
     vi.stubGlobal(
       "fetch",
@@ -92,7 +92,7 @@ describe("ResumeImportPanel", () => {
     const user = userEvent.setup();
     renderWithProviders(<ResumeImportPanel />);
 
-    await user.upload(screen.getByLabelText(/résumé file/i), resumeFile());
+    await user.upload(screen.getByLabelText(/resume file/i), resumeFile());
 
     expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
     expect(screen.getByText("ada@example.com")).toBeInTheDocument();
@@ -107,7 +107,7 @@ describe("ResumeImportPanel", () => {
     );
     await user.click(screen.getByRole("button", { name: /save 2 decisions/i }));
 
-    expect(await screen.findByText(/profile updated from your résumé/i)).toBeInTheDocument();
+    expect(await screen.findByText(/profile updated from your resume/i)).toBeInTheDocument();
     expect(screen.getByText("ADD")).toBeInTheDocument();
     expect(screen.getByText("REJECT")).toBeInTheDocument();
 
@@ -165,7 +165,7 @@ describe("ResumeImportPanel", () => {
     const user = userEvent.setup();
     renderWithProviders(<ResumeImportPanel />);
 
-    await user.upload(screen.getByLabelText(/résumé file/i), resumeFile());
+    await user.upload(screen.getByLabelText(/resume file/i), resumeFile());
     await screen.findByText("Ada Lovelace");
 
     await user.selectOptions(screen.getByLabelText(/decision for skill: python/i), "confirm");
@@ -184,7 +184,7 @@ describe("ResumeImportPanel", () => {
     const user = userEvent.setup();
     renderWithProviders(<ResumeImportPanel />);
 
-    await user.upload(screen.getByLabelText(/résumé file/i), resumeFile());
+    await user.upload(screen.getByLabelText(/resume file/i), resumeFile());
 
     expect(
       await screen.findByText(/no facts could be confidently extracted/i),
@@ -203,7 +203,7 @@ describe("ResumeImportPanel", () => {
     const user = userEvent.setup();
     renderWithProviders(<ResumeImportPanel />);
 
-    await user.upload(screen.getByLabelText(/résumé file/i), resumeFile());
+    await user.upload(screen.getByLabelText(/resume file/i), resumeFile());
 
     expect(await screen.findByText(/unsupported file type/i)).toBeInTheDocument();
   });

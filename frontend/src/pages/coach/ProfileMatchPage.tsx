@@ -9,7 +9,7 @@ import { useProfileMatch } from "@/hooks/useCoach";
 
 /**
  * Phase 66 (ADR-0084). Scores the onboarded Master Profile against a job
- * description with no résumé paste -- the deterministic ATS/keyword
+ * description with no resume paste -- the deterministic ATS/keyword
  * scorers (ADR-0075) fed from stored profile data (Phase 64). A 404 means
  * the user hasn't onboarded yet, so we send them there rather than show a
  * misleading empty score.
@@ -26,7 +26,7 @@ export function ProfileMatchPage() {
       <h1 className="text-2xl font-semibold">Match My Profile</h1>
       <Callout>
         A deterministic keyword-coverage score of your saved Master Profile
-        against a job description -- no résumé paste, no LLM, no cost. It
+        against a job description -- no resume paste, no LLM, no cost. It
         measures how much of the role's vocabulary your profile already
         covers, and what keywords are missing.
       </Callout>
@@ -103,7 +103,7 @@ export function ProfileMatchPage() {
                   <div key={gap.keyword} className="text-sm">
                     <span className="font-medium">{gap.keyword}</span>{" "}
                     <span className="text-muted-foreground">
-                      ({gap.kind}) — {gap.reason}
+                      ({gap.kind}) - {gap.reason}
                     </span>
                   </div>
                 ))}

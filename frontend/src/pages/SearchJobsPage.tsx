@@ -146,9 +146,9 @@ export function SearchJobsPage() {
         uses (ADR-0081) -- your filters save to Job Search Preferences first
         (<code>PUT /user/preferences</code>), then a background run polls every
         configured source. <strong>Prepare application</strong> then tailors a
-        résumé + cover letter for a result from your onboarded Master Profile
+        resume + cover letter for a result from your onboarded Master Profile
         (ADR-0085) and sends it to the Review Queue -- the live form is filled
-        and the résumé uploaded later, at submit, behind the confirmation gate.
+        and the resume uploaded later, at submit, behind the confirmation gate.
       </Callout>
 
       <Card>
@@ -232,7 +232,7 @@ export function SearchJobsPage() {
 
       {run.data && (
         <Callout>
-          {run.data.status === "PENDING" && "Queued — starting the discovery run…"}
+          {run.data.status === "PENDING" && "Queued - starting the discovery run…"}
           {run.data.status === "RUNNING" &&
             `Running against ${run.data.source_labels.length || "your configured"} source(s)…`}
           {run.data.status === "COMPLETED" &&

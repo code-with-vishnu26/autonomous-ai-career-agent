@@ -31,7 +31,7 @@ export function AnalyticsPage() {
       <Callout>
         Interview rate and offer rate aren't shown: no route in this API exposes
         interview/offer outcomes (that's the older, separate outcome-tracking
-        pipeline — see the Dashboard page's note). Every chart below is a real
+        pipeline - see the Dashboard page's note). Every chart below is a real
         aggregation over <code>/api/analytics/summary</code> and{" "}
         <code>/api/applications</code>, nothing simulated.
       </Callout>
@@ -44,7 +44,7 @@ export function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <CardValue>
-                {successRate === null ? "—" : `${Math.round(successRate * 100)}%`}
+                {successRate === null ? "-" : `${Math.round(successRate * 100)}%`}
               </CardValue>
             </CardContent>
           </Card>

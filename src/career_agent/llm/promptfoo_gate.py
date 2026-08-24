@@ -313,7 +313,7 @@ def _first_difference(a: str, b: str) -> tuple[int, str, str] | None:
     Also returns a short ``repr()`` window around it on each side. Never
     returns the strings' full content: callers of
     :func:`diagnose_prompt_drift` pass prompt-template text here, which
-    contains no résumé/claim content (that lives in ``tests.yaml``'s
+    contains no resume/claim content (that lives in ``tests.yaml``'s
     ``evidence``/``statement`` vars, substituted only at Nunjucks render
     time, never present in the raw template this compares).
     """
@@ -342,7 +342,7 @@ def diagnose_prompt_drift(
     index with a small ``repr()`` window around it, and the results file's
     own recorded prompt-array metadata (count, keys) -- deliberately never
     the full prompt or claim/evidence text, so this is safe to paste
-    output from without exposing your résumé content or any secret.
+    output from without exposing your resume content or any secret.
     """
     lines: list[str] = []
     results_path = results_dir / f"{prompt_version}--{provider_id}.json"

@@ -1,9 +1,9 @@
 """JSON Resume master profile loader/validator (Phase 6, ADR-0017).
 
-The single I/O boundary between the user's data on disk (ADR-0006 — a JSON
+The single I/O boundary between the user's data on disk (ADR-0006 - a JSON
 Resume file, user-owned, never committed to the repo) and the domain model
 (:class:`~career_agent.domain.models.MasterProfile`) everything downstream is
-built against. A plain function, not a ``Protocol`` — there is exactly one
+built against. A plain function, not a ``Protocol`` - there is exactly one
 profile format and no plausible second implementation on the roadmap; that is
 a real choice, not an oversight (see ADR-0017).
 
@@ -12,13 +12,13 @@ Two things this loader enforces that the raw JSON Resume schema does not:
 - **Every ``work``/``education``/``skills``/``projects`` entry must carry a
   stable, unique ``id``.** JSON Resume has no native id field; ``id`` here is
   a required extension. It is *rejected*, never inferred or silently written
-  back — the "assigned once, never reused" guarantee
+  back - the "assigned once, never reused" guarantee
   :class:`~career_agent.domain.models.EvidenceRef` depends on (ADR-0012) only
   holds if the id is something the user deliberately committed to, not
   something the loader derived from content that can change on the next edit.
 - **``version`` is a deterministic content hash over exactly the fields
   :class:`MasterProfile` models** (``basics``/``work``/``education``/
-  ``skills``/``projects``) — never the whole raw file. A JSON Resume section
+  ``skills``/``projects``) - never the whole raw file. A JSON Resume section
   this loader doesn't import at all (``awards``, ``publications``,
   ``languages``, ``interests``, ``references``, ``volunteer``, structured
   ``basics.location``/``basics.profiles``) changing must not bump ``version``
@@ -52,7 +52,7 @@ class ProfileValidationError(ValueError):
     Raised (never silently patched or inferred around) for the id-stability
     checks this loader adds on top of raw JSON Resume. Other structural
     problems (a missing required field, a malformed date) are surfaced as the
-    underlying ``pydantic.ValidationError`` directly, unwrapped — only the id
+    underlying ``pydantic.ValidationError`` directly, unwrapped - only the id
     checks get a custom message, because a missing id is expected to be the
     first friction point for anyone loading an existing, unmodified resume
     into this system for the first time.
@@ -149,7 +149,7 @@ def write_profile_scaffold(path: Path) -> bool:
 def load_master_profile(path: Path) -> MasterProfile:
     """Load, id-validate, and version a master profile from a JSON Resume file.
 
-    Explicit ``encoding="utf-8"`` -- a real résumé routinely carries
+    Explicit ``encoding="utf-8"`` -- a real resume routinely carries
     non-ASCII names/content, and without this, ``Path.read_text()`` falls
     back to the platform's default encoding (cp1252 on Windows), which
     cannot decode it.

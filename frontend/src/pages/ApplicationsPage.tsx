@@ -74,7 +74,7 @@ export function ApplicationsPage() {
                       <StatusBadge status={row.status} />
                     </TD>
                     <TD className="capitalize">{row.provider}</TD>
-                    <TD>{row.resume_variant_id ?? "—"}</TD>
+                    <TD>{row.resume_variant_id ?? "-"}</TD>
                     <TD>{new Date(row.created_at).toLocaleDateString()}</TD>
                   </TR>
                 ))}

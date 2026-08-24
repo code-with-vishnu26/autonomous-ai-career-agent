@@ -112,7 +112,7 @@ export function OnboardingWizardPage() {
         This wizard writes directly to your Master Profile (
         <code>PUT /user/master-profile</code>) -- the same JSON-Resume-shaped
         source of truth <code>career-agent prepare</code>/<code>submit</code>{" "}
-        already build résumés against. Upload an existing résumé on the
+        already build resumes against. Upload an existing resume on the
         Welcome step below to pre-fill this automatically, or fill it in by
         hand.
       </Callout>
@@ -127,7 +127,7 @@ export function OnboardingWizardPage() {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm text-muted-foreground">
                   <p>
-                    This short wizard captures what a tailored résumé is built
+                    This short wizard captures what a tailored resume is built
                     from: your basics, work history, education, skills, and
                     projects.
                   </p>

@@ -103,7 +103,7 @@ def main() -> None:  # pragma: no cover -- thin shell over tested metrics
         database_path, store.all_rows(), store.outcome_rows()
     )
 
-    st.title("Career Agent — local dashboard")
+    st.title("Career Agent - local dashboard")
     st.caption("Read-only view over the local SQLite store. No network.")
 
     st.subheader("Discovery by source")
@@ -125,7 +125,7 @@ def main() -> None:  # pragma: no cover -- thin shell over tested metrics
     else:
         st.write("No ATS-scored applications yet.")
 
-    st.subheader("Funnel (raw counts — ADR-0039)")
+    st.subheader("Funnel (raw counts - ADR-0039)")
     st.text(metrics.funnel_text)
 
 
