@@ -1,4 +1,4 @@
-# Release Checklist — Autonomous AI Career Agent
+# Release Checklist — AI Career Agent
 
 This checklist is the gate for cutting a release. It mirrors the Phase 34 audit
 and must be re-run from a clean tree. Record exact results, not summaries.
@@ -82,5 +82,5 @@ and must be re-run from a clean tree. Record exact results, not summaries.
 
 - [ ] Version metadata set intentionally (see `docs/release/`).
 - [ ] Draft PR opened; **not** merged; **not** tagged; **not** published without
-      authorization.
+      authorisation.
 - [ ] Explicit **GO / CONDITIONAL_GO / NO_GO** recorded with reasoning.

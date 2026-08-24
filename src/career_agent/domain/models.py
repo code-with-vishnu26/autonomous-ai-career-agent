@@ -1,4 +1,4 @@
-"""Domain models for the Autonomous AI Career Agent.
+"""Domain models for the AI Career Agent.
 
 Pure data and validation rules only. No I/O, no framework or SDK imports
 beyond Pydantic and the standard library. See ADR-0006 (JSON Resume master

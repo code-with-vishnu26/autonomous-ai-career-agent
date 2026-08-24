@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "career-agent"
 version = "1.1.0"
-description = "A single-user, self-hosted Autonomous AI Career Agent: discover, decide, ingest, and prepare truthful applications (supervised, prepare-only)."
+description = "A single-user, self-hosted AI Career Agent: discover, decide, ingest, and prepare truthful applications (supervised, prepare-only)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
-authors = [{ name = "Autonomous AI Career Agent contributors" }]
+authors = [{ name = "AI Career Agent contributors" }]
 keywords = ["job-search", "automation", "agent", "claude", "career"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

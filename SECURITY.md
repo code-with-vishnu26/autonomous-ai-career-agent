@@ -2,7 +2,7 @@
 
 ## Scope
 
-The Autonomous AI Career Agent is a **single-user, self-hosted** tool. It runs
+The AI Career Agent is a **single-user, self-hosted** tool. It runs
 on the operator's own machine, with the operator's own accounts and data. There
 is no hosted service, no multi-tenancy, and — in v1.0 — no autonomous external
 action. This document records the security properties the project relies on and

@@ -1,4 +1,4 @@
-"""Autonomous AI Career Agent.
+"""AI Career Agent.
 
 A single-user, self-hosted automation that discovers, decides on, applies to, and
 learns from job opportunities using the user's own accounts and data.
@@ -8,4 +8,4 @@ a central Planner Agent coordinates specialized agents (Discovery, Resume, Apply
 Learning) that communicate through a plugin registry and event bus.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.1.0"

@@ -1,12 +1,12 @@
 # Architecture
 
-This document describes the high-level architecture of the Autonomous AI Career
+This document describes the high-level architecture of the AI Career
 Agent. It is the canonical reference for *how the system is shaped*; specific
 decisions and their rationale are recorded as ADRs in [`docs/adr/`](docs/adr/).
 
-> **Status:** This describes the *target* architecture. It is being realized one
+> **Status:** This describes the *target* architecture. It is being realised one
 > phase at a time (see [`ROADMAP.md`](ROADMAP.md)). Interfaces named here are
-> finalized in Phase 2.
+> finalised in Phase 2.
 
 ---
 
@@ -17,8 +17,8 @@ The project's mission, goals, non-goals, and golden rules are fixed in
 serves. The system is **agent-oriented, not a fixed pipeline** (see
 [ADR-0001](docs/adr/0001-agent-oriented-architecture.md)). Rather than hard-coding
 a linear `discover → decide → apply → learn` flow, a central **Planner Agent**
-reasons about state and decides what to do next, dispatching work to specialized
-agents. This lets the system reprioritize, retry, and incorporate new capabilities
+reasons about state and decides what to do next, dispatching work to specialised
+agents. This lets the system reprioritise, retry, and incorporate new capabilities
 without rewriting a brittle pipeline.
 
 Two cross-cutting commitments shape everything:
@@ -36,7 +36,7 @@ Two cross-cutting commitments shape everything:
                           ┌─────────────────────────┐
                           │      Planner Agent       │
                           │  (the brain: plan, route │
-                          │   prioritize, retry)     │
+                          │   prioritise, retry)     │
                           └────────────┬─────────────┘
                                        │ dispatches tasks
         ┌──────────────┬───────────────┼───────────────┬──────────────┐
@@ -67,7 +67,7 @@ Two cross-cutting commitments shape everything:
 ### Planner Agent (the brain)
 Decides *what to do next* given current state: which opportunities to discover,
 which are worth pursuing, when to tailor a résumé, when to apply, and how to react
-to failures. Owns prioritization, retry/backoff policy, and the cost cascade
+to failures. Owns prioritisation, retry/backoff policy, and the cost cascade
 budget. Implemented on **LangGraph** so its decision loop is inspectable and
 resumable.
 
@@ -118,7 +118,7 @@ All model calls go through a single Claude client that implements a
 **Haiku → Sonnet → Opus** cost cascade: cheap models handle routine work and the
 system escalates to more capable (more expensive) models only when a task needs
 it. Prompts are **versioned in git** and guarded by **promptfoo** regression
-tests so prompt changes can't silently regress behavior.
+tests so prompt changes can't silently regress behaviour.
 
 ## 6. Data & integrations
 
@@ -195,13 +195,13 @@ pull request is checked against.
 | [0027](docs/adr/0027-applicant-identity-snapshot.md) | Applicant identity snapshot; Application.applicant is a required, frozen BasicsSection preventing prepare/submit identity drift, BrowserApplicator._fill_form now uses real profile data with a documented known-imprecise name split, and Tier 1 direct-API submission is confirmed dead (employer-issued credentials required) across Greenhouse/Lever/Ashby |
 | [0028](docs/adr/0028-browser-tier-dispatch-and-unsupported-field-refusal.md) | Browser-tier per-ATS dispatch via resolve_ats_kind (Lever/Ashby stubbed, real selectors unverifiable from two independent attempts); live-DOM-verified refusal of any required field no FormFiller knows how to fill; custom-questions/EEOC answering explicitly deferred to its own ADR, with an absolute leave-blank-or-human-originates-only rule stated now for EEOC fields |
 | [0029](docs/adr/0029-per-filler-challenge-and-submit-selectors.md) | Per-FormFiller challenge_selector/submit_selector and name-based field matching, both justified by a real, human-inspected live Lever posting (real hCaptcha markup, no-id name-only fields); LeverFormFiller stays a stub pending the still-unconfirmed resume-field interaction shape |
-| [0030](docs/adr/0030-greenhouse-coverage-is-narrow.md) | Corrects the record on real Greenhouse coverage: resume_text DOM-confirmed as a real form option, but an ordinary real posting requires Education/legal-status/Voluntary Self-ID/Veteran Status fields GreenhouseFormFiller doesn't fill -- "Tier 2 works" means narrow completion and correct refusal on most postings, not broad completion, re-prioritizing the deferred custom-questions/EEOC design pass |
+| [0030](docs/adr/0030-greenhouse-coverage-is-narrow.md) | Corrects the record on real Greenhouse coverage: resume_text DOM-confirmed as a real form option, but an ordinary real posting requires Education/legal-status/Voluntary Self-ID/Veteran Status fields GreenhouseFormFiller doesn't fill -- "Tier 2 works" means narrow completion and correct refusal on most postings, not broad completion, re-prioritising the deferred custom-questions/EEOC design pass |
 | [0031](docs/adr/0031-question-answerer.md) | QuestionAnswerer: four custom-question categories built as one shared component (EEOC absolute with no MasterProfile access at all; LegalStatusSection-backed factual yes/no, None-means-uncaptured; always-human-authored subjective; deterministic no-guess dropdown matching with its own DropdownMatchResult type, distinct from ClaimVerdict); deterministic template matching chosen over an LLM call for all four categories; user-authored 20-case adversarial matrix with four load-bearing cases independently verified by injection; DOM-wiring into BrowserApplicator.submit() deliberately deferred |
 | [0032](docs/adr/0032-question-answerer-wiring.md) | Wires QuestionAnswerer into BrowserApplicator's live pause/resume flow: two sequential pause phases (pre-click fields-need-human-input batched into one pause, post-click challenge unchanged); the human fills every manifested field directly on the visible page -- EEOC data never becomes a value this process holds, proven by an injection test targeting the wiring point itself; Application.legal_status extends the applicant frozen-snapshot precedent one field wider, zero new MasterProfile-storage dependency; _PausedSession's reason discriminator proven load-bearing by a dedicated test and injection |
 | [0033](docs/adr/0033-resume-file-generation.md) | Resume file generation: deterministic, ATS-safe DOCX + derived PDF traceable to the exact gated TailoredResume/profile_version via content-hash-addressed ResumeArtifact records (silent overwrite impossible by construction); Education read-only from MasterProfile, structurally absent from every generated type; PDF availability is a runtime check with a typed refusal, found necessary empirically (soffice without libreoffice-writer cannot load a DOCX) |
 | [0034](docs/adr/0034-ats-score-gate.md) | ATS score gate between the truthfulness gate and render/confirm: deterministic taxonomy-based scoring is the sole pass/fail authority (A1), hard format failures override the number in the report type's own derivation (A2), the advisory LLM layer only prunes the retailor gap report with verbatim-verified quotes (A3), GENUINE skill gaps are structurally unreachable by the drafter (B1), the full truthfulness gate runs before every re-score (B3), anti-stuffing caps are real (C1) -- all injection-proven against the reviewer's 14-case matrix |
 | [0035](docs/adr/0035-real-lever-form-filler.md) | Real LeverFormFiller: recorded-evidence selectors (name-only fields, single unsplit full-name input, #h-captcha, #btn-submit), required resume upload satisfied by the application's own DOCX artifact via set_input_files with the attach proven against the live input's FileList, typed MissingResumeArtifactError when no file exists to upload |
-| [0036](docs/adr/0036-worldwide-job-board-sources.md) | Worldwide discovery: eight free Tier A job-board APIs as plugins behind the unchanged OpportunitySource contract, one shared normalization path, attribution and key-hygiene guarantees structural; Tier C boards recorded as manual-only (no permitted programmatic path, no scrapers ever) |
+| [0036](docs/adr/0036-worldwide-job-board-sources.md) | Worldwide discovery: eight free Tier A job-board APIs as plugins behind the unchanged OpportunitySource contract, one shared normalisation path, attribution and key-hygiene guarantees structural; Tier C boards recorded as manual-only (no permitted programmatic path, no scrapers ever) |
 | [0037](docs/adr/0037-persistence-discover-and-first-profile-writer.md) | SQLite persistence behind the unchanged repository contract (fidelity suite incl. real close/reopen), append-only application audit trail + Excel tracker export, real `discover` command emitting the ADR-0026 handoff format, and the first MasterProfile writer with the no-default capture flow |
 | [0038](docs/adr/0038-decide-layer.md) | Decide layer: ADR-0007's swappable scoring step, first concrete implementation -- deterministic weighted rank reusing the ATS gate's keyword vocabulary unforked, hard-exclude config filters with named visible reasons, no LLM calls |
 | [0039](docs/adr/0039-learn-pillar.md) | Learn pillar: outcome CLI + per-variant raw-count funnels (full history, rejection stages separated), statistical honesty at personal N enforced by a mandatory, injection-verified caveat and a tested no-prescriptive-verdicts property |

@@ -10,7 +10,7 @@ correct (evidence assembly, category mapping, fail-closed aggregation) against
 about whether a real model actually judges these 12 claims correctly. This
 suite is what proves that — against **live calls to whichever provider you're
 validating**, using the exact same 12-case adversarial matrix the pytest suite
-is organized around.
+is organised around.
 
 **Neither `AnthropicClaimVerifier` nor `GroqClaimVerifier` may be wired into
 the real `apply` path until this suite passes on live calls for that specific
@@ -24,7 +24,7 @@ and not a pass recorded for the *other* provider. See "Running it" below.
 ## Running it
 
 Each provider needs its own live run, on your own machine — neither is
-available in the Claude Code Remote sandbox this project was built in (the
+available in the sandboxed environment this project was built in (the
 egress policy blocks it, same as every other live API in this project).
 Results are written to `promptfoo/results/<prompt version>--<provider>.json`,
 the exact path `career-agent apply` checks for whichever provider it selected
@@ -71,7 +71,7 @@ promptfoo/prompt.txt"`), run the diagnostic below before assuming your
 prompt actually changed -- two real, non-drift representation
 differences have already been found and fixed (see
 `promptfoo_gate.py`'s module docstring for the full history: promptfoo's
-own `.txt`-file loader neutralizes CRLF and strips leading/trailing
+own `.txt`-file loader neutralises CRLF and strips leading/trailing
 whitespace, including the file's own trailing newline, before recording
 `raw` -- a fresh, unmodified prompt can still legitimately differ from
 the on-disk file by exactly that trim):
@@ -79,7 +79,7 @@ the on-disk file by exactly that trim):
 ```bash
 career-agent diagnose-promptfoo-drift --provider groq
 # reads the same results file verify-promptfoo does; prints lengths,
-# SHA-256 hashes (raw and canonicalized), BOM/trailing-newline/CRLF
+# SHA-256 hashes (raw and canonicalised), BOM/trailing-newline/CRLF
 # presence on each side, and the first differing character with a small
 # context window -- never the full prompt or evidence/claim text, so
 # it's safe to paste into a bug report.

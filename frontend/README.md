@@ -1,6 +1,6 @@
 # Web Dashboard frontend
 
-React + TypeScript + Vite dashboard for the Autonomous AI Career Agent
+React + TypeScript + Vite dashboard for the AI Career Agent
 (Phase 55, [ADR-0073](../docs/adr/0073-react-dashboard-frontend.md)),
 consuming the read-only FastAPI backend from Phase 54
 ([ADR-0072](../docs/adr/0072-web-dashboard-read-api.md)).

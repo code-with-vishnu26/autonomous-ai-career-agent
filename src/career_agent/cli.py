@@ -1,4 +1,4 @@
-"""Command-line entry point for the Autonomous AI Career Agent.
+"""Command-line entry point for the AI Career Agent.
 
 ``confirm_submission`` (Phase 8c, ADR-0024) is this project's first real,
 executable source of a :class:`~career_agent.domain.models.HumanConfirmation`.
@@ -2793,7 +2793,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "serve":
         raise SystemExit(run_serve_command(host=args.host, port=args.port))
 
-    print(f"Autonomous AI Career Agent v{__version__} — scaffolding (Phase 1).")
+    print(f"AI Career Agent v{__version__} — scaffolding (Phase 1).")
     print("Not yet runnable; see ROADMAP.md for the build plan.")
 
 
