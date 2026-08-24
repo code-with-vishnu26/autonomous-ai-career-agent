@@ -1,7 +1,7 @@
 /**
  * Phase 68 (ADR-0086). Assisted-apply for platforms this project never
  * scrapes (LinkedIn, Indeed, Naukri, Workday -- ADR-0036): paste a posting
- * you found there, the AI tailors a résumé + cover letter for it from your
+ * you found there, the AI tailors a resume + cover letter for it from your
  * Master Profile, and you apply on the platform's own site. No auto-submit
  * -- a pasted posting resolves to no known ATS, so the submission engine
  * refuses it anyway; this is tailoring + tracking, not automation of a
@@ -43,7 +43,7 @@ export function PasteJobCard() {
       <CardContent className="space-y-3">
         <Callout>
           These sites can't be auto-searched (their terms prohibit it), so
-          paste a posting here: the AI tailors your résumé + cover letter for
+          paste a posting here: the AI tailors your resume + cover letter for
           it, and you submit on the site itself.
         </Callout>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">

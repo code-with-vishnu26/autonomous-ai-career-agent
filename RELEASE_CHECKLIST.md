@@ -1,4 +1,4 @@
-# Release Checklist — AI Career Agent
+# Release Checklist - AI Career Agent
 
 This checklist is the gate for cutting a release. It mirrors the Phase 34 audit
 and must be re-run from a clean tree. Record exact results, not summaries.
@@ -16,9 +16,9 @@ and must be re-run from a clean tree. Record exact results, not summaries.
 
 ## 2. Baseline (fresh, exact counts)
 
-- [ ] `pytest` — record `N passed / N skipped / N failed`.
-- [ ] `ruff check .` — `All checks passed!`
-- [ ] `lint-imports` — `Contracts: 4 kept, 0 broken.`
+- [ ] `pytest` - record `N passed / N skipped / N failed`.
+- [ ] `ruff check .` - `All checks passed!`
+- [ ] `lint-imports` - `Contracts: 4 kept, 0 broken.`
 
 ## 3. Safety re-proof
 
@@ -52,7 +52,7 @@ and must be re-run from a clean tree. Record exact results, not summaries.
 
 - [ ] If a valid local `promptfoo/results/` artifact exists, run
       `career-agent verify-promptfoo --provider <p>` and record PASS.
-- [ ] If absent: live verifier validation is **BLOCKED_BY_CONFIGURATION** — do
+- [ ] If absent: live verifier validation is **BLOCKED_BY_CONFIGURATION** - do
       not claim it happened.
 
 ## 8. Packaging
@@ -60,7 +60,7 @@ and must be re-run from a clean tree. Record exact results, not summaries.
 - [ ] `python -m build` produces wheel + sdist.
 - [ ] `python scripts/verify_release_artifacts.py` passes (wheel contains no
       secrets/`.env`/results/DBs/exports/tests; sdist contains no
-      secrets/`.env`/results/DBs/exports — `tests/` is expected there).
+      secrets/`.env`/results/DBs/exports - `tests/` is expected there).
 - [ ] `python scripts/smoke_test_wheel.py` passes (clean-venv install,
       `career-agent --help`, `setup` smoke).
 
@@ -68,13 +68,13 @@ and must be re-run from a clean tree. Record exact results, not summaries.
 
 - [ ] Linux: full suite green (CI, every push/PR, ADR-0057).
 - [ ] Windows: full suite + packaging + smoke green (CI, every push/PR,
-      ADR-0057) — no longer inferred from static UTF-8 reasoning alone.
+      ADR-0057) - no longer inferred from static UTF-8 reasoning alone.
 - [ ] macOS: **untested** (deliberate, cost-driven gap; ADR-0056/0057).
 
 ## 10. CI
 
 - [ ] Inspect the **actual** latest check-run conclusions for the commit being
-      released (`.github/workflows/ci.yml`, ADR-0057) — do not infer from the
+      released (`.github/workflows/ci.yml`, ADR-0057) - do not infer from the
       YAML alone or assume a run passed without checking it.
 - [ ] Both matrix legs (`ubuntu-latest`, `windows-latest`) are green.
 

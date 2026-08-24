@@ -1,4 +1,4 @@
-"""Per-user view of stored résumé variants (``career-agent prepare``, ADR-0068)."""
+"""Per-user view of stored resume variants (``career-agent prepare``, ADR-0068)."""
 
 from __future__ import annotations
 
@@ -16,5 +16,5 @@ router = APIRouter(prefix="/api/resume-variants", tags=["resume-variants"])
 def list_resume_variants(
     current_user: User = Depends(get_current_user),
 ) -> list[ResumeVariant]:
-    """Every résumé variant owned by the caller, most recent first."""
+    """Every resume variant owned by the caller, most recent first."""
     return get_resume_variant_store().by_user(current_user.id)

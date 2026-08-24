@@ -1,9 +1,9 @@
-"""Web résumé upload -> AI-analyzed review -> Master Profile (Phase 71, ADR-0089).
+"""Web resume upload -> AI-analyzed review -> Master Profile (Phase 71, ADR-0089).
 
 The web analogue of `career-agent import-cv` + `promote-cv` (Phase 26,
 ADR-0052), reusing their exact fail-closed promotion boundary
 (`domain/ingestion.py::promote`, `storage/cv_ingest.py::
-apply_confirmed_promotions`) unmodified. Uploading a résumé never writes
+apply_confirmed_promotions`) unmodified. Uploading a resume never writes
 the profile by itself: it only produces `UNVERIFIED` fact proposals for
 the caller to review; only proposals the caller explicitly confirms here
 are promoted, and only into fields with no existing different trusted
@@ -11,7 +11,7 @@ value.
 
 Two-step flow, mirroring `prepare_actions`/`submission_actions`'s
 background-task pattern in shape (though this work is synchronous --
-parsing a résumé is fast, no LLM call, nothing to poll):
+parsing a resume is fast, no LLM call, nothing to poll):
 
 1. `POST /user/master-profile/import` (multipart) reads the uploaded file,
    extracts UNVERIFIED proposals, and caches the draft + the document's
@@ -113,7 +113,7 @@ def _evidence_snippet(document_text: str, proposal) -> str:  # noqa: ANN001
 async def upload_resume(
     file: UploadFile, current_user: User = Depends(get_current_user)
 ) -> UploadResponse:
-    """Parse an uploaded résumé into UNVERIFIED fact proposals for review.
+    """Parse an uploaded resume into UNVERIFIED fact proposals for review.
 
     Never touches the Master Profile. Supported formats: PDF, DOCX, TXT,
     MD (the exact set :func:`~career_agent.storage.cv_ingest.

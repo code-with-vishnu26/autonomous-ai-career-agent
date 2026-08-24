@@ -9,13 +9,13 @@ Two things distinguish this from the CLI path, both deliberate:
 
 1. It tailors from the caller's **stored Master Profile** (Phase 64,
    ADR-0082) -- the profile the onboarding wizard writes -- not a
-   ``profile.json`` file. This is what makes "the AI builds your résumé
+   ``profile.json`` file. This is what makes "the AI builds your resume
    from the details you entered" actually true for a dashboard user.
 2. It runs the *exact same* ``ResumeVariantEngine.build_materials`` (the
    truthfulness gate, ATS threshold, cover-letter assembly all unchanged)
    but does **not** open a browser to pre-fill the live form. That
    pre-fill was only ever a preview; the authoritative form fill and
-   résumé upload happen at submit time, behind the human-confirmation gate
+   resume upload happen at submit time, behind the human-confirmation gate
    (ADR-0071/0081). Skipping it keeps preparation runnable anywhere and
    deterministic to test.
 
@@ -99,7 +99,7 @@ class PastedJobRequest(BaseModel):
     The assisted-apply path for platforms this project deliberately never
     scrapes (LinkedIn, Indeed, Naukri, Workday -- standing invariant 7,
     ADR-0036): the user pastes a posting they found there, the AI tailors a
-    résumé + cover letter for it, and they submit on the platform's own
+    resume + cover letter for it, and they submit on the platform's own
     site. There is no auto-submit here -- a pasted posting's URL resolves
     to no known ATS, so the submission engine already refuses it
     (UNSUPPORTED_PROVIDER); the human applies themselves.
@@ -244,7 +244,7 @@ async def start_preparation(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
 ) -> PendingPreparationStatus:
-    """Start tailoring a résumé + cover letter for one opportunity.
+    """Start tailoring a resume + cover letter for one opportunity.
 
     Returns a token immediately; poll ``GET /prepare/{token}`` for the
     result. On success the poll returns ``application_session_id``, which

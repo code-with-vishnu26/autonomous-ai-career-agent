@@ -1,8 +1,8 @@
 /**
- * Phase 67 (ADR-0085). Web-triggers résumé + cover-letter tailoring for one
+ * Phase 67 (ADR-0085). Web-triggers resume + cover-letter tailoring for one
  * opportunity from the stored Master Profile, then routes the human to the
- * Review Queue -- the "AI builds your résumé from the details you entered"
- * step of the fully web-driven apply loop. The real form fill and résumé
+ * Review Queue -- the "AI builds your resume from the details you entered"
+ * step of the fully web-driven apply loop. The real form fill and resume
  * upload happen later, at submit, behind the human-confirmation gate.
  */
 

@@ -13,7 +13,7 @@ Directly implements Phase 57's four AI principles for this one feature:
   claimed intent" discipline ADR-0016 established. A suggestion that adds
   an unsupported claim is dropped, not surfaced -- fail closed.
 - **Suggestions must be advisory only**: this module has no method that
-  writes anything back to a résumé or profile. It returns a list; nothing
+  writes anything back to a resume or profile. It returns a list; nothing
   more.
 - **Users explicitly accept any changes before they're applied**: there
   is no "apply" channel here at all -- the caller (frontend) presents

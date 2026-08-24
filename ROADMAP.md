@@ -10,7 +10,7 @@ goal and its definition of done.
 
 ---
 
-## ✅ Phase 1 — Project structure *(this commit)*
+## ✅ Phase 1 - Project structure *(this commit)*
 Scaffold the repository: `README.md`, `ARCHITECTURE.md`, `ROADMAP.md`,
 `CONTRIBUTING.md`, `LICENSE`, `docs/` + `docs/adr/` (with **ADR-0001** recording
 the agent-oriented architecture decision), `.gitignore`, `requirements.txt`,
@@ -18,28 +18,28 @@ the agent-oriented architecture decision), `.gitignore`, `requirements.txt`,
 **Done when:** the structure exists, documents are coherent, and the layout has
 been reviewed.
 
-## ✅ Phase 2 — Architecture + interfaces
+## ✅ Phase 2 - Architecture + interfaces
 Define the core abstractions and Pydantic models: agent base interface, event
 types, the `Opportunity` / `Resume` / `Application` domain models, the plugin
-extension-point protocols, and the Planner's decision contract. Interfaces only —
+extension-point protocols, and the Planner's decision contract. Interfaces only -
 no heavy implementation. Delivered a dependency-free `domain/` layer split from
 the orchestration-facing `core/` layer, with ADR-0011 recording the structured
 tailored-content decision.
 **Done when:** typed interfaces compile, are documented, and an ADR captures the
 interface design.
 
-## ✅ Phase 3 — Plugin system + event bus
+## ✅ Phase 3 - Plugin system + event bus
 Implement the plugin registry and the publish/subscribe event bus that everything
 else builds on. Include discovery/registration of plugins and event dispatch with
 tests. Registry keys by `(extension-point protocol, name)`; the bus is in-process,
-best-effort, with error-isolated delivery — and, critically, **events notify but
+best-effort, with error-isolated delivery - and, critically, **events notify but
 do not gate** (safety-critical blocks are enforced inline, never via delivery;
 ADR-0005 amendment). Dependency direction is now enforced by import-linter in the
 test suite.
 **Done when:** a sample plugin can register and agents can communicate purely via
 events, covered by tests.
 
-## ✅ Phase 4 — Discovery Engine (with one named gap — see below)
+## ✅ Phase 4 - Discovery Engine (with one named gap - see below)
 Discovery Agent + first opportunity sources: Greenhouse / Lever / Ashby ATS APIs,
 then YC `hiring.json` + Hacker News, then Career Page Finder + ATS Detector, then
 the provider-abstracted search layer (Exa + Google CSE failover).
@@ -48,9 +48,9 @@ records, ToS-respecting, with tests.
 
 Sub-slices, all merged: **4a** Discovery Agent + wiring + one real source
 (Greenhouse). **4b** remaining ATS/feed sources, split: **4b-ATS** Lever + Ashby
-(same shape as Greenhouse — proved the `OpportunitySource` contract survives a
+(same shape as Greenhouse - proved the `OpportunitySource` contract survives a
 differently-shaped API of the same kind; `interfaces.py` diff empty), then
-**4b-feeds** YC `hiring.json` + HN "Who's Hiring" (the harder test — a firehose to
+**4b-feeds** YC `hiring.json` + HN "Who's Hiring" (the harder test - a firehose to
 filter, no structured job object; ADR-0013's held-candidate mechanism landed
 here). **4c** the provider-abstracted search layer + dynamic ranking (ADR-0002),
 split further: **4c-slice-1** cross-source identity (ADR-0014), **4c-slice-2**
@@ -58,7 +58,7 @@ Exa `SearchProvider` + web-search classification (ADR-0015, applying ADR-0013 to
 search), **4c-slice-3** Google CSE + capability/health ranking (ADR-0002
 amendment).
 
-> **Phase 4c decision checkpoint — resolved in [ADR-0014](docs/adr/0014-cross-source-opportunity-identity.md)
+> **Phase 4c decision checkpoint - resolved in [ADR-0014](docs/adr/0014-cross-source-opportunity-identity.md)
 > (4c-slice-1).** Decided against the five existing sources before web search
 > arrived: two-key dedup (ATS-native id for exact idempotency; a
 > `canonical_fingerprint` match for cross-source collapse, but only when the
@@ -69,10 +69,10 @@ amendment).
 > domain (under-merge, not corruption) and a rare cross-source over-merge is
 > accepted as the quality-over-volume trade-off.
 
-> **Named gap: Career Page Finder + ATS Detector — resolved, gap accepted with
+> **Named gap: Career Page Finder + ATS Detector - resolved, gap accepted with
 > reasoning, not by default.** The original scope named it explicitly; no
 > 4a/4b/4c sub-slice built it, and the breakdown silently dropped it without a
-> recorded decision — caught here rather than left implicit. Its original
+> recorded decision - caught here rather than left implicit. Its original
 > purpose was: given a company name with no other information, find its careers
 > page and detect which ATS it runs, so it could be polled. But the six sources
 > actually built collectively substitute for most of that practical value: the
@@ -80,37 +80,37 @@ amendment).
 > directly, by config (board token), without ever needing to *discover* the
 > page; YC covers YC-backed companies structurally; and
 > `SearchOpportunitySource` (4c-slice-2) already does a narrower but real form
-> of ATS detection — it recognizes known ATS URL patterns inside search results
+> of ATS detection - it recognizes known ATS URL patterns inside search results
 > and confirms them against the real parser, i.e. detection triggered by a
 > posting surfacing in search, not by a company name with no jobs yet found.
 > For a personal, quality-over-volume job search that is very likely sufficient
 > coverage of *currently open* jobs. What is genuinely left is a **different**
-> capability — proactively finding and watching career pages for companies with
-> **no currently-visible postings** — not unfinished discovery of open jobs.
+> capability - proactively finding and watching career pages for companies with
+> **no currently-visible postings** - not unfinished discovery of open jobs.
 > That is logged as its own future phase, **"Company Watchlist / Proactive
 > Career Page Monitoring,"** in the deferred-work list at the bottom, rather
 > than reopened as Phase 4 work.
 
-## ✅ Phase 5 — Truthfulness gate: adversarial verification suite
+## ✅ Phase 5 - Truthfulness gate: adversarial verification suite
 Brought forward ahead of the JSON Resume master profile, deliberately. The gate
-has been a **tracked, merge-blocking deliverable since Phase 2/3** — every
+has been a **tracked, merge-blocking deliverable since Phase 2/3** - every
 downstream design decision in this build (Phase 4c's `SearchOpportunitySource`
 holding uncertain results, ADR-0013's held-candidate mechanism, ADR-0003 itself)
 has deferred to it as the ultimate backstop, and it is the single most
 safety-critical piece of the whole system. Phase 4's "Career Page Finder" gap
 just demonstrated how a tracked item can silently survive multiple phases when
-each individual phase looks complete on its own terms — the gate must not be
+each individual phase looks complete on its own terms - the gate must not be
 allowed to do the same. Built a real `MasterProfile` fixture and the concrete
 `LLMTruthfulnessGate.verify()` implementation, validated against a
 **reviewer-defined 12-case adversarial fabrication matrix** (same discipline
 proven twice already: the HN held-candidate matrix, ADR-0013; the cross-source
-dedup branches, ADR-0014) — the user drafted the adversarial cases, the agent
+dedup branches, ADR-0014) - the user drafted the adversarial cases, the agent
 implemented against them, fixtures verified as genuine near-misses, not
 strawmen. Recorded in **ADR-0016**: entailment-over-keyword-matching (catches
 composite fabrication for the right reason, not by coincidence), the category
 rubric, `summary` explicitly out of scope and coupled to Phase 8's
-`ResumeGenerator` design, and — because this is the first safety-critical
-component resting on model judgment rather than a structural guarantee — five
+`ResumeGenerator` design, and - because this is the first safety-critical
+component resting on model judgment rather than a structural guarantee - five
 required compensating controls around the `ClaimVerifier` port: required
 confidence with sub-threshold blocking, verifier-failure-is-an-explicit-block,
 permanent cost-cascade exemption, documented temperature/variance limits, and a
@@ -120,106 +120,106 @@ it may be wired into Phase 7's apply path.
 rephrasing case in it, with real fixtures independently verified, not just a
 passing test summary.
 
-## ✅ Phase 6 — JSON Resume master profile
-The structured master profile (JSON Resume schema) and its loader/validator —
+## ✅ Phase 6 - JSON Resume master profile
+The structured master profile (JSON Resume schema) and its loader/validator -
 built with the gate's real `verify()` already in hand, so the profile model
 was validated against what the gate actually needs, not a scaffolding guess.
 Recorded in **ADR-0017**: every `work`/`education`/`skills`/`projects` entry
-must carry an explicit `id` (JSON Resume has none natively) — rejected as a
+must carry an explicit `id` (JSON Resume has none natively) - rejected as a
 loud, actionable validation failure if missing or duplicated, never inferred
 or silently written back, since only a deliberately-committed id honors the
 "assigned once, never reused" guarantee `EvidenceRef` (ADR-0012) depends on.
 `version` is a deterministic SHA-256 over exactly the fields `MasterProfile`
-models, not the raw file — an unmodeled JSON Resume section (`awards`,
+models, not the raw file - an unmodeled JSON Resume section (`awards`,
 `publications`, `languages`, `interests`, `references`, `volunteer`,
 structured `basics.location`/`basics.profiles`) changing must not falsely
 bump `version` and invalidate every stored `EvidenceRef` pointing at facts
 that didn't actually change; those sections are named as a tracked gap
 (Career Page Finder pattern), not silently ignored. `load_master_profile` is
-a plain function, not a `Protocol` — one real format, no second
+a plain function, not a `Protocol` - one real format, no second
 implementation on the roadmap, so no speculative abstraction.
 **Done when:** a validated profile loads and the grounding contract is
 defined. ✅ 12 tests: valid-profile mapping, deterministic/scoped version
 hashing, missing/duplicate id rejection (within and across sections), and
 non-id validation errors surfaced from Pydantic unwrapped.
 
-## 🔶 Phase 7 — ATS adapters (in progress: 7a merged)
+## 🔶 Phase 7 - ATS adapters (in progress: 7a merged)
 Concrete ATS adapters registered as plugins for reading postings and (where
 supported) submitting applications. This is the first phase that *acts* on
 the real world rather than reads it, and is sub-sliced accordingly (Phase 4a
 precedent: prove the safety machinery correct on one path before adding
-breadth) — recorded in **ADR-0018**.
+breadth) - recorded in **ADR-0018**.
 
-**7a — submission safety scaffolding, merged.** `SubmittableApplication`
+**7a - submission safety scaffolding, merged.** `SubmittableApplication`
 (`domain/models.py`) makes submitting an unapproved resume type-level
-impossible — a Pydantic validator that runs on every construction path, not
+impossible - a Pydantic validator that runs on every construction path, not
 a designated-factory-only check, the same "impossible to construct
 otherwise" discipline as `TailoredResumeDraft`/`TailoredResume` (ADR-0011).
 `Applicator.apply()` is replaced by `prepare()`/`submit(preview,
 confirmation)`: `HumanConfirmation` is a token bound to one exact
-`SubmissionPreview`, not a boolean — a mismatched, unknown, or replayed
+`SubmissionPreview`, not a boolean - a mismatched, unknown, or replayed
 token is refused by `TieredApplicator` (`agents/apply/applicator.py`)
 *before* the `ATSAdapter` is ever reached, tested by asserting the adapter's
 call log stays empty, not just that an error came back. A fourth
 import-linter contract mechanically forbids orchestration from importing
 `AnthropicClaimVerifier` directly (verified to bite, same as the
-`core.config` contract) — Phase 7 is built and tested 100%
+`core.config` contract) - Phase 7 is built and tested 100%
 `FakeClaimVerifier`-backed; the real verifier stays unwired until a live
 promptfoo run passes. `FakeATSAdapter` fixtures model real ATS-side failure
 (duplicate submission, rate limit, malformed payload) as a distinct outcome,
-not just the happy path — consequence, not testability, is what's different
+not just the happy path - consequence, not testability, is what's different
 from Phase 4's version of offline-fixture-first discipline. This slice wraps
 exactly one `ATSAdapter` (no tier fallback, no company/ATS-kind resolution
-yet) — named, not silently dropped.
+yet) - named, not silently dropped.
 
-**7b1 — ATS-kind resolution + the cross-tier confirmation rule, merged.**
+**7b1 - ATS-kind resolution + the cross-tier confirmation rule, merged.**
 Recorded in **ADR-0019**. `domain/ats_urls.py` extracts the ADR-0015
 pattern-match classifier (originally built for web search) into a shared,
 dependency-free module; `TieredApplicator` now resolves which registered
 `ATSAdapter` applies to an opportunity from its `source_url` via an injected
-`OpportunityRepository` (Phase 4a's existing port — deliberately no new
+`OpportunityRepository` (Phase 4a's existing port - deliberately no new
 `CompanyRepository`, YAGNI same as Phase 6's loader), raising
 `NoApplicableAdapterError` explicitly when nothing applies. Decided and
 fixed in the type's shape now, before Tier 2/3 exist to make it concrete: a
 tier-fallback attempt is never an automatic retry under the original
-`HumanConfirmation` — each tier attempt requires its own `prepare()` →
+`HumanConfirmation` - each tier attempt requires its own `prepare()` →
 confirm → `submit()` cycle, since a fallback tier is a materially different
 real-world action (different target, sometimes different content shape),
 not a retried transport for the same one.
 
-**7b3 — browser-tier session encryption + pause/resume, merged.** Recorded
+**7b3 - browser-tier session encryption + pause/resume, merged.** Recorded
 in **ADR-0020**. `BrowserApplicator` (`agents/apply/browser_applicator.py`)
 targets Greenhouse's public apply form only this slice (same Greenhouse-
-first discipline as Phase 4a and ADR-0019) — generalizing to arbitrary
+first discipline as Phase 4a and ADR-0019) - generalizing to arbitrary
 career pages is separate future work. Two new structural guarantees, both
 the same weight as ADR-0018's: (1) `EncryptedSessionStore`
 (`integrations/browser_session.py`) encrypts a persisted, reusable session
-at rest with a key held in the OS keychain (`keyring`) — never together with
-the ciphertext on disk — and **fails closed**: if the keychain backend is
+at rest with a key held in the OS keychain (`keyring`) - never together with
+the ciphertext on disk - and **fails closed**: if the keychain backend is
 unavailable, the session is not persisted at all, never silently written
 unencrypted. (2) A mid-submission challenge (CAPTCHA/verification/login)
 returns `HumanActionRequired` (a Phase 2 event type, unused until now) and
 holds the live browser page open; `resume(pause_token, ack)` mirrors
-`HumanConfirmation`'s token-binding shape but goes further — it re-verifies
+`HumanConfirmation`'s token-binding shape but goes further - it re-verifies
 the challenge is actually gone on the live page before touching it again,
 never trusting the acknowledgment alone. Tested against a real, local
 Chromium driven against an offline HTML fixture (`tests/fixtures/greenhouse/
-apply_form.html`, loaded via `file://`) rather than Python-level fakes — a
+apply_form.html`, loaded via `file://`) rather than Python-level fakes - a
 materially stronger proof for browser behavior than fixtures alone, and the
 load-bearing test asserts the fixture's own success marker never appears
 when `resume()` is called with the challenge still visible, the browser-tier
 analogue of ADR-0018's `adapter.calls == []` proof.
 
-**7b4 — email tier, draft-only, merged.** Recorded in **ADR-0021**. A design
+**7b4 - email tier, draft-only, merged.** Recorded in **ADR-0021**. A design
 check corrected the pre-brief's own premise mid-flight: the Gmail tool
 surface available in *this development session* has no send capability, but
-that's a fact about this session's connector, not the shipped application —
+that's a fact about this session's connector, not the shipped application -
 so the real guarantee comes from `EmailDraftSink` (`core/interfaces.py`)
 deliberately exposing **no `send` method at all**, pinned by a canary test
 (verified to bite, same as ADR-0019's). `EmailApplicator.submit()` creates a
-draft (same confirmation-token binding as Tier 1/2 — a mismatched/unknown/
+draft (same confirmation-token binding as Tier 1/2 - a mismatched/unknown/
 replayed token never reaches `EmailDraftSink`) and always returns
-`HumanActionRequired(reason="confirmation")`, never `ApplicationSubmitted` —
+`HumanActionRequired(reason="confirmation")`, never `ApplicationSubmitted` -
 claiming a send that didn't happen would be the truthfulness gap ADR-0003
 exists to prevent, relocated from resume content to the system's own claims
 about its actions. `Application.status="paused_for_human"` is now documented
@@ -227,7 +227,7 @@ as meaning two structurally different things: a browser-tier pause is
 temporary and resumable (`BrowserApplicator.resume()`); an email-tier pause
 is permanent from this system's perspective (no `resume()` exists for this
 tier at all). The real, OAuth-backed `GmailDraftSink` is explicitly **not
-built this slice** — an OAuth token is the same credentials-risk category
+built this slice** - an OAuth token is the same credentials-risk category
 ADR-0020 designed encryption for, and deserves its own dedicated review, not
 a rider on this one. Recipient-address resolution and confirming a drafted
 email was actually sent are named gaps; the latter is tied to the same
@@ -240,92 +240,92 @@ gap and the send-confirmation gap must both close before any
 scheduled/autonomous apply run is built.
 **Done when:** adapters plug in via the registry with no core changes, with tests.
 
-## ✅ Phase 8 — Application engine
+## ✅ Phase 8 - Application engine
 Resume Agent + Apply Agent: truthful tailoring through the cost cascade, the
 fabrication gate (Phase 5) as a hard blocker, and the tiered/supervised applicator
 (API → browser → email), with throttling and human-in-the-loop pauses. The
 renderer **must** call `domain.rendering.resolve_work_dates` for every work
-entry's dates — never re-derive them another way, never omit them (ADR-0016's
+entry's dates - never re-derive them another way, never omit them (ADR-0016's
 Case #6 correction: the generator can't write a date, but the resume still
 has to show the real one). Sub-sliced (same discipline as Phase 7): 8a proves
 generation + gating correct in isolation before 8b wires it to real
-submission — recorded in **ADR-0022**.
+submission - recorded in **ADR-0022**.
 
-**8a — ResumeGenerator + gate wiring, merged.** `summary` is sourced
-read-only from `profile.basics.summary`, never LLM-drafted —
+**8a - ResumeGenerator + gate wiring, merged.** `summary` is sourced
+read-only from `profile.basics.summary`, never LLM-drafted -
 `DraftedTailoring` (`domain/models.py`) structurally has no `summary` field
 at all, the same move as `TailoredWorkEntry` having no date fields
 (ADR-0016's Case #6). A missing profile summary is a loud
-`MissingSummaryError`, raised before the drafter is ever called — not a
+`MissingSummaryError`, raised before the drafter is ever called - not a
 structurally-derived fallback, which would be zero-invention but produce an
 obviously templated, low-quality resume (a quality-over-volume failure, the
 4c search-confidence problem's shape, not a truthfulness one).
 `ContentDrafter` (the narrow LLM port, mirroring `ClaimVerifier`'s shape) is
-**not** permanently cost-cascade-exempt like `ClaimVerifier` — a
+**not** permanently cost-cascade-exempt like `ClaimVerifier` - a
 false-approve on tailoring is recoverable via the independent gate, unlike a
 false-approve on verification, so the exemption's actual justification
 doesn't transfer. `LLMResumeGenerator` does no self-verification; the first
 integration test feeds real generator output (not hand-authored fixtures)
 into the real `LLMTruthfulnessGate` and proves an honest draft approves, a
 hallucinated skill blocks structurally, and a hallucinated `source_entry_id`
-blocks as `employer_mismatch` — the seam between two independently-built
+blocks as `employer_mismatch` - the seam between two independently-built
 components, proven, not assumed.
 
-**8b — the resume-tailoring pipeline, merged.** Recorded in **ADR-0023**.
+**8b - the resume-tailoring pipeline, merged.** Recorded in **ADR-0023**.
 `ResumeTailoringPipeline` (`agents/resume/pipeline.py`) composes
 `ResumeGenerator` → `TruthfulnessGate` into one on-demand call: a real
 `Opportunity` + `MasterProfile` in, an audited `Application` out always, plus
 a `SubmittableApplication` when approved. `Application.status` gains
-`"rejected"` — deliberately distinct from `"failed"`, since a gate rejection
+`"rejected"` - deliberately distinct from `"failed"`, since a gate rejection
 (a content problem, never reached a submission attempt) and a submission
 failure (a real-world event, possibly worth a different tier) are different
 events that would otherwise be forced to share one status word, requiring
 every future consumer to re-derive the distinction from
-`resume.truthfulness.approved`. `ResumeTailored`/`TruthfulnessRejected` —
-defined since Phase 2, never emitted — finally fire, reuse over invention
+`resume.truthfulness.approved`. `ResumeTailored`/`TruthfulnessRejected` -
+defined since Phase 2, never emitted - finally fire, reuse over invention
 again. **Deliberately stops before calling `Applicator`**, canary-checked
 (the module imports neither `Applicator` nor `ATSAdapter`): actually
 invoking a tier is a separate action requiring tier selection and a real
 `HumanConfirmation`, and folding it in here would compound "first real
 generation-to-submission wiring" with "first real confirmation flow against
-real content" in one slice — the same sequencing discipline as 7a before
+real content" in one slice - the same sequencing discipline as 7a before
 7b3. Confirmed on-demand only; the profile-staleness and send-confirmation
 gaps stay correctly deferred.
 
-**8c — real confirmation + single-tier submission wiring, merged.** Recorded
+**8c - real confirmation + single-tier submission wiring, merged.** Recorded
 in **ADR-0024**. Closes the one remaining unexercised link in the entire
 submission-safety chain: `cli.confirm_submission` is this project's first
-real, executable source of a `HumanConfirmation` — reads a yes/no-shaped
+real, executable source of a `HumanConfirmation` - reads a yes/no-shaped
 answer from stdin (via an injected, fully-testable `input_fn`, no
 monkeypatching needed), returns a confirmation only for an exact "y"/"yes,"
 **no default-to-yes path** (verified: the guarantee was broken on purpose,
 the test caught it, reverted). Deliberately built now rather than deferred
 behind a port the way `AnthropicClaimVerifier`/the real `GmailDraftSink`
-were — those deferrals were forced by being untestable live in this
+were - those deferrals were forced by being untestable live in this
 sandbox; a local stdin/stdout prompt has no such constraint, so that
 precedent doesn't transfer. `SubmissionPipeline` (`agents/apply/pipeline.py`)
 composes any `Applicator` with any matching confirmation source
 (`prepare()` → `confirm()` → `submit()` or a clean, non-error abort),
-proven here against a real `TieredApplicator` — single-tier only, since
+proven here against a real `TieredApplicator` - single-tier only, since
 `TieredApplicator`/`BrowserApplicator`/`EmailApplicator` are three
 independent `Applicator` implementations with nothing that chooses between
 them (ADR-0010's "tier selection is internal" describes a component that
 was never actually built). Multi-tier selection is real, confirmed,
 deferred work, not assumed to exist.
 
-**8d — the resume renderer, merged.** Recorded in **ADR-0025**. Closes the
+**8d - the resume renderer, merged.** Recorded in **ADR-0025**. Closes the
 gap 8c's own writeup surfaced: not just missing dates, but no renderer at
-all — every real confirmation this project could perform showed only
+all - every real confirmation this project could perform showed only
 `content.summary`, since `TailoredResume.rendered_text` had existed as a
 documented "derived cache" since Phase 2 with nothing ever populating it.
 `render_tailored_resume` (`domain/rendering.py`) is computed once, in
-`ResumeTailoringPipeline` at resume-creation time — the one place
-`draft.content` and `profile` are both already in scope — requiring **zero
+`ResumeTailoringPipeline` at resume-creation time - the one place
+`draft.content` and `profile` are both already in scope - requiring **zero
 changes to any `Applicator`**, whose `rendered_text or content.summary`
 fallback was correctly designed from the start. Raises loudly
 (`KeyError`) rather than silently dropping a work/project entry it can't
 resolve: the renderer is a second, independent consumer of
-`source_entry_id` references and must not assume the gate already ran —
+`source_entry_id` references and must not assume the gate already ran -
 verified to actually catch a regression (broke the raise into a silent
 skip on purpose, confirmed the test failed, reverted). Tested with
 adversarial-matrix weight, not routine-formatting weight: a realistic,
@@ -333,7 +333,7 @@ multi-entry profile render is asserted structurally complete (every work
 entry, real dates, highlights, skills, projects all present), not just
 "renders without crashing."
 
-**8e — the real, runnable `career-agent apply` command, merged.** Recorded in
+**8e - the real, runnable `career-agent apply` command, merged.** Recorded in
 **ADR-0026**. The first slice where a real person can type a real command
 against real data: `apply --profile <path> --opportunity-file <path>` loads a
 real `MasterProfile` and `Opportunity` from disk, tailors and gates a real
@@ -354,7 +354,7 @@ its ordering before real client construction, and the `argv` fix) were
 verified by deliberately breaking each, confirming a test caught it, then
 reverting.
 
-**8f — applicant identity snapshot + real data into BrowserApplicator, merged.**
+**8f - applicant identity snapshot + real data into BrowserApplicator, merged.**
 Recorded in **ADR-0027**. Investigating a real Tier 1 `ATSAdapter` (the
 natural next step after 8e) found it isn't a real capability at all:
 verified against Greenhouse's, Lever's, and Ashby's own API docs that
@@ -380,7 +380,7 @@ assumed correct). Both the required-field guarantee and the real-data fix
 were verified by deliberately breaking each and confirming a test caught
 it (the latter checked against a real, live Chromium page, not simulated).
 
-**8g — browser-tier per-ATS dispatch + unsupported-field refusal, merged.**
+**8g - browser-tier per-ATS dispatch + unsupported-field refusal, merged.**
 Recorded in **ADR-0028**. Generalizes `BrowserApplicator`'s *dispatch* past
 Greenhouse-only: which ATS's form to fill is resolved via
 `resolve_ats_kind` (the same pattern-match ADR-0019 built for Tier 1),
@@ -417,7 +417,7 @@ principle," because the field isn't asking for a fact to verify, it's
 asking the person to exercise a legally protected choice about disclosure
 itself.
 
-**8h — per-FormFiller challenge/submit selectors + name-based field matching,
+**8h - per-FormFiller challenge/submit selectors + name-based field matching,
 merged.** Recorded in **ADR-0029**. The user personally inspected a real,
 live Lever posting via browser dev tools -- the one verification path
 neither this codebase's sandbox nor any automated tool in this session
@@ -452,7 +452,7 @@ widget) is still unconfirmed, and this project has no resume-file
 artifact anywhere in its domain model -- selectors alone don't unblock a
 still-open unknown.
 
-**8i — Greenhouse coverage correction, recorded (no code change).** Recorded
+**8i - Greenhouse coverage correction, recorded (no code change).** Recorded
 in **ADR-0030**. The user personally inspected a real, live Greenhouse
 posting -- the one platform this project had been treating as its fully
 proven baseline. `resume_text` was upgraded from "documented in
@@ -475,7 +475,7 @@ re-prioritized accordingly: it is not a generalization nice-to-have, it is
 the actual gate on this project's practical usefulness on the one
 platform it already supports.
 
-**8j — QuestionAnswerer: the four custom-question categories, merged.**
+**8j - QuestionAnswerer: the four custom-question categories, merged.**
 Recorded in **ADR-0031**. Builds the component 8i re-prioritized: EEOC
 self-identification (an absolute -- `answer_eeoc_question` takes no
 `MasterProfile` parameter at all, proven by a signature-inspection test,
@@ -511,7 +511,7 @@ isolation first, wiring is its own separate, deferred step, the same
 sequencing 8c/8d used for `ResumeTailoringPipeline` before
 `SubmissionPipeline`.
 
-**8k — QuestionAnswerer wired into BrowserApplicator's live pause/resume
+**8k - QuestionAnswerer wired into BrowserApplicator's live pause/resume
 flow, merged.** Recorded in **ADR-0032**. `submit()` gains two sequential
 pause phases: Phase A (pre-click, `reason="fields_need_human_input"`)
 triages every required field `FormFiller` doesn't know via
@@ -575,7 +575,7 @@ Phase 11 Deployment" plan is superseded by the concrete 9–18 sequence,
 which absorbs all three (Learn → Phase 15, Dashboard → Phase 16,
 scheduling/deployment → Phase 17).*
 
-## 🔄 Phase 9 — Resume file generation (DOCX + PDF)
+## 🔄 Phase 9 - Resume file generation (DOCX + PDF)
 Recorded in **ADR-0033**. Real DOCX (python-docx) and text-based PDF
 (LibreOffice headless) from gated `TailoredContent` + read-only profile
 facts, per a locked ATS-safe layout spec. Education sourced read-only from
@@ -594,25 +594,25 @@ pre-save), and the determinism test could pass by luck inside ZIP's
 **Done when:** an approved resume produces traceable, deterministic,
 ATS-safe files a Playwright `set_input_files` call can attach.
 
-## 🔄 Phase 10 — ATS score gate
+## 🔄 Phase 10 - ATS score gate
 Recorded in **ADR-0034**, built against the reviewer's 14-case adversarial
-matrix (A1–D3; four flagged load-bearing: A1, B1, B3, C1 — all four
+matrix (A1–D3; four flagged load-bearing: A1, B1, B3, C1 - all four
 injection-verified). Deterministic curated-taxonomy scoring is the entire
 pass/fail authority: the pre-brief rejected spaCy's statistical model
 because artifact-dependent determinism is not determinism (same input must
-score identically on any machine, forever — D1/D2 demand exact boundary
+score identically on any machine, forever - D1/D2 demand exact boundary
 behavior), and resolved the brief's "raise but never lower" semantic-layer
 wording in favor of the matrix's stricter A1 (self-contradictory the
 moment a raise crosses the threshold). `passed` is computed in the report
-type itself — threshold comparison plus the A2 hard-format-failure
+type itself - threshold comparison plus the A2 hard-format-failure
 override live in the type's derivation, not caller discipline. The
 advisory semantic layer only prunes false-missing keywords from the
 retailor gap report, each pruning verbatim-verified against the resume
-text (A3), and is deliberately NOT cost-cascade-exempt — it gates
+text (A3), and is deliberately NOT cost-cascade-exempt - it gates
 nothing; the exemption protects judgments that gate (reasoning recorded
 in the ADR, not just the decision). The retailor loop's backbone:
 GENUINE skill gaps (zero profile evidence) are structurally unreachable
-by the drafter — `AtsGapReport` has exactly one content field
+by the drafter - `AtsGapReport` has exactly one content field
 (`surfaceable`), so auto-retailor cannot become auto-fabricate because
 the fabrication targets are withheld from the component that writes
 prose (B1, the `answer_eeoc_question` channel-restriction pattern applied
@@ -625,7 +625,7 @@ by an `is`-identity test: the scorer and the human preview consume the
 literal same string. Anti-stuffing: repetition beyond 3 earns nothing and
 flags; skills-list-only matches earn half credit and flag (C1/C2).
 
-## 🔄 Phase 11 — LeverFormFiller (real)
+## 🔄 Phase 11 - LeverFormFiller (real)
 Recorded in **ADR-0035**. Built from ADR-0029's recorded live-DOM evidence:
 single unsplit full-name field (`_split_name`'s known imprecision never
 applies on Lever), `[name='email']`, required file upload satisfied by
@@ -639,7 +639,7 @@ pause/resume machinery unchanged. Live validation against a real posting
 on the user's machine remains the named final check before first real
 use.
 
-## 🔄 Phase 12 — Worldwide + regional discovery expansion
+## 🔄 Phase 12 - Worldwide + regional discovery expansion
 Recorded in **ADR-0036**. Eight Tier A free APIs built as
 `OpportunitySource` plugins behind the unchanged Protocol (Adzuna incl.
 India, Reed UK via Basic auth, USAJobs header-auth, Arbeitnow, The Muse,
@@ -652,7 +652,7 @@ Tier C (Naukri/Foundit/LinkedIn/Indeed/Seek) recorded as manual-only --
 no permitted programmatic path exists, no scrapers ever (invariant 7);
 they work today through the source-agnostic opportunity-file handoff.
 
-## 🔄 Phase 13 — Persistence + discover command + Excel
+## 🔄 Phase 13 - Persistence + discover command + Excel
 Recorded in **ADR-0037**. `SqliteOpportunityRepository` -- exact-contract
 drop-in (same public-surface guard, same two-key dedup scenarios, plus
 real close/reopen round-trip). Append-only `SqliteApplicationStore` audit
@@ -666,7 +666,7 @@ unmodeled JSON Resume sections survive byte-identical, frozen snapshots
 on existing Applications never rewritten. `career-agent export`: the
 founding-brief openpyxl tracker (formatted, filterable).
 
-## 🔄 Phase 14 — Decide layer
+## 🔄 Phase 14 - Decide layer
 Recorded in **ADR-0038**. `DeterministicDecideScorer` inside the Planner
 boundary (ADR-0007's swappable step, first real implementation): profile
 match 50% via Phase 10's unforked keyword machinery (one vocabulary across
@@ -678,7 +678,7 @@ injection-verified against penalty-conversion; exclusions returned
 visibly (ADR-0013 discipline); ties break by id. `discover --profile`
 prints the ranked summary. Zero LLM calls.
 
-## 🔄 Phase 15 — Learn pillar
+## 🔄 Phase 15 - Learn pillar
 Recorded in **ADR-0039**. `career-agent outcome` (typed kinds only,
 refuses unknown application ids -- no orphan rows) + `career-agent
 report`: per-variant funnels keyed to prompt/profile/ATS band, reading
@@ -689,7 +689,7 @@ routing, mandatory small-sample caveat on every report
 (injection-verified) and a tested absence of prescriptive verdict
 language. MIN_N_FOR_COMPARISON=50 recorded as visible data.
 
-## 🔄 Phase 16 — Notifications + dashboard
+## 🔄 Phase 16 - Notifications + dashboard
 Recorded in **ADR-0040**. Telegram Bot API notifier (token never logged,
 never stored, elided from error text -- tested) with ntfy.sh as the
 zero-setup fallback, both through the existing HttpClient port;
@@ -702,7 +702,7 @@ distribution, the ADR-0039 funnel with its caveat intact; SQLite read
 directly as a separate read model so the repository contract stays
 add/get.
 
-## ✅ Phase 17 — Scheduling (LAST, hard-gated)
+## ✅ Phase 17 - Scheduling (LAST, hard-gated)
 Recorded in **ADR-0041**. Both recorded gates closed first:
 profile-staleness re-verification (`StaleProfileError` before `prepare()`
 ever runs -- a stale application never produces a confirmable preview;
@@ -732,7 +732,7 @@ ever runs), plus this project's first offline end-to-end rehearsal test
 truthfulness-gate -> notify compose for real through the actual CLI
 entry point, not just in per-phase isolation.
 
-## ⬜ Phase 18 — Ashby (whenever unblocked)
+## ⬜ Phase 18 - Ashby (whenever unblocked)
 Blocked on the user's dev-tools DOM inspection of a live Ashby posting --
 a client-rendered SPA invisible to every tool tried. Build nothing on
 assumption.
@@ -747,7 +747,7 @@ repository evidence shows a real gap, not because a technique sounds
 sophisticated. Each item gets its own audit before implementation; most stay
 proposed until a concrete trigger justifies the work.
 
-- **R1 — Formal claim-evidence entailment.** ✅ First slice done: **ADR-0044**
+- **R1 - Formal claim-evidence entailment.** ✅ First slice done: **ADR-0044**
   (deterministic Layer-1 precheck: technology/metric/verb-strength/seniority,
   closed-vocabulary, zero-cost, no NLP model). Object/scope/causal-relation
   predicates deliberately deferred to the LLM (Layer 4) -- revisit only if
@@ -1182,7 +1182,7 @@ profile.
   typing a credential -- an AST-based test scans for any
   `.fill()`/`.type()`/`.press()` call, not a fragile text search. A fifth
   import-linter contract + purity test enforce that this layer has zero
-  knowledge of jobs/résumés/applications, mirroring `domain/`'s existing
+  knowledge of jobs/resumes/applications, mirroring `domain/`'s existing
   zero-I/O enforcement. 28 new tests, all driven against a real local
   Chromium instance, not mocks; 790 total. No CLI command yet (nothing to
   invoke -- future adapter/planner phases are the consumers), no change to
@@ -1249,7 +1249,7 @@ profile.
   arbitrary generated sentences is a real, separate design problem, left
   for future work. Instead `domain/cover_letter.py::assemble_cover_letter`
   is a **deterministic, zero-LLM** template that copies only the
-  already-approved résumé summary and up to three highlights verbatim into
+  already-approved resume summary and up to three highlights verbatim into
   a letter shape -- no new fabrication surface, so no new gate is needed.
   `domain/resume_variants.py::select_closest_variant` ranks previously
   approved variants by keyword overlap (reusing `extract_jd_keywords`
@@ -1271,7 +1271,7 @@ profile.
   the audit found this is almost entirely not greenfield: the unwired Tier
   2 `BrowserApplicator` (ADR-0020/0028/0032) already implements the exact
   sequence the brief describes (per-platform `FormFiller` fills identity/
-  résumé fields, `question_answerer.py` classifies and auto-answers
+  resume fields, `question_answerer.py` classifies and auto-answers
   everything else it safely can, unresolved fields are manifested for a
   human) and only then clicks submit. Extracted the field-detection/triage
   helpers out of `browser_applicator.py` into a new shared
@@ -1306,7 +1306,7 @@ profile.
   phase adds the decision. `domain/review.py::ReviewSession` references
   `application_session_id` plus a few cheap denormalized display fields
   rather than duplicating warnings/missing-fields/filled-fields/uploaded-
-  files/résumé-variant/cover-letter content -- the same "denormalize
+  files/resume-variant/cover-letter content -- the same "denormalize
   identity fields, not full content" precedent `SqliteApplicationStore`'s
   own `company`/`title` columns already set, proven structurally (a test
   asserts those fields don't exist on `ReviewSession` at all).
@@ -1331,7 +1331,7 @@ profile.
   existing one-file `storage/sqlite.py` convention. Checked against Phase
   51's found `.prepare(`-collision release-invariant test explicitly; no
   second collision. 36 new tests; 947 total. No Submit, no browser
-  mutation, no AI review, no résumé/field editing, no Submission Engine,
+  mutation, no AI review, no resume/field editing, no Submission Engine,
   no new dependency, no version bump.
 
 - ✅ **Human-Approved Submission Engine -- ADR-0071 (Phase 53).** The
@@ -1345,7 +1345,7 @@ profile.
   a second implementation.** `agents/submission/submission_engine.py::
   SubmissionEngine` checks, in order: the review and application session
   actually pair together; the review is `APPROVED`; the application
-  session is still `READY_FOR_REVIEW`; the résumé about to be submitted
+  session is still `READY_FOR_REVIEW`; the resume about to be submitted
   matches (content-for-content, via a new `SqliteResumeVariantStore.get`)
   what was actually reviewed -- a profile edit in between refuses rather
   than silently submitting different content; `domain/execution.py`'s
@@ -1418,7 +1418,7 @@ profile.
   page renders real data from the six existing `GET` routes only** --
   `services/api.ts` is a one-function-per-route wrapper matching
   `api/routers/*.py` exactly; cross-route joins (e.g. Review Queue's
-  résumé/cover-letter preview alongside its approval decision, Submission
+  resume/cover-letter preview alongside its approval decision, Submission
   Queue's "ready to submit" list) are pure functions over the already-
   fetched responses (`lib/derive.ts`), the same "aggregation is
   presentation logic" precedent `analytics.py` already set server-side --
@@ -1544,7 +1544,7 @@ profile.
   verifier -- it produces questions/guidance, not achievement claims,
   and its prompt requires every question's "why" to cite the specific JD
   text that prompted it. Nothing in this phase has any write path back
-  to a résumé, profile, or stored record -- Resume Suggestions'
+  to a resume, profile, or stored record -- Resume Suggestions'
   Accept/Reject buttons only flip local component state, which is how
   "users explicitly accept any changes before they're applied" is
   actually enforced (there is no channel to apply one automatically even
@@ -1663,7 +1663,7 @@ profile.
   name it" (Phase 57, Phase 59); the scoping decision was stated directly
   this time rather than asked a third time.
 
-  **Built for real:** notifications for résumé prepared, review
+  **Built for real:** notifications for resume prepared, review
   approved/rejected, submission completed/cancelled/failed, and password
   changed -- wired at their six real call sites in `cli.py`/
   `api/routers/auth.py`, every dispatch wrapped in a broad exception
@@ -1742,7 +1742,7 @@ profile.
   accepted. A second real tension resolved before writing code: the brief
   demands `organization_id`+`user_id` on every query while also
   forbidding rewriting existing services -- retrofitting `organization_id`
-  onto the nine pre-existing personal-resource tables (résumé variants,
+  onto the nine pre-existing personal-resource tables (resume variants,
   application sessions, review sessions, submission results,
   notifications, and four more) would mean rewriting every one of them.
   The scoping adopted: **every genuinely new piece of data this phase
@@ -2189,14 +2189,14 @@ profile.
   Score, Skill Gap, and Resume Analysis pages (Phase 57, ADR-0075) all
   compute a *deterministic* keyword-coverage score (no LLM, no cost, no
   fabrication risk). The real gap was the input: those pages make the user
-  **paste** their résumé every time, even after onboarding a Master
+  **paste** their resume every time, even after onboarding a Master
   Profile (Phase 64) that already holds everything the scorer needs.
 
   `domain/profile_text.py::master_profile_to_resume_text` (new, pure,
   imports only `domain/models`) flattens the profile
   (summary/work/projects/skills/education) into the plain text the
   coverage scorer tokenizes -- lossy by design (it preserves the *words*,
-  not layout) and explicitly *not* a résumé generator (tailoring stays the
+  not layout) and explicitly *not* a resume generator (tailoring stays the
   real artifact pipeline). `POST /coach/profile-match` takes only
   `{ jd_text }`, loads the caller's stored profile, and returns the
   job-match score **and** skill-gap ranking together, reusing
@@ -2206,7 +2206,7 @@ profile.
   (unlike the LLM-backed coach endpoints). Frontend:
   `coachApi.profileMatch`/`useProfileMatch` + a new "Match My Profile"
   Career Coach page -- paste a JD, get the score, missing keywords, and
-  prioritized skill gaps, with no résumé paste. 8 new backend tests (3
+  prioritized skill gaps, with no resume paste. 8 new backend tests (3
   pure profile-text + 5 API, including 404-when-unonboarded and cross-user
   isolation), 2 new frontend tests. The existing paste-based Job Match /
   Skill Gap / Resume Analysis pages are unchanged -- this is additive.
@@ -2222,13 +2222,13 @@ profile.
   The missing middle of the fully web-driven loop (search -> **prepare**
   -> review -> submit), on the owner's explicit direction that the whole
   journey run from the website: "first the AI asks the details, searches
-  jobs, creates a CV/résumé/cover letter using the job description, fills
+  jobs, creates a CV/resume/cover letter using the job description, fills
   the form, and at last asks the user to review." The audit found
   `run_prepare_command` has two halves -- tailoring
   (`ResumeVariantEngine.build_materials`: the truthfulness gate, ATS
   threshold, and cover-letter assembly, **no browser**) and a browser
   `build_session` that only *pre-fills* the live form for preview (the
-  authoritative fill and résumé upload happen at submit, which re-tailors
+  authoritative fill and resume upload happen at submit, which re-tailors
   fresh and drives the browser itself). It also found the web Submit flow
   still loads `profile.json`, not the onboarded DB Master Profile (Phase
   64) -- so the stored profile wasn't actually driving tailoring.
@@ -2244,7 +2244,7 @@ profile.
   background-task + poll shape: `POST /prepare` returns a token,
   `GET /prepare/{token}` polls. The background task loads the caller's
   **stored Master Profile** -- the bridge that makes "the AI builds your
-  résumé from the details you entered" real -- failing with a clear
+  resume from the details you entered" real -- failing with a clear
   onboarding prompt if none exists, then saves the `ApplicationSession`
   under the caller's `user_id`. Fire-and-poll with no confirm of its own:
   tailoring sends nothing outward, so the only human gate that matters
@@ -2262,7 +2262,7 @@ profile.
   `/api/*`-GET-only structural proof are untouched. Bridging web *submit*
   to the DB profile too (it still reads `profile.json`) is named follow-up
   work, not done here -- but a session prepared from the DB profile
-  already carries the tailored résumé variant submit needs.
+  already carries the tailored resume variant submit needs.
 
 - ✅ **Assisted Apply for Pasted Jobs (LinkedIn/Indeed/Naukri) -- ADR-0086
   (Phase 68).** The owner asked to help apply on LinkedIn, Indeed, and
@@ -2270,7 +2270,7 @@ profile.
   scraping or auto-applying on those platforms -- their ToS prohibit it,
   they ban accounts that do -- and that rule is **not reopened**. But a
   user who finds a job there still deserves the agent's real value: a
-  tailored résumé + cover letter for that posting. The audit found Phase
+  tailored resume + cover letter for that posting. The audit found Phase
   67's `prepare_application_for_review` already tailors for any
   `Opportunity` regardless of how it was found, and that a
   LinkedIn/Indeed/Naukri URL resolves to no known ATS
@@ -2307,7 +2307,7 @@ profile.
   (location/remote/source/posted date/job URL) live on the `Opportunity`
   (joinable by id), that a `SearchProvider` protocol (ADR-0002) with Exa
   and Google CSE adapters already exists (the deferred "Company Research"
-  coach page never had a data source), and that a *private* résumé link
+  coach page never had a data source), and that a *private* resume link
   inside a downloaded Excel can't carry the browser's in-memory access
   token (public URLs have no such problem).
 
@@ -2339,8 +2339,8 @@ profile.
   tests (5 research unit incl. no-provider/careers-detection/error-degrade/
   source-cap + 1 enriched-export asserting the accurate job link, real
   location, inline cover letter, the honest no-key note, and a real
-  hyperlink). The résumé link is deferred (a private link can't
-  authenticate from a downloaded file -- the tailored résumé stays
+  hyperlink). The resume link is deferred (a private link can't
+  authenticate from a downloaded file -- the tailored resume stays
   viewable in the Review Queue); the submissions export is unchanged this
   phase.
 
@@ -2372,11 +2372,11 @@ profile.
   new backend tests. The relevance filter is opt-in per call; the dedup
   and truthfulness gates are untouched.
 
-- ✅ **Web Résumé Upload + AI Analysis + Signed Résumé-PDF Excel Links --
+- ✅ **Web Resume Upload + AI Analysis + Signed Resume-PDF Excel Links --
   ADR-0089 (Phase 71).** The owner asked that onboarding also accept a
-  résumé upload the AI analyzes and uses for downstream features, and that
+  resume upload the AI analyzes and uses for downstream features, and that
   the applications Excel carry the company webpage link, "working
-  employee details," LinkedIn, and a clickable PDF of whichever résumé was
+  employee details," LinkedIn, and a clickable PDF of whichever resume was
   actually submitted. "Working employee details" is honored per the
   owner's own earlier decision (ADR-0087): public company channels only,
   never named individuals -- **not reopened**, not silently reinterpreted.
@@ -2388,7 +2388,7 @@ profile.
   unmodified. PDF support (`pypdf`, previously only an *undeclared
   transitive* of `browser-use` -- unsafe to rely on, per ADR-0052's own
   reasoning -- now a properly declared dependency) resolves ADR-0052's
-  named "no PDF" limitation, since PDF is the dominant résumé format for a
+  named "no PDF" limitation, since PDF is the dominant resume format for a
   web audience. `api/routers/cv_import.py` (`POST
   /user/master-profile/import` + `/{token}/confirm`) is the two-step HTTP
   analogue of `import-cv`/`promote-cv`: upload parses and returns
@@ -2413,12 +2413,12 @@ profile.
   at a stale or since-deleted file. The Excel gains a `Company LinkedIn`
   column (a new `linkedin_url` on `CompanyResearch`, detected via a
   literal `linkedin.com/company/` check -- never a person's `/in/` page)
-  and a `Résumé (PDF)` column (the signed link, built as an *absolute* URL
+  and a `Resume (PDF)` column (the signed link, built as an *absolute* URL
   via a new `api_base_url` setting mirroring the existing
   `frontend_base_url`, since a relative path has no browser origin to
   resolve against once opened from Excel).
 
-  Also fixed, found while wiring the résumé link end to end in a
+  Also fixed, found while wiring the resume link end to end in a
   production-shaped deployment: `deploy/nginx/edge.conf`'s route regex
   claimed to mirror `vite.config.ts`'s dev-proxy prefix list but had
   drifted -- `/export`, `/discover`, `/prepare`, `/reviews`,
@@ -2443,23 +2443,23 @@ profile.
   the confirmed profile straight into the `["master-profile"]` query
   cache the rest of the wizard already reads from, so a freshly confirmed
   name/email/skills shows up pre-filled the moment the user clicks Next --
-  verified with a real headless-Chromium run (register → upload a résumé →
+  verified with a real headless-Chromium run (register → upload a resume →
   confirm two proposals → land on Personal Details already showing the
   confirmed name and email), not just component tests. 7 new frontend
   tests (`ResumeImportPanel.test.tsx`), all pre-existing
   `OnboardingWizardPage` tests unchanged.
 
-- ✅ **Role Taxonomy Search Expansion + Résumé Public Links -- ADR-0090
+- ✅ **Role Taxonomy Search Expansion + Resume Public Links -- ADR-0090
   (Phase 72).** The owner asked that a search for "junior software
   developer" be understood as a role (matching "SWE"/"SDE"/"entry level"
   postings too) and also surface *related* sub-roles (backend, cloud,
-  DevOps, ...) as a distinct section, and that a generated résumé carry a
+  DevOps, ...) as a distinct section, and that a generated resume carry a
   proper links section (LinkedIn, GitHub, portfolio, project links). One
   part of the request -- "analyze company employees' LinkedIn resumes" --
   was declined and flagged rather than silently done or dropped: scraping
   named individuals' LinkedIn profiles violates their ToS and this
   project's own standing no-scraping-of-people rule (ADR-0087's Context);
-  the résumé-quality goal was met instead from public, well-established
+  the resume-quality goal was met instead from public, well-established
   resume conventions.
 
   New `domain/role_taxonomy.py`: a curated, hand-reviewed taxonomy of ~15
@@ -2495,7 +2495,7 @@ profile.
 
   `MasterProfile.basics` gains `linkedin_url`/`github_url`/`website_url`/
   `other_links` (all optional/additive -- a confirmed, real gap: the
-  résumé renderer's contact line was previously just
+  resume renderer's contact line was previously just
   `email | phone | location`, nothing else); `ProjectEntry` gains `url`.
   Always exactly what the user entered -- onboarding wizard, or JSON
   Resume's own `basics.url`/`basics.profiles[]`/`projects[].url` via the
@@ -2514,7 +2514,7 @@ profile.
 Evidence-based, not speculative -- each was reproduced or found by direct
 code/doc inspection during Phase 39's first-run/installation audit.
 
-- ✅ **P1 — Promptfoo/results-dir resolution breaks for any non-editable
+- ✅ **P1 - Promptfoo/results-dir resolution breaks for any non-editable
   install. RESOLVED Phase 40 (ADR-0060).** `_DEFAULT_PROMPTFOO_RESULTS_DIR`
   (`cli.py`) was computed from `Path(__file__).resolve().parent.parent
   .parent`, which only landed on the real repo root for an **editable**
@@ -2529,7 +2529,7 @@ code/doc inspection during Phase 39's first-run/installation audit.
   `diagnose-promptfoo-drift`) resolves from the same `Settings` field.
   Re-verified live on both an editable install and a fresh wheel install
   from outside the repo -- both now report the correct CWD-relative path.
-- **P2 — Canonical profile JSON shape was undocumented until this phase.**
+- **P2 - Canonical profile JSON shape was undocumented until this phase.**
   Root-caused: the real loader (`load_master_profile` -> `_map_work`)
   expects JSON Resume's camelCase `startDate`/`endDate`; the Pydantic
   model's own fields are snake_case `start_date`/`end_date`. Nothing
@@ -2540,32 +2540,32 @@ code/doc inspection during Phase 39's first-run/installation audit.
   (`test_readme_work_entry_example_loads_through_the_real_cli_loader`).
   Tracked here in case a fuller "profile authoring guide" is ever
   warranted beyond the one example.
-- **P2 — No opportunity-file authoring example.** The primary supported
+- **P2 - No opportunity-file authoring example.** The primary supported
   path (`discover --out-dir` writing handoff files `apply` consumes
   directly) doesn't require a user to hand-author one, so this is lower
   priority than originally suspected -- but no example exists for the
   synthetic/manual-testing case documented in ADR-0058/Phase 36. Consider
   a short example alongside the profile one if manual opportunity
   authoring turns out to be a real user path.
-- **P3 — macOS remains untested.** Unchanged deliberate gap (ADR-0056/0057,
+- **P3 - macOS remains untested.** Unchanged deliberate gap (ADR-0056/0057,
   10x CI runner-minute multiplier). Revisit only if a macOS-specific defect
   is ever actually reported.
-- **P3 — Whitespace-only provider key is truthy and selects a provider.**
+- **P3 - Whitespace-only provider key is truthy and selects a provider.**
   Unchanged, low-severity, already documented and pinned by test since
   Phase 29 (`test_whitespace_only_key_is_treated_as_present_documented_
   limitation`) -- fails closed at the live call (401), never a silent
   truthfulness bypass. Not re-prioritized by this audit; no new evidence
   changes its severity.
-- **P3 — GitHub Release publication.** Confirmed `RELEASE_PENDING` (real
+- **P3 - GitHub Release publication.** Confirmed `RELEASE_PENDING` (real
   404, not inferred) as of Phase 38/39. A manual, separate maintainer
   action once GitHub's API rate limit resets -- not a repository defect.
 
 Items explicitly scoped out of the numbered phases above, with a recorded reason
-— tracked here so they don't quietly reopen an already-"done" phase.
+- tracked here so they don't quietly reopen an already-"done" phase.
 
 - **Company Watchlist / Proactive Career Page Monitoring.** Deferred from Phase
   4 (see the named-gap note above). Distinct from job *discovery*: proactively
   finding and watching the career pages of companies with no currently-visible
   postings, so a listing is caught the moment it appears rather than only when
   it surfaces via a known ATS or search. Needs its own pre-brief when prioritized
-  — not a Phase 4 patch.
+  - not a Phase 4 patch.

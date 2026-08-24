@@ -1,6 +1,6 @@
 # Runtime dependencies for the AI Career Agent.
 # Pinned conservatively with lower bounds; pyproject.toml is the source of truth
-# for packaging. Phase 1 keeps this intentionally minimal — additional pins land
+# for packaging. Phase 1 keeps this intentionally minimal - additional pins land
 # with the phase that first needs them (see ROADMAP.md).
 
 # --- LLM (Anthropic Claude, paid fallback when GROQ_API_KEY is unset) ---

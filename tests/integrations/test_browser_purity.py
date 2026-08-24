@@ -7,7 +7,7 @@ layer does NOT yet apply for jobs. It only manages browsers and
 sessions."): nothing under ``career_agent.integrations.browser`` may
 import ``career_agent.domain``, ``career_agent.agents``, or
 ``career_agent.storage`` at the top level -- it cannot know what a job
-opportunity, a résumé, or an application is. This parses every module and
+opportunity, a resume, or an application is. This parses every module and
 asserts every top-level import comes from an allowlist, instead of merely
 asserting it in a docstring.
 """
@@ -86,6 +86,6 @@ def test_career_agent_submodule_imports_stay_within_integrations() -> None:
                 assert node.module.startswith("career_agent.integrations"), (
                     f"{path}: {node.module!r} reaches outside "
                     f"career_agent.integrations -- the browser foundation "
-                    f"layer must have zero knowledge of jobs/résumés/"
+                    f"layer must have zero knowledge of jobs/resumes/"
                     f"applications (ADR-0065)"
                 )

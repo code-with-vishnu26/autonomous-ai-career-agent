@@ -239,7 +239,7 @@ async def _uploaded_resume_paths(app: Application, filler: FormFiller) -> list[s
     """Real files this filler actually attached via ``set_input_files``.
 
     Grounded in the same evidence ``AdapterCapabilities`` already declares
-    (Phase 48): Lever's résumé field is a verified required file upload;
+    (Phase 48): Lever's resume field is a verified required file upload;
     Greenhouse's is a verified plain text field (nothing uploaded). Never
     guessed -- this only ever reports what ``FormFiller.fill_identity_and_resume``
     is independently documented (ADR-0035) to have already attached.

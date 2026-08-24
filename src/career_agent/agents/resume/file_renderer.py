@@ -242,7 +242,7 @@ def _build_document(content: TailoredContent, profile: MasterProfile) -> Documen
                 source.end_date.isoformat() if source.end_date else "Present"
             )
             line = document.add_paragraph()
-            run = line.add_run(f"{tailored.position} — {source.name}")
+            run = line.add_run(f"{tailored.position} - {source.name}")
             run.bold = True
             document.add_paragraph(f"{source.start_date.isoformat()} - {end_label}")
             for highlight in tailored.highlights:
@@ -294,7 +294,7 @@ def _format_education(entry: EducationEntry) -> str:
     """
     degree_bits = [bit for bit in (entry.study_type, entry.area) if bit]
     degree = ", ".join(degree_bits)
-    label = f"{degree} — {entry.institution}" if degree else entry.institution
+    label = f"{degree} - {entry.institution}" if degree else entry.institution
     if entry.start_date:
         end_label = entry.end_date.isoformat() if entry.end_date else "Present"
         return f"{label} ({entry.start_date.isoformat()} - {end_label})"

@@ -159,9 +159,9 @@ class Settings(BaseSettings):
     #: path, per ``frontend/src/services/http.ts``'s own reasoning).
     frontend_base_url: str = "http://localhost:5173"
 
-    # -- Phase 71 (ADR-0089): résumé upload + signed résumé-PDF links ------
+    # -- Phase 71 (ADR-0089): resume upload + signed resume-PDF links ------
     #: Where this API is actually reachable from outside the app -- needed
-    #: to build an *absolute* résumé-download link for the exported Excel
+    #: to build an *absolute* resume-download link for the exported Excel
     #: workbook. Every other link this backend builds is a relative path a
     #: same-origin browser fetch resolves on its own
     #: (``frontend/src/services/http.ts``); this one is different because

@@ -222,7 +222,7 @@ _APPLICATION_SESSION_COLUMNS: list[tuple[str, str]] = [
     ("job_title", "Role"),
     ("provider", "Provider / ATS"),
     ("status", "Status"),
-    ("resume_variant_id", "Résumé Variant"),
+    ("resume_variant_id", "Resume Variant"),
     ("cover_letter", "Cover Letter"),
     ("fields_filled", "Fields Filled"),
     ("fields_missing", "Fields Missing"),
@@ -314,14 +314,14 @@ _ENRICHED_APPLICATION_COLUMNS: list[tuple[str, str]] = [
     ("linkedin_url", "Company LinkedIn"),
     ("company_research", "Company Research"),
     ("research_sources", "Research Sources"),
-    ("resume_pdf_url", "Résumé (PDF)"),
+    ("resume_pdf_url", "Resume (PDF)"),
     ("cover_letter", "Cover Letter"),
 ]
 
 #: Columns whose values are single URLs -> clickable hyperlinks. The last
 #: three are public; ``resume_pdf_url`` (Phase 71, ADR-0089) is instead a
 #: signed, capability-bearing link scoped to exactly the caller's own
-#: tailored résumé -- still a single URL, so it renders as a hyperlink the
+#: tailored resume -- still a single URL, so it renders as a hyperlink the
 #: same way.
 _ENRICHED_LINK_KEYS = frozenset(
     {"job_url", "careers_url", "linkedin_url", "resume_pdf_url"}

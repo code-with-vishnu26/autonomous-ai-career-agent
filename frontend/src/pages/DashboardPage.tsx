@@ -120,7 +120,7 @@ export function DashboardPage() {
             </CardHeader>
             <CardContent>
               <CardValue>
-                {prepared === 0 ? "—" : `${Math.round((submitted / prepared) * 100)}%`}
+                {prepared === 0 ? "-" : `${Math.round((submitted / prepared) * 100)}%`}
               </CardValue>
             </CardContent>
           </Card>

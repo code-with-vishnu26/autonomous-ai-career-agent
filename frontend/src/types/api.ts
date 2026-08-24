@@ -439,7 +439,7 @@ export interface PendingSubmissionStatus {
   result_id: string | null;
 }
 
-/** Phase 67 (ADR-0085): web-triggered Prepare (tailor a résumé for a job). */
+/** Phase 67 (ADR-0085): web-triggered Prepare (tailor a resume for a job). */
 export type PreparationState = "PREPARING" | "DONE" | "FAILED";
 
 export interface PendingPreparationStatus {
@@ -534,7 +534,7 @@ export interface MasterProfile {
 export type MasterProfileUpdate = Omit<MasterProfile, "version">;
 
 /**
- * Phase 71, ADR-0089: `/user/master-profile/import` -- résumé upload and
+ * Phase 71, ADR-0089: `/user/master-profile/import` -- resume upload and
  * review. Mirrors `api/routers/cv_import.py`'s Pydantic response models
  * field-for-field. A proposal is `UNVERIFIED` until explicitly confirmed
  * or rejected; one never mentioned in a confirm request stays that way.

@@ -1,7 +1,7 @@
-"""Render a :class:`MasterProfile` to plain résumé text (Phase 66, ADR-0084).
+"""Render a :class:`MasterProfile` to plain resume text (Phase 66, ADR-0084).
 
 The deterministic keyword-coverage scorer (`domain/coach_analysis.py`,
-ADR-0075) works on a résumé *text* blob -- the Career Coach pages have
+ADR-0075) works on a resume *text* blob -- the Career Coach pages have
 always fed it text the user pasted. This renders the same text from a
 stored :class:`MasterProfile` instead, so a dashboard user who onboarded
 (Phase 64) can score their profile against a job without re-typing it.
@@ -9,7 +9,7 @@ stored :class:`MasterProfile` instead, so a dashboard user who onboarded
 Pure and lossy by design: it flattens the structured profile into the
 words a keyword scorer cares about (summaries, position titles,
 highlights, skill names/keywords, project descriptions), not a formatted
-document. It is *not* a résumé generator -- tailoring (`prepare`) remains
+document. It is *not* a resume generator -- tailoring (`prepare`) remains
 the real, LLM-backed artifact pipeline; this is only the input to a
 keyword match.
 """

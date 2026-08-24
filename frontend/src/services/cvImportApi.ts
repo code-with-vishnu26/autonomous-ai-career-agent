@@ -1,6 +1,6 @@
 /**
  * `/user/master-profile/import` (Phase 71, ADR-0089) -- the two-step
- * upload/review/confirm résumé-import flow, the web analogue of the CLI's
+ * upload/review/confirm resume-import flow, the web analogue of the CLI's
  * `import-cv`/`promote-cv`. `upload` sends a multipart file (no
  * `Content-Type` set here deliberately -- the browser generates the
  * correct `multipart/form-data; boundary=...` header itself; setting one
@@ -24,7 +24,7 @@ export const cvImportApi = {
       body: formData,
     });
     if (!response.ok) {
-      let detail = `Résumé upload failed (HTTP ${response.status})`;
+      let detail = `Resume upload failed (HTTP ${response.status})`;
       try {
         const body = await response.json();
         if (body?.detail) detail = String(body.detail);

@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 #: - ``SUBMITTED``: ``BrowserApplicator`` returned ``ApplicationSubmitted``.
 #: - ``FAILED``: a submission attempt was made (page opened, form touched)
 #:   and did not complete -- a network error, a validation refusal
-#:   (``UnsupportedFormFieldsError``), a missing required résumé artifact.
+#:   (``UnsupportedFormFieldsError``), a missing required resume artifact.
 #: - ``UNKNOWN``: a pause (``HumanActionRequired``) could not be resolved
 #:   automatically within this run -- genuinely ambiguous, never collapsed
 #:   into ``FAILED`` or ``SUBMITTED`` (mirrors ``SubmissionOutcome.

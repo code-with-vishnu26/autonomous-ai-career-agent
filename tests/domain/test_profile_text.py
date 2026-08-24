@@ -1,4 +1,4 @@
-"""Phase 66 (ADR-0084): MasterProfile -> résumé text rendering."""
+"""Phase 66 (ADR-0084): MasterProfile -> resume text rendering."""
 
 from __future__ import annotations
 

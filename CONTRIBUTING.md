@@ -14,7 +14,7 @@ These apply to everyone, including maintainers:
 3. **Document significant decisions as ADRs.** Any choice that shapes the
    architecture goes in [`docs/adr/`](docs/adr/) (see the format there).
 4. **Explain fit before features.** Before implementing a new feature, briefly
-   explain how it fits the existing architecture (plugin registry + event bus —
+   explain how it fits the existing architecture (plugin registry + event bus -
    new capabilities should plug in, not rewire the core).
 5. **Truthfulness is non-negotiable.** Nothing may generate applicant-facing
    content that isn't grounded in the user's master profile. Never weaken the

@@ -65,7 +65,7 @@ _SEEKING_MARKERS = (
     "available for hire",
     "open to work",
     "willing to relocate",
-    "résumé",
+    "resume",
     "resume:",
     "cv:",
     "i'm a ",

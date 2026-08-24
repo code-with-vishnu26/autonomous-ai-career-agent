@@ -32,7 +32,7 @@ export function AccountPage() {
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Member since</span>
-            <span>{user ? new Date(user.created_at).toLocaleDateString() : "—"}</span>
+            <span>{user ? new Date(user.created_at).toLocaleDateString() : "-"}</span>
           </div>
           <Button variant="outline" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />

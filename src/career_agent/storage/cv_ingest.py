@@ -14,7 +14,7 @@ Formats: DOCX (via the already-declared ``python-docx`` runtime dependency,
 ADR-0033), PDF (via the now-declared ``pypdf`` dependency, ADR-0089 --
 previously named as a deferred gap because ``pypdf`` was only an
 undeclared transitive of ``browser-use``; declaring it directly at the
-same version already resolved makes PDF -- the format most résumés are
+same version already resolved makes PDF -- the format most resumes are
 actually in -- a real, tested capability), and plain text (``.txt``/
 ``.md``, stdlib). **No OCR** (a scanned/image-only PDF yields no text),
 **no LLM**. These are named, deferred limitations, not oversights.
@@ -151,7 +151,7 @@ def _extract_pdf_text(filename: str, raw_bytes: bytes) -> str:
 
     Text-layer extraction only -- a scanned/image PDF with no embedded text
     layer yields an empty (or near-empty) string, which downstream simply
-    proposes no facts from (never an error: a résumé with no extractable
+    proposes no facts from (never an error: a resume with no extractable
     facts is not a malformed document).
     """
     try:

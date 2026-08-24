@@ -38,7 +38,7 @@ dependencies = [
     "python-docx>=1.1",
     "bcrypt>=4.1",
     "pyjwt>=2.8",
-    # PDF résumé parsing (Phase 71, ADR-0089). Previously an undeclared
+    # PDF resume parsing (Phase 71, ADR-0089). Previously an undeclared
     # transitive of browser-use -- declared directly at the version already
     # resolved in this environment so PDF ingestion is a real, tested
     # capability rather than an accident of what else happened to be
@@ -63,7 +63,7 @@ web = [
     "apscheduler>=3.10",
     # Multipart/form-data parsing (Phase 71, ADR-0089) -- FastAPI's own
     # documented requirement for any ``UploadFile``/``File(...)`` parameter;
-    # the résumé-upload endpoint is the first file upload this API has ever
+    # the resume-upload endpoint is the first file upload this API has ever
     # accepted.
     "python-multipart>=0.0.9",
 ]
@@ -203,7 +203,7 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Browser Automation Foundation has zero knowledge of jobs/résumés/applications (Phase 47, ADR-0065)"
+name = "Browser Automation Foundation has zero knowledge of jobs/resumes/applications (Phase 47, ADR-0065)"
 type = "forbidden"
 source_modules = ["career_agent.integrations.browser"]
 forbidden_modules = [

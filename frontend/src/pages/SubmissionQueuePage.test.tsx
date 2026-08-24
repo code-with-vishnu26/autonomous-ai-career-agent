@@ -92,7 +92,7 @@ describe("SubmissionQueuePage", () => {
     await waitFor(() =>
       expect(onConfirm).toHaveBeenCalledWith({ approved: true }),
     );
-    expect(await screen.findByText(/done — see recorded attempts below/i)).toBeInTheDocument();
+    expect(await screen.findByText(/done - see recorded attempts below/i)).toBeInTheDocument();
   });
 
   it("shows an empty ready state when nothing is approved yet", async () => {

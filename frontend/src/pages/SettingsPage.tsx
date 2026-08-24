@@ -39,7 +39,7 @@ export function SettingsPage() {
               </CardHeader>
               <CardContent>
                 {PROFILE_KEYS.map((key) => (
-                  <Row key={key} label={key} value={String(data.values[key] ?? "—")} />
+                  <Row key={key} label={key} value={String(data.values[key] ?? "-")} />
                 ))}
               </CardContent>
             </Card>
@@ -50,7 +50,7 @@ export function SettingsPage() {
               </CardHeader>
               <CardContent>
                 {BROWSER_KEYS.map((key) => (
-                  <Row key={key} label={key} value={String(data.values[key] ?? "—")} />
+                  <Row key={key} label={key} value={String(data.values[key] ?? "-")} />
                 ))}
               </CardContent>
             </Card>
@@ -61,7 +61,7 @@ export function SettingsPage() {
               </CardHeader>
               <CardContent>
                 {EXPORT_KEYS.map((key) => (
-                  <Row key={key} label={key} value={String(data.values[key] ?? "—")} />
+                  <Row key={key} label={key} value={String(data.values[key] ?? "-")} />
                 ))}
               </CardContent>
             </Card>

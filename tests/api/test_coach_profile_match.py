@@ -2,7 +2,7 @@
 
 Scores the caller's stored Master Profile against a JD using the same
 deterministic ADR-0075 keyword scorers, so onboarded users never re-type
-their résumé. Deterministic -- these tests need no LLM/provider config.
+their resume. Deterministic -- these tests need no LLM/provider config.
 """
 
 from __future__ import annotations

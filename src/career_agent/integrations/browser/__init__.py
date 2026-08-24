@@ -4,7 +4,7 @@ Low-level browser/session/tab lifecycle primitives -- ``BrowserManager``
 (launch/close Chromium), ``SessionManager`` (persist/reuse a login session;
 wait for, never automate, a human login), ``TabManager`` (multi-tab
 tracking within one context). Nothing in this subpackage knows what a job
-opportunity, a résumé, or an application form is: it imports nothing from
+opportunity, a resume, or an application form is: it imports nothing from
 ``career_agent.domain``/``career_agent.agents``, only Playwright's own
 types and this project's existing
 :class:`~career_agent.integrations.browser_session.EncryptedSessionStore`.

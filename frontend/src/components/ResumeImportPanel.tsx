@@ -1,6 +1,6 @@
 /**
- * Résumé upload + review (Phase 71, ADR-0089) -- lets onboarding also
- * accept an existing résumé instead of hand-typing every field. Upload
+ * Resume upload + review (Phase 71, ADR-0089) -- lets onboarding also
+ * accept an existing resume instead of hand-typing every field. Upload
  * parses the file into proposed facts with the evidence text they were
  * found in; nothing is written to the profile until the user explicitly
  * confirms or rejects each one here (an un-decided proposal is left
@@ -78,11 +78,11 @@ export function ResumeImportPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Import from an existing résumé</CardTitle>
+        <CardTitle>Import from an existing resume</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <Callout>
-          Upload a résumé (PDF, DOCX, TXT, or MD) and the AI will find your
+          Upload a resume (PDF, DOCX, TXT, or MD) and the AI will find your
           name, email, phone, location, and skills, showing exactly what it
           found and where. Nothing is saved to your profile until you
           confirm each fact below -- reject anything wrong, and leave the
@@ -94,7 +94,7 @@ export function ResumeImportPanel() {
             ref={inputRef}
             type="file"
             accept={ACCEPTED_EXTENSIONS}
-            aria-label="Résumé file"
+            aria-label="Resume file"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -106,7 +106,7 @@ export function ResumeImportPanel() {
             onClick={() => inputRef.current?.click()}
           >
             <Upload className="h-4 w-4" />
-            {upload.isPending ? "Analyzing résumé…" : "Choose résumé file"}
+            {upload.isPending ? "Analyzing resume…" : "Choose resume file"}
           </Button>
         </div>
 
@@ -174,7 +174,7 @@ export function ResumeImportPanel() {
           <div className="space-y-2">
             <Callout>
               {confirm.data.profile_saved
-                ? "Profile updated from your résumé. The steps below are now pre-filled -- review and adjust as needed."
+                ? "Profile updated from your resume. The steps below are now pre-filled -- review and adjust as needed."
                 : confirm.data.missing_required_fields.length > 0
                   ? `Your profile still needs: ${confirm.data.missing_required_fields.join(", ")}. Fill those in below.`
                   : "Nothing was saved -- see the outcome for each decision below."}

@@ -237,7 +237,7 @@ def test_education_is_rendered_from_master_profile_verbatim(tmp_path: Path) -> N
     profile = _profile_with_education(_EDUCATION)
     artifact = render_resume_docx("r-1", _content(), profile, tmp_path)
     body = _all_text(artifact.path)
-    assert "Master's, Computer Science — MIT (2019-09-01 - 2021-06-01)" in body
+    assert "Master's, Computer Science - MIT (2019-09-01 - 2021-06-01)" in body
 
 
 def test_multiple_education_entries_preserved_reverse_chronological(

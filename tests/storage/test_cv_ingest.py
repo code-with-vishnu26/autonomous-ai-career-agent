@@ -99,7 +99,7 @@ def test_real_pdf_extracts_the_same_facts_as_the_docx_it_was_rendered_from(
 
     Renders a real DOCX via this project's own resume renderer, converts it
     to a real PDF via the same LibreOffice path ``prepare``/``submit`` use,
-    then proves ``read_document`` extracts the same résumé text (soffice's
+    then proves ``read_document`` extracts the same resume text (soffice's
     text-based PDF output preserves the words, if not the exact line
     breaks) -- not a synthetic/fake PDF byte string.
     """
