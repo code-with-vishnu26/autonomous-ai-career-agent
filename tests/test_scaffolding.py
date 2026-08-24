@@ -47,4 +47,4 @@ def test_cli_entrypoint_runs(capsys) -> None:
 
     main([])
     out = capsys.readouterr().out
-    assert "Autonomous AI Career Agent" in out
+    assert "AI Career Agent" in out

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in the Autonomous AI Career Agent. This is a single-user,
+Thanks for your interest in the AI Career Agent. This is a single-user,
 self-hosted project, but it is open source and contributions are welcome.
 
 ## Ground rules (project working principles)

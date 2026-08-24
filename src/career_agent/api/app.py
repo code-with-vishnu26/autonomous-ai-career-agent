@@ -143,7 +143,7 @@ async def _lifespan(app: FastAPI):
     for message in report.warnings:
         logger.warning(message)
     logger.info(
-        "Starting Autonomous AI Career Agent dashboard API v%s (environment=%s)",
+        "Starting AI Career Agent dashboard API v%s (environment=%s)",
         __version__,
         settings.environment,
     )
@@ -163,7 +163,7 @@ async def _lifespan(app: FastAPI):
     logger.info("Background scheduler started (%d job(s))", len(scheduler.get_jobs()))
     yield
     scheduler.shutdown(wait=False)
-    logger.info("Shutting down Autonomous AI Career Agent dashboard API")
+    logger.info("Shutting down AI Career Agent dashboard API")
 
 
 async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
@@ -200,7 +200,7 @@ async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResp
 def create_app() -> FastAPI:
     """Build the FastAPI app: CORS for the local dev frontend, then routers."""
     app = FastAPI(
-        title="Autonomous AI Career Agent -- Dashboard API",
+        title="AI Career Agent -- Dashboard API",
         version=__version__,
         description=(
             "Dashboard data API (Phase 54) plus authentication and "

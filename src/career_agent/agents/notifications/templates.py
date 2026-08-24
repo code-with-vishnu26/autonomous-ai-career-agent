@@ -13,13 +13,13 @@ from __future__ import annotations
 def welcome_email(*, display_name: str | None, email: str) -> tuple[str, str]:
     """New-account welcome, sent once at registration."""
     name = display_name or email
-    subject = "Welcome to Autonomous AI Career Agent"
+    subject = "Welcome to AI Career Agent"
     body = (
         f"Hi {name},\n\n"
         "Your account is ready. Log in to your dashboard to review "
         "prepared applications, use the Career Coach, and manage your "
         "notification preferences.\n\n"
-        "-- Autonomous AI Career Agent"
+        "-- AI Career Agent"
     )
     return subject, body
 

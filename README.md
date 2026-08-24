@@ -1,4 +1,4 @@
-# Autonomous AI Career Agent
+# AI Career Agent
 
 > A self-hosted assistant that discovers job openings, ranks them, ingests
 > your CV as evidence, and **prepares** truthful, ATS-tuned application
@@ -166,7 +166,7 @@ queries (e.g. "Backend Developer Remote", "Backend Developer India")
 instead of one generic keyword. Re-running `career-agent preferences`
 shows your current values and only changes what you answer — you never
 have to re-enter everything. Most fields (salary, visa sponsorship,
-company allow/deny lists, and a few behavior toggles) are captured now as
+company allow/deny lists, and a few behaviour toggles) are captured now as
 configuration for upcoming phases and are **not yet enforced** — the
 wizard says so at each such prompt.
 
@@ -236,7 +236,7 @@ once verified against a real, live posting — never guessed.
 Search Preferences into an `ExecutionPlan` — an ordered, budget-bounded
 list of (provider, query, limit, priority) search tasks — *before*
 discovery runs, rather than searching every configured provider blindly.
-It prioritizes providers you named in `preferred_ats_providers`,
+It prioritises providers you named in `preferred_ats_providers`,
 diversifies across providers so no single one consumes the whole budget,
 and deduplicates identical planned tasks. Purely deterministic: no LLM
 call, no network, no adapter call (nothing here has ever seen a
@@ -484,7 +484,7 @@ the system who they are: `/onboarding` is an 8-step wizard (Welcome →
 Personal → Work → Education → Skills → Projects → Legal → Review) backed
 by `GET`/`PUT /user/master-profile` and a new `SqliteMasterProfileStore`
 (mirrors `SqliteUserPreferencesStore`), independent of the CLI's
-`profile.json` by design — the two are never synchronized. The wizard
+`profile.json` by design — the two are never synchronised. The wizard
 pre-fills from any existing stored profile, so it's safe to revisit, not
 a one-time-only flow, and its final step links to the existing Job
 Preferences and Notification Settings pages rather than duplicating
@@ -504,7 +504,7 @@ unchanged for CLI users.
 Once you've onboarded, the Career Coach's **Match My Profile** page
 (Phase 66, [ADR-0084](docs/adr/0084-profile-backed-ats-scoring.md)) scores
 that stored profile against any job description — a deterministic ATS
-keyword-coverage score and prioritized missing skills, no résumé paste and
+keyword-coverage score and prioritised missing skills, no résumé paste and
 no LLM cost. It reuses the exact same scorers the paste-based Job Match /
 Skill Gap pages use.
 
@@ -543,7 +543,7 @@ variant, via a curated taxonomy of ~15 common tech-role families
 Search Jobs page also shows a separate **Related roles** section for
 adjacent sub-roles the taxonomy names (e.g. Backend Developer, Cloud
 Engineer, DevOps Engineer for a "Software Developer" search) — never
-mixed into your exact matches. For a role the taxonomy doesn't recognize,
+mixed into your exact matches. For a role the taxonomy doesn't recognise,
 an optional Groq-backed fallback tries once, best-effort, if a key is
 configured; either way, this can only ever *add* related-role suggestions,
 never affect which results count as an exact match.
@@ -594,7 +594,7 @@ stored server-side):
   local note for you; nothing is ever written back automatically.
 - **Cover Letter Assistant** — rewrite/shorten/more-formal/more-technical,
   verified the same way against your original letter.
-- **Interview Preparation** — technical/behavioral/role-specific
+- **Interview Preparation** — technical/behavioural/role-specific
   questions plus STAR guidance, grounded only in the job description you
   paste (never invented outside knowledge about the company).
 
@@ -775,7 +775,7 @@ recorded on the resulting `SubmissionResult.diagnostics_dir` — so a
 and fixed along the way: `BrowserApplicator`'s submit-click and both of
 `resume()`'s click-completing paths previously had **no exception
 handling at all**, leaking an open, unclosed browser on any failure
-there — now closed cleanly every time, matching the behavior every other
+there — now closed cleanly every time, matching the behaviour every other
 failure path already had.
 
 ## Privacy
