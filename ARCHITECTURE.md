@@ -13,7 +13,7 @@ decisions and their rationale are recorded as ADRs in [`docs/adr/`](docs/adr/).
 ## 1. Design philosophy
 
 The project's mission, goals, non-goals, and golden rules are fixed in
-[ADR-0000](docs/adr/0000-project-philosophy.md) — the root every other decision
+[ADR-0000](docs/adr/0000-project-philosophy.md) - the root every other decision
 serves. The system is **agent-oriented, not a fixed pipeline** (see
 [ADR-0001](docs/adr/0001-agent-oriented-architecture.md)). Rather than hard-coding
 a linear `discover → decide → apply → learn` flow, a central **Planner Agent**
@@ -66,7 +66,7 @@ Two cross-cutting commitments shape everything:
 
 ### Planner Agent (the brain)
 Decides *what to do next* given current state: which opportunities to discover,
-which are worth pursuing, when to tailor a résumé, when to apply, and how to react
+which are worth pursuing, when to tailor a resume, when to apply, and how to react
 to failures. Owns prioritisation, retry/backoff policy, and the cost cascade
 budget. Implemented on **LangGraph** so its decision loop is inspectable and
 resumable.
@@ -74,14 +74,14 @@ resumable.
 ### Discovery Agent
 Finds real openings. Strategy order (open-ended; web-search layer is specified in
 [ADR-0002](docs/adr/0002-search-provider-abstraction.md)):
-1. Public ATS JSON APIs — **Greenhouse, Lever, Ashby**.
+1. Public ATS JSON APIs - **Greenhouse, Lever, Ashby**.
 2. **YC `hiring.json`** and **Hacker News "Who's Hiring."**
 3. Company **career pages** found via a *Career Page Finder* + *ATS Detector*.
 4. Provider-abstracted **web search** (Exa + Google CSE, with failover).
 Job boards are used **only within their ToS**.
 
 ### Resume Agent
-Tailors a résumé for a specific opportunity using **only** facts from the master
+Tailors a resume for a specific opportunity using **only** facts from the master
 profile (JSON Resume schema). Routes generation through the Claude cost cascade.
 Every output passes the **fabrication-detection gate** before it can be used.
 
@@ -95,24 +95,24 @@ reuses a session established by manual login, and never automates Google OAuth.
 
 ### Learning Agent
 Records outcomes (responses, rejections, interviews) and feeds them back into
-scoring, targeting, and résumé-tailoring quality. Closes the loop.
+scoring, targeting, and resume-tailoring quality. Closes the loop.
 
 ## 4. Communication: Plugin Registry + Event Bus
 
 Agents do **not** call each other directly. They communicate through an **event
 bus** (publish/subscribe) and discover capabilities through a **plugin registry**.
 
-- **Plugin registry** — ATS adapters, opportunity sources, and search providers
+- **Plugin registry** - ATS adapters, opportunity sources, and search providers
   register themselves against well-known extension points. Adding a new provider
   is a plugin, not a core edit.
-- **Event bus** — agents emit events (e.g. `OpportunityDiscovered`,
+- **Event bus** - agents emit events (e.g. `OpportunityDiscovered`,
   `ResumeTailored`, `ApplicationSubmitted`, `OutcomeRecorded`) and subscribe to
   the ones they care about. This keeps agents decoupled and the system extensible.
 
 These two mechanisms are the heart of "no core rewrites" and are built in
 **Phase 3**, before any capability agent.
 
-## 5. LLM usage — cost cascade
+## 5. LLM usage - cost cascade
 
 All model calls go through a single Claude client that implements a
 **Haiku → Sonnet → Opus** cost cascade: cheap models handle routine work and the
@@ -124,7 +124,7 @@ tests so prompt changes can't silently regress behaviour.
 
 - **Storage:** SQLite is the system of record; **openpyxl** produces
   human-readable spreadsheet exports (application tracker, pipeline).
-- **Master profile:** a single structured **JSON Resume** document — the sole
+- **Master profile:** a single structured **JSON Resume** document - the sole
   source of truth for anything that appears in an application.
 - **Gmail connector:** sending email-to-apply and (later) reading responses.
 - **Browser:** Playwright + Browser-Use, driven under human supervision.
@@ -165,7 +165,7 @@ pull request is checked against.
 
 | ADR | Decision |
 |-----|----------|
-| [0000](docs/adr/0000-project-philosophy.md) | Project philosophy — mission, goals, non-goals, golden rules (the root) |
+| [0000](docs/adr/0000-project-philosophy.md) | Project philosophy - mission, goals, non-goals, golden rules (the root) |
 | [0001](docs/adr/0001-agent-oriented-architecture.md) | Agent-oriented architecture; agent design principles + lifecycle |
 | [0002](docs/adr/0002-search-provider-abstraction.md) | Search provider abstraction; capability discovery + health-based ranking |
 | [0003](docs/adr/0003-truthfulness-gate.md) | Truthfulness gate; per-statement evidence, confidence, explainability |

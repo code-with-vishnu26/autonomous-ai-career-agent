@@ -8,7 +8,7 @@ for Groq), not a nice-to-have (ADR-0016, ADR-0043).
 correct (evidence assembly, category mapping, fail-closed aggregation) against
 `FakeClaimVerifier`'s deterministic, canned verdicts. It proves **nothing**
 about whether a real model actually judges these 12 claims correctly. This
-suite is what proves that — against **live calls to whichever provider you're
+suite is what proves that - against **live calls to whichever provider you're
 validating**, using the exact same 12-case adversarial matrix the pytest suite
 is organised around.
 
@@ -18,12 +18,12 @@ provider.** Passing pytest with the fake verifier is necessary but not
 sufficient. This is no longer enforced by policy alone (ADR-0026):
 `career-agent apply` calls `llm/promptfoo_gate.py::verify_promptfoo_results`
 before constructing the real verifier it selected, checking an actual results
-artifact on disk keyed to that exact provider — not a flag typed from memory,
+artifact on disk keyed to that exact provider - not a flag typed from memory,
 and not a pass recorded for the *other* provider. See "Running it" below.
 
 ## Running it
 
-Each provider needs its own live run, on your own machine — neither is
+Each provider needs its own live run, on your own machine - neither is
 available in the sandboxed environment this project was built in (the
 egress policy blocks it, same as every other live API in this project).
 Results are written to `promptfoo/results/<prompt version>--<provider>.json`,
@@ -46,7 +46,7 @@ npx promptfoo@latest view   # inspect results in a browser
 
 `verify_promptfoo_results` reads the relevant file's `results.stats.successes`/
 `failures` and refuses to proceed unless it records at least one success and
-zero failures — an empty/no-op run does not count as a pass. A pass for one
+zero failures - an empty/no-op run does not count as a pass. A pass for one
 provider is never treated as a pass for the other, by filename construction.
 
 ## Checking a results artifact against the real gate, without a live call
@@ -142,18 +142,18 @@ claim.
 
 ## Files
 
-- `promptfoo/promptfooconfig.anthropic.yaml` — the Anthropic eval config.
-- `promptfoo/promptfooconfig.groq.yaml` — the Groq eval config
+- `promptfoo/promptfooconfig.anthropic.yaml` - the Anthropic eval config.
+- `promptfoo/promptfooconfig.groq.yaml` - the Groq eval config
   (`openai/gpt-oss-120b`, ADR-0043).
-- `promptfoo/prompt.txt` — **must stay byte-identical** to
+- `promptfoo/prompt.txt` - **must stay byte-identical** to
   `TRUTHFULNESS_GATE_PROMPT` in `src/career_agent/llm/prompts.py`
   (`TRUTHFULNESS_GATE_PROMPT_VERSION`), and is shared by both configs. There
   is no automated sync between it and `prompts.py` yet; if you change one,
   change the other and bump the version.
-- `promptfoo/tests.yaml` — the 12-case adversarial matrix, each case asserting
+- `promptfoo/tests.yaml` - the 12-case adversarial matrix, each case asserting
   the expected `verified`/`category` in the model's JSON response. Shared by
   both provider configs.
-- `promptfoo/tests/offline_transform_regression/` — three offline,
+- `promptfoo/tests/offline_transform_regression/` - three offline,
   no-API-key regressions: (1) `defaultTest.options.transform` is at the
   correct YAML level for the installed promptfoo version -- run this if a
   future promptfoo upgrade makes live validation fail again with
@@ -165,10 +165,10 @@ claim.
 
 ## Updating after a prompt change
 
-1. Edit `src/career_agent/llm/prompts.py` — bump
+1. Edit `src/career_agent/llm/prompts.py` - bump
    `TRUTHFULNESS_GATE_PROMPT_VERSION` (never edit a shipped version's text in
    place).
-2. Copy the new prompt text into `promptfoo/prompt.txt` — **with single
+2. Copy the new prompt text into `promptfoo/prompt.txt` - **with single
    braces for any literal JSON example, not the doubled braces
    `prompts.py`'s Python string needs for `.format()`.** Only
    `{{evidence}}`/`{{statement}}` should ever be doubled in `prompt.txt`;
@@ -200,7 +200,7 @@ prompt is ever called, for the claims Layer 1 can resolve on its own.
 **Any `truthfulness-gate-v1` results file is void.** `verify_promptfoo_results`
 keys on the exact prompt version by filename
 (`{prompt_version}--{provider}.json`), so a `v1` pass cannot satisfy a `v2`
-check by construction — this is not a manual step to remember, it is
+check by construction - this is not a manual step to remember, it is
 structural. A fresh live run against `truthfulness-gate-v2` is required for
 both providers before either `ClaimVerifier` may be used for real.
 
@@ -219,12 +219,12 @@ convention alone can't).
 ## A note on Groq free-tier concurrency and queue timeouts
 
 A live run may show `Request ... timed out after 300000ms in queue` on one
-or more cases without any judgment being made at all — this is a
+or more cases without any judgment being made at all - this is a
 provider-side queueing/rate-limit symptom (Groq's free tier for
 `openai/gpt-oss-120b` is rate-limited on both requests/minute and
 tokens/minute; 4 concurrent long-reasoning calls can exceed that), not a
 truthfulness judgment, and promptfoo now counts it as an `error`, not a
-`failure` — either way it fails `verify_promptfoo_results`. If you see this,
+`failure` - either way it fails `verify_promptfoo_results`. If you see this,
 retry with lower concurrency before assuming anything about the model or
 the prompt:
 

@@ -4,7 +4,7 @@
 
 The AI Career Agent is a **single-user, self-hosted** tool. It runs
 on the operator's own machine, with the operator's own accounts and data. There
-is no hosted service, no multi-tenancy, and — in v1.0 — no autonomous external
+is no hosted service, no multi-tenancy, and - in v1.0 - no autonomous external
 action. This document records the security properties the project relies on and
 how to report a problem.
 
@@ -19,7 +19,7 @@ reproduction if possible.
 
 | Boundary | Trusted? | Enforcement |
 |----------|----------|-------------|
-| Structured master profile (`profile.json`) | **Trusted** — the sole source of résumé evidence | Truthfulness gate reads evidence only from the profile |
+| Structured master profile (`profile.json`) | **Trusted** - the sole source of resume evidence | Truthfulness gate reads evidence only from the profile |
 | Imported CV content | **Untrusted** until explicitly confirmed | Ingestion produces UNVERIFIED proposals; promotion is fail-closed (ADR-0052) |
 | Job description text | **Untrusted** | The JD reaches the drafter but is **never** passed to the truthfulness gate (`verify(draft, profile)` has no JD parameter) |
 | LLM provider responses | **Untrusted** | Malformed / reasoning-preamble / truncated output is a parse error → explicit block, never a silent pass |
@@ -48,9 +48,9 @@ reproduction if possible.
 
 - API keys are read from the environment / `.env` (git-ignored; only
   `.env.example` is committed). No key is ever committed or logged.
-- Private candidate data — `profile.json`, CV proposals, SQLite databases
-  (`*.db` / `*.sqlite`), spreadsheet exports (`*.xlsx`), rendered résumés, and
-  `promptfoo/results/` — is git-ignored and excluded from the built wheel and
+- Private candidate data - `profile.json`, CV proposals, SQLite databases
+  (`*.db` / `*.sqlite`), spreadsheet exports (`*.xlsx`), rendered resumes, and
+  `promptfoo/results/` - is git-ignored and excluded from the built wheel and
   sdist. The packaging audit in `RELEASE_CHECKLIST.md` verifies this every
   release.
 
